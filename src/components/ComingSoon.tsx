@@ -10,14 +10,14 @@ export default function ComingSoon() {
                 <img
                     src="/dms.svg"
                     alt="DMS Logo"
-                    className="w-32 h-12 mx-auto"
+                    className="w-92 h-20 mx-auto"
                 />
             </div>
 
             {/* Icon */}
-            <div className="bg-blue-50 rounded-full p-6 mb-4">
+            {/* <div className="bg-blue-50 rounded-full p-6 mb-4">
                 <Construction className="w-16 h-16 text-blue-600" />
-            </div>
+            </div> */}
 
             {/* Title */}
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Coming Soon</h2>
