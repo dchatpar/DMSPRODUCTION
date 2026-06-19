@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "My App",
-  description: "My Next.js App",
+  title: "Adaptus DMS",
+  description: "Adaptus Dealer Management System",
 };
 
 export default function RootLayout({
