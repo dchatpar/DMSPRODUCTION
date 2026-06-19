@@ -34,8 +34,8 @@ export async function POST(req: NextRequest) {
       .eq("id", data.user.id)
       .single();
 
-    // Return response with role
-    return NextResponse.json({
+    // Return response with role and set HttpOnly cookies so middleware can read session
+    const body = {
       user: {
         ...data.user,
         role: userProfile?.role || null,
@@ -47,7 +47,29 @@ export async function POST(req: NextRequest) {
       refresh_token: data.session.refresh_token,
       expires_in: data.session.expires_in,
       token_type: data.session.token_type,
-    });
+    };
+
+    const res = NextResponse.json(body);
+
+    // Set HttpOnly cookies so server-side middleware and SSR can access session
+    try {
+      const cookieOptions = {
+        httpOnly: true,
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax' as const,
+        maxAge: data.session.expires_in || 60 * 60,
+      };
+
+      res.cookies.set('sb-access-token', data.session.access_token, cookieOptions);
+      if (data.session.refresh_token) {
+        res.cookies.set('sb-refresh-token', data.session.refresh_token, cookieOptions);
+      }
+    } catch (e) {
+      console.warn('Failed to set auth cookies:', e);
+    }
+
+    return res;
 
   } catch (err) {
     console.error("Login error:", err);
