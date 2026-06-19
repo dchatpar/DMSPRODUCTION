@@ -1,0 +1,70 @@
+// app/api/profile/route.ts
+import { createTokenClient } from "@/src/lib/server-token";
+import { NextRequest, NextResponse } from "next/server";
+
+
+export async function GET(req: NextRequest) {
+    try {
+        //  Create token-based client
+        const supabase = createTokenClient(req);
+
+        //  Get authenticated user
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+        if (authError || !user) {
+            return NextResponse.json(
+                { error: "Unauthorized - Bearer token required/invalid" },
+                { status: 401 }
+            );
+        }
+
+        //  Get full profile from users table
+        const { data: profile, error: profileError } = await supabase
+            .from("users")
+            .select(`
+        id,
+        full_name,
+        email,
+        role,
+        phone,
+        avatar,
+        start_date,
+        created_at,
+        updated_at
+      `)
+            .eq("id", user.id)
+            .single();
+
+        if (profileError || !profile) {
+            // User exists in auth but not in users table
+            return NextResponse.json(
+                {
+                    error: "Profile not found",
+                    details: "User exists in authentication but profile is missing",
+                    user: {
+                        id: user.id,
+                        email: user.email
+                    }
+                },
+                { status: 404 }
+            );
+        }
+
+        //  Return profile with user info
+        return NextResponse.json({
+            data: profile,
+            user: {
+                id: user.id,
+                email: user.email,
+                confirmed_at: user.email_confirmed_at
+            }
+        }, { status: 200 });
+
+    } catch (err: any) {
+        console.error("GET /api/profile error:", err);
+        return NextResponse.json(
+            { error: err?.message || "Internal server error" },
+            { status: 500 }
+        );
+    }
+}

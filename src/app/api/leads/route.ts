@@ -1,0 +1,171 @@
+// app/api/leads/route.ts
+import { createTokenClient } from "@/src/lib/server-token";
+import { NextRequest, NextResponse } from "next/server";
+
+// GET all leads
+export async function GET(req: NextRequest) {
+    try {
+        let supabase;
+
+        try {
+            supabase = createTokenClient(req);
+        } catch (error: any) {
+            if (error?.message === "MISSING_BEARER_TOKEN") {
+                return NextResponse.json(
+                    { error: "Authorization token required" },
+                    { status: 401 }
+                );
+            }
+            throw error;
+        }
+
+        // Verify user is authenticated
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+        if (authError || !user) {
+            return NextResponse.json(
+                { error: "Invalid or expired token" },
+                { status: 401 }
+            );
+        }
+
+        const url = new URL(req.url);
+        const limit = parseInt(url.searchParams.get("limit") || "50");
+        const offset = parseInt(url.searchParams.get("offset") || "0");
+        const status = url.searchParams.get("status");
+        const source = url.searchParams.get("source");
+        const assigned_to = url.searchParams.get("assigned_to");
+        const q = url.searchParams.get("q");
+
+        let query = supabase
+            .from("leads")
+            .select(`
+                *,
+                customer:customers(*),
+                vehicle:vehicles(*),
+                assigned_user:users(id, full_name, email, avatar)
+            `, { count: "exact" })
+            .order("created_at", { ascending: false })
+            .range(offset, offset + limit - 1);
+
+        if (status) query = query.eq("status", status);
+        if (source) query = query.eq("source", source);
+        if (assigned_to) query = query.eq("assigned_to", assigned_to);
+        if (q) {
+            query = query.or(
+                `customer.name.ilike.%${q}%,customer.email.ilike.%${q}%,customer.phone.ilike.%${q}%,notes.ilike.%${q}%`
+            );
+        }
+
+        const { data, error: dbError, count } = await query;
+
+        if (dbError) throw dbError;
+
+        return NextResponse.json({
+            data: data || [],
+            count: count || 0,
+            limit,
+            offset,
+        });
+    } catch (error: any) {
+        console.error("Error fetching leads:", error);
+        return NextResponse.json(
+            { error: error?.message || "Internal server error" },
+            { status: 500 }
+        );
+    }
+}
+
+// POST create lead
+export async function POST(req: NextRequest) {
+    try {
+        let supabase;
+
+        try {
+            supabase = createTokenClient(req);
+        } catch (error: any) {
+            if (error?.message === "MISSING_BEARER_TOKEN") {
+                return NextResponse.json(
+                    { error: "Authorization token required" },
+                    { status: 401 }
+                );
+            }
+            throw error;
+        }
+
+        // Verify user is authenticated
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+        if (authError || !user) {
+            return NextResponse.json(
+                { error: "Invalid or expired token" },
+                { status: 401 }
+            );
+        }
+
+        const payload = await req.json();
+
+        // Validate required fields
+        const required = ["customer_id"];
+        for (const field of required) {
+            if (!payload[field]) {
+                return NextResponse.json(
+                    { error: `Missing required field: ${field}` },
+                    { status: 400 }
+                );
+            }
+        }
+
+        // Validate source if provided
+        const validSources = ['Website', 'Referral', 'Event', 'Walk-in', 'Facebook', 'Craigslist', 'Kijiji', 'Phone'];
+        if (payload.source && !validSources.includes(payload.source)) {
+            return NextResponse.json(
+                { error: `Invalid source. Must be one of: ${validSources.join(', ')}` },
+                { status: 400 }
+            );
+        }
+
+        // Validate status if provided
+        const validStatuses = ['Not Started', 'In Progress', 'Qualified', 'Closed', 'Lost'];
+        if (payload.status && !validStatuses.includes(payload.status)) {
+            return NextResponse.json(
+                { error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },
+                { status: 400 }
+            );
+        }
+
+        // Set default values
+        const now = new Date().toISOString();
+        const leadData = {
+            customer_id: payload.customer_id,
+            source: payload.source || 'Website',
+            status: payload.status || 'Not Started',
+            interest_vehicle_id: payload.interest_vehicle_id || null,
+            assigned_to: payload.assigned_to || null,
+            notes: payload.notes || null,
+            lead_creation_date: now,
+            last_engagement: now,
+        };
+
+        const { data, error: dbError } = await supabase
+            .from("leads")
+            .insert(leadData)
+            .select(`
+                *,
+                customer:customers(*),
+                vehicle:vehicles(*),
+                assigned_user:users(id, full_name, email, avatar)
+            `)
+            .single();
+
+        if (dbError) throw dbError;
+
+        return NextResponse.json({ data }, { status: 201 });
+    } catch (error: any) {
+        console.error("Error creating lead:", error);
+        return NextResponse.json(
+            { error: error?.message || "Internal server error" },
+            { status: 500 }
+        );
+    }
+}
