@@ -61,8 +61,7 @@ export default function LoginPage() {
                 localStorage.setItem("refresh_token", data.session.refresh_token || "");
                 localStorage.setItem("user_email", data.user?.email || "");
 
-                router.push("/dashboard");
-                router.refresh();
+                await router.replace("/dashboard");
             }
         } catch (err: any) {
             if (err.message.includes("Invalid login credentials")) {
