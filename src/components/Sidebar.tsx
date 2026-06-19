@@ -85,8 +85,8 @@ const navigationSections = [
     {
         title: "SETTINGS",
         items: [
-            { name: "Profile", href: "/settings/profile", icon: Settings },
-            { name: "Business Profile", href: "/settings/business", icon: Settings },
+            { name: "Profile", href: "/profile", icon: Settings },
+            // { name: "Business Profile", href: "/business", icon: Settings },
         ],
     },
 ];
