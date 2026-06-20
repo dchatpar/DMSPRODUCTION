@@ -243,7 +243,7 @@ export default function LeadDetailsModal({
                         <div className="mt-6 pt-4 border-t border-gray-100 flex gap-3">
                             <button
                                 onClick={onClose}
-                                className="flex-1 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
+                                className="flex-1 px-4 py-2 text-sm text-gray-600 border border-gray-200 hover:bg-gray-50 rounded-lg transition-colors"
                             >
                                 Close
                             </button>

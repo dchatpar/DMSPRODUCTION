@@ -1,8 +1,8 @@
-// app/api/vehicles/[id]/route.ts
+// app/api/invoices/[id]/route.ts
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
 
-// GET single vehicle
+// GET single invoice
 export async function GET(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -35,15 +35,18 @@ export async function GET(
         const { id } = await params;
 
         const { data, error: dbError } = await supabase
-            .from("vehicles")
-            .select("*")
+            .from("invoices")
+            .select(`
+                *,
+                customer:customers(id, name, email, phone, address, city, province)
+            `)
             .eq("id", id)
             .single();
 
         if (dbError) {
             if (dbError.code === "PGRST116") {
                 return NextResponse.json(
-                    { error: "Vehicle not found" },
+                    { error: "Invoice not found" },
                     { status: 404 }
                 );
             }
@@ -52,7 +55,7 @@ export async function GET(
 
         return NextResponse.json({ data });
     } catch (error: any) {
-        console.error("Error fetching vehicle:", error);
+        console.error("Error fetching invoice:", error);
         return NextResponse.json(
             { error: error?.message || "Internal server error" },
             { status: 500 }
@@ -60,7 +63,7 @@ export async function GET(
     }
 }
 
-// PUT update vehicle
+// PUT update invoice (full update)
 export async function PUT(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -93,57 +96,59 @@ export async function PUT(
         const { id } = await params;
         const payload = await req.json();
 
-        // Validate required fields for update (optional fields)
-        const allowedFields = [
-            "vin", "year", "make", "model", "trim", "odometer",
-            "stock_number", "condition", "status", "purchase_price",
-            "retail_price", "extra_costs", "taxes", "image_gallery"
-        ];
-
-        // Check if any valid fields are being updated
-        const updateFields = Object.keys(payload).filter(key => allowedFields.includes(key));
-        if (updateFields.length === 0) {
-            return NextResponse.json(
-                { error: "No valid fields to update" },
-                { status: 400 }
-            );
-        }
-
-        // Check for duplicate stock_number if being updated
-        if (payload.stock_number) {
-            const { data: existing, error: checkError } = await supabase
-                .from("vehicles")
-                .select("id, stock_number")
-                .eq("stock_number", payload.stock_number)
-                .neq("id", id)
-                .single();
-
-            if (existing) {
+        // Validate required fields
+        const required = ["invoice_number", "customer_id", "payment_amount"];
+        for (const field of required) {
+            if (!payload[field]) {
                 return NextResponse.json(
-                    { error: `Stock number "${payload.stock_number}" is already used by another vehicle` },
+                    { error: `Missing required field: ${field}` },
                     { status: 400 }
                 );
             }
         }
 
+        // Validate status if provided
+        const validStatuses = ['Pending', 'Paid', 'Overdue', 'Cancelled'];
+        if (payload.status && !validStatuses.includes(payload.status)) {
+            return NextResponse.json(
+                { error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },
+                { status: 400 }
+            );
+        }
+
+        // Recalculate tax and total
+        const taxRate = payload.tax_rate ?? 13;
+        const paymentAmount = parseFloat(payload.payment_amount) || 0;
+        const taxAmount = (paymentAmount * taxRate) / 100;
+        const total = paymentAmount + taxAmount;
+
         const { data, error: dbError } = await supabase
-            .from("vehicles")
-            .update(payload)
+            .from("invoices")
+            .update({
+                invoice_number: payload.invoice_number,
+                customer_id: payload.customer_id,
+                invoice_date: payload.invoice_date,
+                due_date: payload.due_date,
+                package_name: payload.package_name,
+                payment_amount: paymentAmount,
+                tax_rate: taxRate,
+                tax_amount: taxAmount,
+                total: total,
+                status: payload.status,
+                notes: payload.notes,
+            })
             .eq("id", id)
-            .select()
+            .select(`
+                *,
+                customer:customers(id, name, email, phone)
+            `)
             .single();
 
         if (dbError) {
             if (dbError.code === "PGRST116") {
                 return NextResponse.json(
-                    { error: "Vehicle not found" },
+                    { error: "Invoice not found" },
                     { status: 404 }
-                );
-            }
-            if (dbError.code === "23505") {
-                return NextResponse.json(
-                    { error: "A vehicle with this stock number or VIN already exists" },
-                    { status: 400 }
                 );
             }
             throw dbError;
@@ -151,7 +156,7 @@ export async function PUT(
 
         return NextResponse.json({ data });
     } catch (error: any) {
-        console.error("Error updating vehicle:", error);
+        console.error("Error updating invoice:", error);
         return NextResponse.json(
             { error: error?.message || "Internal server error" },
             { status: 500 }
@@ -159,7 +164,7 @@ export async function PUT(
     }
 }
 
-// PATCH update vehicle (partial update)
+// PATCH update invoice (partial update)
 export async function PATCH(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -192,41 +197,42 @@ export async function PATCH(
         const { id } = await params;
         const payload = await req.json();
 
-        // Check for duplicate stock_number if being updated
-        if (payload.stock_number) {
-            const { data: existing } = await supabase
-                .from("vehicles")
-                .select("id, stock_number")
-                .eq("stock_number", payload.stock_number)
-                .neq("id", id)
-                .single();
-
-            if (existing) {
+        // Validate status if being updated
+        if (payload.status) {
+            const validStatuses = ['Pending', 'Paid', 'Overdue', 'Cancelled'];
+            if (!validStatuses.includes(payload.status)) {
                 return NextResponse.json(
-                    { error: `Stock number "${payload.stock_number}" is already used by another vehicle` },
+                    { error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },
                     { status: 400 }
                 );
             }
         }
 
+        // If payment_amount is being updated, recalculate tax and total
+        let updates = { ...payload };
+        if (payload.payment_amount !== undefined) {
+            const paymentAmount = parseFloat(payload.payment_amount) || 0;
+            const taxRate = payload.tax_rate ?? 13;
+            updates.tax_amount = (paymentAmount * taxRate) / 100;
+            updates.total = paymentAmount + updates.tax_amount;
+            updates.payment_amount = paymentAmount;
+        }
+
         const { data, error: dbError } = await supabase
-            .from("vehicles")
-            .update(payload)
+            .from("invoices")
+            .update(updates)
             .eq("id", id)
-            .select()
+            .select(`
+                *,
+                customer:customers(id, name, email, phone)
+            `)
             .single();
 
         if (dbError) {
             if (dbError.code === "PGRST116") {
                 return NextResponse.json(
-                    { error: "Vehicle not found" },
+                    { error: "Invoice not found" },
                     { status: 404 }
-                );
-            }
-            if (dbError.code === "23505") {
-                return NextResponse.json(
-                    { error: "A vehicle with this stock number or VIN already exists" },
-                    { status: 400 }
                 );
             }
             throw dbError;
@@ -234,7 +240,7 @@ export async function PATCH(
 
         return NextResponse.json({ data });
     } catch (error: any) {
-        console.error("Error updating vehicle:", error);
+        console.error("Error updating invoice:", error);
         return NextResponse.json(
             { error: error?.message || "Internal server error" },
             { status: 500 }
@@ -242,7 +248,7 @@ export async function PATCH(
     }
 }
 
-// DELETE vehicle
+// DELETE invoice
 export async function DELETE(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -275,14 +281,14 @@ export async function DELETE(
         const { id } = await params;
 
         const { error: dbError } = await supabase
-            .from("vehicles")
+            .from("invoices")
             .delete()
             .eq("id", id);
 
         if (dbError) {
             if (dbError.code === "PGRST116") {
                 return NextResponse.json(
-                    { error: "Vehicle not found" },
+                    { error: "Invoice not found" },
                     { status: 404 }
                 );
             }
@@ -291,10 +297,10 @@ export async function DELETE(
 
         return NextResponse.json({
             success: true,
-            message: "Vehicle deleted successfully"
+            message: "Invoice deleted successfully"
         });
     } catch (error: any) {
-        console.error("Error deleting vehicle:", error);
+        console.error("Error deleting invoice:", error);
         return NextResponse.json(
             { error: error?.message || "Internal server error" },
             { status: 500 }

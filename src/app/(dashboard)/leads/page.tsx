@@ -31,6 +31,7 @@ import {
 import LeadDetailsModal from "@/src/components/LeadDetailsModal";
 import LeadFormModal from "@/src/components/LeadFormModal";
 import LeadsKanban from "@/src/components/LeadsKanban";
+import ConfirmDialog from "@/src/components/ConfirmDialog";
 
 
 interface Lead {
@@ -93,6 +94,13 @@ export default function LeadsPage() {
     const [formMode, setFormMode] = useState<"add" | "edit">("add");
     const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
 
+    // Confirm dialog state
+    const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+    const [confirmDialogData, setConfirmDialogData] = useState<{
+        lead: Lead | null;
+        loading: boolean;
+    }>({ lead: null, loading: false });
+
     useEffect(() => {
         fetchLeads();
     }, [currentPage, statusFilter, sourceFilter, searchTerm]);
@@ -154,15 +162,21 @@ export default function LeadsPage() {
     };
 
     const handleDelete = async (lead: Lead) => {
-        if (!confirm(`Are you sure you want to delete this lead?`)) return;
+        setConfirmDialogData({ lead, loading: false });
+        setShowConfirmDialog(true);
+    };
+
+    const confirmDelete = async () => {
+        if (!confirmDialogData.lead) return;
+
+        const leadId = confirmDialogData.lead.id;
+        setConfirmDialogData((prev) => ({ ...prev, loading: true }));
 
         try {
             const token = localStorage.getItem("access_token");
-            const response = await fetch(`/api/leads/${lead.id}`, {
+            const response = await fetch(`/api/leads/${leadId}`, {
                 method: "DELETE",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
+                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!response.ok) {
@@ -170,9 +184,19 @@ export default function LeadsPage() {
                 throw new Error(errorData.error || "Failed to delete lead");
             }
 
+            // Clear dialog state
+            setConfirmDialogData({ lead: null, loading: false });
+            setShowConfirmDialog(false);
+
+            // Remove from local state immediately for faster UX
+            setLeads((prev) => prev.filter((l) => l.id !== leadId));
+            setTotalItems((prev) => prev - 1);
+
+            // Re-fetch to ensure consistency
             fetchLeads();
         } catch (err) {
             alert(err instanceof Error ? err.message : "An error occurred");
+            setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
     };
 
@@ -562,6 +586,22 @@ export default function LeadsPage() {
                         setSelectedLead(null);
                     }}
                     onSuccess={handleFormSuccess}
+                />
+            )}
+
+            {showConfirmDialog && confirmDialogData.lead && (
+                <ConfirmDialog
+                    isOpen={showConfirmDialog}
+                    title="Delete Lead"
+                    message={`Are you sure you want to delete this lead? This action cannot be undone.`}
+                    confirmText={confirmDialogData.loading ? "Deleting..." : "Delete"}
+                    variant="danger"
+                    loading={confirmDialogData.loading}
+                    onConfirm={confirmDelete}
+                    onCancel={() => {
+                        setShowConfirmDialog(false);
+                        setConfirmDialogData({ lead: null, loading: false });
+                    }}
                 />
             )}
         </div>

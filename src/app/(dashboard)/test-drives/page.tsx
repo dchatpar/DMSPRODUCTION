@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import TestDriveDetailsModal from "@/src/components/TestDriveDetailsModal";
 import TestDriveFormModal from "@/src/components/TestDriveFormModal";
+import ConfirmDialog from "@/src/components/ConfirmDialog";
 
 interface TestDrive {
     id: string;
@@ -102,6 +103,13 @@ export default function TestDrivesPage() {
     const [formMode, setFormMode] = useState<"add" | "edit">("add");
     const [selectedTestDrive, setSelectedTestDrive] = useState<TestDrive | null>(null);
 
+    // Confirm dialog state
+    const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+    const [confirmDialogData, setConfirmDialogData] = useState<{
+        testDrive: TestDrive | null;
+        loading: boolean;
+    }>({ testDrive: null, loading: false });
+
     useEffect(() => {
         fetchTestDrives();
     }, [currentPage, statusFilter, searchTerm]);
@@ -162,15 +170,21 @@ export default function TestDrivesPage() {
     };
 
     const handleDelete = async (testDrive: TestDrive) => {
-        if (!confirm(`Are you sure you want to delete this test drive?`)) return;
+        setConfirmDialogData({ testDrive, loading: false });
+        setShowConfirmDialog(true);
+    };
+
+    const confirmDelete = async () => {
+        if (!confirmDialogData.testDrive) return;
+
+        const testDriveId = confirmDialogData.testDrive.id;
+        setConfirmDialogData((prev) => ({ ...prev, loading: true }));
 
         try {
             const token = localStorage.getItem("access_token");
-            const response = await fetch(`/api/test-drives/${testDrive.id}`, {
+            const response = await fetch(`/api/test-drives/${testDriveId}`, {
                 method: "DELETE",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
+                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!response.ok) {
@@ -178,9 +192,19 @@ export default function TestDrivesPage() {
                 throw new Error(errorData.error || "Failed to delete test drive");
             }
 
+            // Clear dialog state
+            setConfirmDialogData({ testDrive: null, loading: false });
+            setShowConfirmDialog(false);
+
+            // Remove from local state immediately for faster UX
+            setTestDrives((prev) => prev.filter((t) => t.id !== testDriveId));
+            setTotalItems((prev) => prev - 1);
+
+            // Re-fetch to ensure consistency
             fetchTestDrives();
         } catch (err) {
             alert(err instanceof Error ? err.message : "An error occurred");
+            setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
     };
 
@@ -544,6 +568,22 @@ export default function TestDrivesPage() {
                         setSelectedTestDrive(null);
                     }}
                     onSuccess={handleFormSuccess}
+                />
+            )}
+
+            {showConfirmDialog && confirmDialogData.testDrive && (
+                <ConfirmDialog
+                    isOpen={showConfirmDialog}
+                    title="Delete Test Drive"
+                    message={`Are you sure you want to delete this test drive? This action cannot be undone.`}
+                    confirmText={confirmDialogData.loading ? "Deleting..." : "Delete"}
+                    variant="danger"
+                    loading={confirmDialogData.loading}
+                    onConfirm={confirmDelete}
+                    onCancel={() => {
+                        setShowConfirmDialog(false);
+                        setConfirmDialogData({ testDrive: null, loading: false });
+                    }}
                 />
             )}
         </div>

@@ -7,10 +7,16 @@ import {
     Save,
     Loader2,
     AlertCircle,
-    Image as ImageIcon,
     Plus,
     X as XIcon,
+    Image as ImageIcon,
+    ChevronDown,
 } from "lucide-react";
+import {
+    vehicleMakes,
+    getModelsForMake,
+    yearRange,
+} from "@/src/data/vehicle-makes-models";
 
 interface Vehicle {
     id: string;
@@ -63,6 +69,9 @@ export default function VehicleFormModal({
         taxes: 0,
         image_gallery: [] as string[],
     });
+    const [availableModels, setAvailableModels] = useState<string[]>([]);
+    const [showMakeDropdown, setShowMakeDropdown] = useState(false);
+    const [showModelDropdown, setShowModelDropdown] = useState(false);
     const [newImageUrl, setNewImageUrl] = useState("");
 
     useEffect(() => {
@@ -83,6 +92,8 @@ export default function VehicleFormModal({
                 taxes: vehicle.taxes,
                 image_gallery: vehicle.image_gallery || [],
             });
+            // Set available models for the existing vehicle's make
+            setAvailableModels(getModelsForMake(vehicle.make));
         }
     }, [mode, vehicle]);
 
@@ -94,13 +105,63 @@ export default function VehicleFormModal({
         }));
     };
 
+    const handleMakeChange = (make: string) => {
+        setFormData((prev) => ({
+            ...prev,
+            make,
+            model: "", // Reset model when make changes
+        }));
+        setAvailableModels(getModelsForMake(make));
+        setShowMakeDropdown(false);
+        setShowModelDropdown(false);
+    };
+
+    const handleModelChange = (model: string) => {
+        setFormData((prev) => ({
+            ...prev,
+            model,
+        }));
+        setShowModelDropdown(false);
+    };
+
     const handleAddImage = () => {
-        if (newImageUrl.trim()) {
-            setFormData((prev) => ({
-                ...prev,
-                image_gallery: [...prev.image_gallery, newImageUrl.trim()],
-            }));
-            setNewImageUrl("");
+        const trimmedUrl = newImageUrl.trim();
+
+        if (!trimmedUrl) {
+            setError("Please enter an image URL");
+            setTimeout(() => setError(null), 3000);
+            return;
+        }
+
+        // Validate URL
+        try {
+            new URL(trimmedUrl);
+        } catch {
+            setError("Please enter a valid URL (e.g., https://example.com/image.jpg)");
+            setTimeout(() => setError(null), 3000);
+            return;
+        }
+
+        // Check for duplicates
+        if (formData.image_gallery.includes(trimmedUrl)) {
+            setError("This image URL is already added");
+            setTimeout(() => setError(null), 3000);
+            return;
+        }
+
+        // Add image to gallery
+        setFormData((prev) => ({
+            ...prev,
+            image_gallery: [...prev.image_gallery, trimmedUrl],
+        }));
+
+        setNewImageUrl("");
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            handleAddImage();
         }
     };
 
@@ -121,13 +182,21 @@ export default function VehicleFormModal({
             const url = mode === "add" ? "/api/vehicles" : `/api/vehicles/${vehicle?.id}`;
             const method = mode === "add" ? "POST" : "PATCH";
 
+            // Ensure image_gallery is an array
+            const payload = {
+                ...formData,
+                image_gallery: formData.image_gallery || [],
+            };
+
+            console.log("🚀 Submitting payload:", payload);
+
             const response = await fetch(url, {
                 method,
                 headers: {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${token}`,
                 },
-                body: JSON.stringify(formData),
+                body: JSON.stringify(payload),
             });
 
             if (!response.ok) {
@@ -137,18 +206,11 @@ export default function VehicleFormModal({
 
             onSuccess();
         } catch (err) {
+            console.error("❌ Error:", err);
             setError(err instanceof Error ? err.message : "An error occurred");
         } finally {
             setLoading(false);
         }
-    };
-
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: 'USD',
-            minimumFractionDigits: 2,
-        }).format(amount);
     };
 
     return (
@@ -225,42 +287,91 @@ export default function VehicleFormModal({
                                     <label className="block text-sm font-medium text-gray-700 mb-1.5">
                                         Year *
                                     </label>
-                                    <input
-                                        type="number"
-                                        name="year"
-                                        value={formData.year}
-                                        onChange={handleChange}
-                                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                        required
-                                        min={1900}
-                                        max={new Date().getFullYear() + 1}
-                                    />
+                                    <div className="relative">
+                                        <select
+                                            name="year"
+                                            value={formData.year}
+                                            onChange={handleChange}
+                                            className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white appearance-none"
+                                            required
+                                        >
+                                            {yearRange.map((year) => (
+                                                <option key={year} value={year}>
+                                                    {year}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                    </div>
                                 </div>
-                                <div>
+                                <div className="relative">
                                     <label className="block text-sm font-medium text-gray-700 mb-1.5">
                                         Make *
                                     </label>
-                                    <input
-                                        type="text"
-                                        name="make"
-                                        value={formData.make}
-                                        onChange={handleChange}
-                                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                        required
-                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowMakeDropdown(!showMakeDropdown);
+                                            setShowModelDropdown(false);
+                                        }}
+                                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-left flex items-center justify-between"
+                                    >
+                                        <span className={formData.make ? "text-gray-900" : "text-gray-400"}>
+                                            {formData.make || "Select Make"}
+                                        </span>
+                                        <ChevronDown className="w-4 h-4 text-gray-400" />
+                                    </button>
+                                    {showMakeDropdown && (
+                                        <div className="absolute z-20 mt-1 w-full max-h-64 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg">
+                                            {vehicleMakes.map((make) => (
+                                                <button
+                                                    key={make.name}
+                                                    type="button"
+                                                    onClick={() => handleMakeChange(make.name)}
+                                                    className="w-full px-4 py-2 text-left hover:bg-blue-50 text-gray-900 text-sm"
+                                                >
+                                                    {make.name}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
-                                <div>
+                                <div className="relative">
                                     <label className="block text-sm font-medium text-gray-700 mb-1.5">
                                         Model *
                                     </label>
-                                    <input
-                                        type="text"
-                                        name="model"
-                                        value={formData.model}
-                                        onChange={handleChange}
-                                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                        required
-                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (!formData.make) {
+                                                alert("Please select a Make first");
+                                                return;
+                                            }
+                                            setShowModelDropdown(!showModelDropdown);
+                                            setShowMakeDropdown(false);
+                                        }}
+                                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-left flex items-center justify-between"
+                                        disabled={!formData.make}
+                                    >
+                                        <span className={formData.model ? "text-gray-900" : "text-gray-400"}>
+                                            {formData.model || "Select Model"}
+                                        </span>
+                                        <ChevronDown className="w-4 h-4 text-gray-400" />
+                                    </button>
+                                    {showModelDropdown && availableModels.length > 0 && (
+                                        <div className="absolute z-20 mt-1 w-full max-h-64 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg">
+                                            {availableModels.map((model) => (
+                                                <button
+                                                    key={model}
+                                                    type="button"
+                                                    onClick={() => handleModelChange(model)}
+                                                    className="w-full px-4 py-2 text-left hover:bg-blue-50 text-gray-900 text-sm"
+                                                >
+                                                    {model}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
@@ -408,7 +519,7 @@ export default function VehicleFormModal({
                                 </div>
                             </div>
 
-                            {/* Image Gallery */}
+                            {/* Image Gallery - FIXED */}
                             <div className="space-y-3">
                                 <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
                                     Images
@@ -418,36 +529,59 @@ export default function VehicleFormModal({
                                         type="url"
                                         value={newImageUrl}
                                         onChange={(e) => setNewImageUrl(e.target.value)}
-                                        placeholder="Enter image URL"
+                                        onKeyDown={handleKeyDown}
+                                        placeholder="Enter image URL (e.g., https://example.com/image.jpg)"
                                         className="flex-1 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                     />
                                     <button
                                         type="button"
                                         onClick={handleAddImage}
-                                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 whitespace-nowrap"
                                     >
                                         <Plus className="w-4 h-4" />
                                         Add
                                     </button>
                                 </div>
-                                {formData.image_gallery.length > 0 && (
-                                    <div className="grid grid-cols-3 gap-2">
-                                        {formData.image_gallery.map((url, index) => (
-                                            <div key={index} className="relative group">
-                                                <img
-                                                    src={url}
-                                                    alt={`Vehicle image ${index + 1}`}
-                                                    className="w-full h-24 object-cover rounded-lg"
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleRemoveImage(index)}
-                                                    className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                                                >
-                                                    <XIcon className="w-3 h-3" />
-                                                </button>
-                                            </div>
-                                        ))}
+                                <p className="text-xs text-gray-400">
+                                    Press Enter or click Add to add images
+                                </p>
+
+                                {/* Image Gallery Preview */}
+                                {formData.image_gallery.length > 0 ? (
+                                    <div>
+                                        <p className="text-sm font-medium text-gray-700 mb-2">
+                                            {formData.image_gallery.length} image{formData.image_gallery.length > 1 ? 's' : ''} added
+                                        </p>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {formData.image_gallery.map((url, index) => (
+                                                <div key={index} className="relative group">
+                                                    <img
+                                                        src={url}
+                                                        alt={`Vehicle image ${index + 1}`}
+                                                        className="w-full h-24 object-cover rounded-lg border border-gray-200"
+                                                        onError={(e) => {
+                                                            (e.target as HTMLImageElement).src = 'https://placehold.co/100x100/e2e8f0/64748b?text=Invalid+URL';
+                                                        }}
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRemoveImage(index)}
+                                                        className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                                    >
+                                                        <XIcon className="w-3 h-3" />
+                                                    </button>
+                                                    <span className="absolute bottom-1 left-1 text-[10px] bg-black/50 text-white px-1.5 py-0.5 rounded">
+                                                        {index + 1}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-4 border-2 border-dashed border-gray-200 rounded-lg">
+                                        <ImageIcon className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                                        <p className="text-sm text-gray-400">No images added yet</p>
+                                        <p className="text-xs text-gray-400">Add image URLs above</p>
                                     </div>
                                 )}
                             </div>

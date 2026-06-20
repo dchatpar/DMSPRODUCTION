@@ -107,13 +107,37 @@ export async function POST(req: NextRequest) {
             }
         }
 
+        // Check for duplicate stock_number if provided
+        if (payload.stock_number) {
+            const { data: existing } = await supabase
+                .from("vehicles")
+                .select("id, stock_number")
+                .eq("stock_number", payload.stock_number)
+                .single();
+
+            if (existing) {
+                return NextResponse.json(
+                    { error: `Stock number "${payload.stock_number}" is already used by another vehicle` },
+                    { status: 400 }
+                );
+            }
+        }
+
         const { data, error: dbError } = await supabase
             .from("vehicles")
             .insert(payload)
             .select()
             .single();
 
-        if (dbError) throw dbError;
+        if (dbError) {
+            if (dbError.code === "23505") {
+                return NextResponse.json(
+                    { error: "A vehicle with this stock number or VIN already exists" },
+                    { status: 400 }
+                );
+            }
+            throw dbError;
+        }
 
         return NextResponse.json({ data }, { status: 201 });
     } catch (error: any) {

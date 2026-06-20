@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import UserDetailsModal from "@/src/components/UserDetailsModal";
 import UserFormModal from "@/src/components/UserFormModal";
+import ConfirmDialog from "@/src/components/ConfirmDialog";
 
 
 interface User {
@@ -63,6 +64,13 @@ export default function UsersPage() {
     const [showFormModal, setShowFormModal] = useState(false);
     const [formMode, setFormMode] = useState<"add" | "edit">("add");
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
+
+    // Confirm dialog state
+    const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+    const [confirmDialogData, setConfirmDialogData] = useState<{
+        user: User | null;
+        loading: boolean;
+    }>({ user: null, loading: false });
 
     useEffect(() => {
         fetchUsers();
@@ -124,24 +132,40 @@ export default function UsersPage() {
     };
 
     const handleDelete = async (user: User) => {
-        if (!confirm(`Are you sure you want to delete ${user.full_name}?`)) return;
+        setConfirmDialogData({ user, loading: false });
+        setShowConfirmDialog(true);
+    };
+
+    const confirmDelete = async () => {
+        if (!confirmDialogData.user) return;
+
+        const userId = confirmDialogData.user.id;
+        setConfirmDialogData((prev) => ({ ...prev, loading: true }));
 
         try {
             const token = localStorage.getItem("access_token");
-            const response = await fetch(`/api/users/${user.id}`, {
+            const response = await fetch(`/api/users/${userId}`, {
                 method: "DELETE",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
+                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!response.ok) {
                 throw new Error("Failed to delete user");
             }
 
+            // Clear dialog state
+            setConfirmDialogData({ user: null, loading: false });
+            setShowConfirmDialog(false);
+
+            // Remove from local state immediately for faster UX
+            setUsers((prev) => prev.filter((u) => u.id !== userId));
+            setTotalItems((prev) => prev - 1);
+
+            // Re-fetch to ensure consistency
             fetchUsers();
         } catch (err) {
             alert(err instanceof Error ? err.message : "An error occurred");
+            setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
     };
 
@@ -467,6 +491,22 @@ export default function UsersPage() {
                         setSelectedUser(null);
                     }}
                     onSuccess={handleFormSuccess}
+                />
+            )}
+
+            {showConfirmDialog && confirmDialogData.user && (
+                <ConfirmDialog
+                    isOpen={showConfirmDialog}
+                    title="Delete User"
+                    message={`Are you sure you want to delete ${confirmDialogData.user.full_name}? This action cannot be undone.`}
+                    confirmText={confirmDialogData.loading ? "Deleting..." : "Delete"}
+                    variant="danger"
+                    loading={confirmDialogData.loading}
+                    onConfirm={confirmDelete}
+                    onCancel={() => {
+                        setShowConfirmDialog(false);
+                        setConfirmDialogData({ user: null, loading: false });
+                    }}
                 />
             )}
         </div>

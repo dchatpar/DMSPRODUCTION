@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import VehicleDetailsModal from "@/src/components/VehicleDetailsModal";
 import VehicleFormModal from "@/src/components/VehicleFormModal";
+import ConfirmDialog from "@/src/components/ConfirmDialog";
 
 interface Vehicle {
     id: string;
@@ -78,6 +79,13 @@ export default function InventoryPage() {
     const [showFormModal, setShowFormModal] = useState(false);
     const [formMode, setFormMode] = useState<"add" | "edit">("add");
     const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
+
+    // Confirm dialog state
+    const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+    const [confirmDialogData, setConfirmDialogData] = useState<{
+        vehicle: Vehicle | null;
+        loading: boolean;
+    }>({ vehicle: null, loading: false });
 
     useEffect(() => {
         fetchVehicles();
@@ -136,6 +144,47 @@ export default function InventoryPage() {
         setShowFormModal(false);
         setSelectedVehicle(null);
         fetchVehicles();
+    };
+
+    const handleDelete = async (vehicle: Vehicle) => {
+        setConfirmDialogData({ vehicle, loading: false });
+        setShowConfirmDialog(true);
+    };
+
+    const confirmDelete = async () => {
+        if (!confirmDialogData.vehicle) return;
+
+        const vehicleId = confirmDialogData.vehicle.id;
+        setConfirmDialogData((prev) => ({ ...prev, loading: true }));
+
+        try {
+            const token = localStorage.getItem("access_token");
+            const response = await fetch(`/api/vehicles/${vehicleId}`, {
+                method: "DELETE",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || "Failed to delete vehicle");
+            }
+
+            // Clear dialog state
+            setConfirmDialogData({ vehicle: null, loading: false });
+            setShowConfirmDialog(false);
+
+            // Remove from local state immediately for faster UX
+            setVehicles((prev) => prev.filter((v) => v.id !== vehicleId));
+            setTotalItems((prev) => prev - 1);
+
+            // Re-fetch to ensure consistency
+            fetchVehicles();
+        } catch (err) {
+            alert(err instanceof Error ? err.message : "An error occurred");
+            setConfirmDialogData((prev) => ({ ...prev, loading: false }));
+        }
     };
 
     const getStatusColor = (status: string) => {
@@ -408,6 +457,7 @@ export default function InventoryPage() {
                                                         <Edit className="w-4 h-4 text-amber-500" />
                                                     </button>
                                                     <button
+                                                        onClick={() => handleDelete(vehicle)}
                                                         className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
                                                         title="Delete"
                                                     >
@@ -479,6 +529,22 @@ export default function InventoryPage() {
                         setSelectedVehicle(null);
                     }}
                     onSuccess={handleFormSuccess}
+                />
+            )}
+
+            {showConfirmDialog && confirmDialogData.vehicle && (
+                <ConfirmDialog
+                    isOpen={showConfirmDialog}
+                    title="Delete Vehicle"
+                    message={`Are you sure you want to delete this vehicle?\n${confirmDialogData.vehicle.year} ${confirmDialogData.vehicle.make} ${confirmDialogData.vehicle.model}`}
+                    confirmText="Delete"
+                    variant="danger"
+                    loading={confirmDialogData.loading}
+                    onConfirm={confirmDelete}
+                    onCancel={() => {
+                        setShowConfirmDialog(false);
+                        setConfirmDialogData({ vehicle: null, loading: false });
+                    }}
                 />
             )}
         </div>

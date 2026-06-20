@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import CustomerDetailsModal from "@/src/components/CustomerDetailsModal";
 import CustomerFormModal from "@/src/components/CustomerFormModal";
+import ConfirmDialog from "@/src/components/ConfirmDialog";
 
 interface Customer {
     id: string;
@@ -67,6 +68,13 @@ export default function CustomersPage() {
     const [showFormModal, setShowFormModal] = useState(false);
     const [formMode, setFormMode] = useState<"add" | "edit">("add");
     const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+
+    // Confirm dialog state
+    const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+    const [confirmDialogData, setConfirmDialogData] = useState<{
+        customer: Customer | null;
+        loading: boolean;
+    }>({ customer: null, loading: false });
 
     useEffect(() => {
         fetchCustomers();
@@ -128,15 +136,21 @@ export default function CustomersPage() {
     };
 
     const handleDelete = async (customer: Customer) => {
-        if (!confirm(`Are you sure you want to delete ${customer.name}?`)) return;
+        setConfirmDialogData({ customer, loading: false });
+        setShowConfirmDialog(true);
+    };
+
+    const confirmDelete = async () => {
+        if (!confirmDialogData.customer) return;
+
+        const customerId = confirmDialogData.customer.id;
+        setConfirmDialogData((prev) => ({ ...prev, loading: true }));
 
         try {
             const token = localStorage.getItem("access_token");
-            const response = await fetch(`/api/customers/${customer.id}`, {
+            const response = await fetch(`/api/customers/${customerId}`, {
                 method: "DELETE",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
+                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!response.ok) {
@@ -144,9 +158,19 @@ export default function CustomersPage() {
                 throw new Error(errorData.error || "Failed to delete customer");
             }
 
+            // Clear dialog state
+            setConfirmDialogData({ customer: null, loading: false });
+            setShowConfirmDialog(false);
+
+            // Remove from local state immediately for faster UX
+            setCustomers((prev) => prev.filter((c) => c.id !== customerId));
+            setTotalItems((prev) => prev - 1);
+
+            // Re-fetch to ensure consistency
             fetchCustomers();
         } catch (err) {
             alert(err instanceof Error ? err.message : "An error occurred");
+            setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
     };
 
@@ -476,6 +500,22 @@ export default function CustomersPage() {
                         setSelectedCustomer(null);
                     }}
                     onSuccess={handleFormSuccess}
+                />
+            )}
+
+            {showConfirmDialog && confirmDialogData.customer && (
+                <ConfirmDialog
+                    isOpen={showConfirmDialog}
+                    title="Delete Customer"
+                    message={`Are you sure you want to delete ${confirmDialogData.customer.name}? This action cannot be undone.`}
+                    confirmText={confirmDialogData.loading ? "Deleting..." : "Delete"}
+                    variant="danger"
+                    loading={confirmDialogData.loading}
+                    onConfirm={confirmDelete}
+                    onCancel={() => {
+                        setShowConfirmDialog(false);
+                        setConfirmDialogData({ customer: null, loading: false });
+                    }}
                 />
             )}
         </div>

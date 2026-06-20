@@ -1,8 +1,8 @@
-// app/api/invoices/route.ts
+// app/api/deals/route.ts
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
 
-// GET all invoices
+// GET all deals
 export async function GET(req: NextRequest) {
     try {
         let supabase;
@@ -36,18 +36,20 @@ export async function GET(req: NextRequest) {
         const q = url.searchParams.get("q");
 
         let query = supabase
-            .from("invoices")
+            .from("sales_deals")
             .select(`
                 *,
-                customer:customers(id, name, email, phone)
+                vehicle:vehicles(id, vin, year, make, model, retail_price, image_gallery, status, condition),
+                customer:customers(id, name, email, phone),
+                salesperson:users(id, full_name, email, avatar)
             `, { count: "exact" })
             .order("created_at", { ascending: false })
             .range(offset, offset + limit - 1);
 
-        if (status) query = query.eq("status", status);
+        if (status) query = query.eq("deal_status", status);
         if (q) {
             query = query.or(
-                `invoice_number.ilike.%${q}%,customer.name.ilike.%${q}%,package_name.ilike.%${q}%`
+                `vehicle.make.ilike.%${q}%,vehicle.model.ilike.%${q}%,customer.name.ilike.%${q}%,notes.ilike.%${q}%`
             );
         }
 
@@ -62,7 +64,7 @@ export async function GET(req: NextRequest) {
             offset,
         });
     } catch (error: any) {
-        console.error("Error fetching invoices:", error);
+        console.error("Error fetching deals:", error);
         return NextResponse.json(
             { error: error?.message || "Internal server error" },
             { status: 500 }
@@ -70,7 +72,7 @@ export async function GET(req: NextRequest) {
     }
 }
 
-// POST create invoice
+// POST create deal
 export async function POST(req: NextRequest) {
     try {
         let supabase;
@@ -100,7 +102,7 @@ export async function POST(req: NextRequest) {
         const payload = await req.json();
 
         // Validate required fields
-        const required = ["invoice_number", "customer_id", "payment_amount"];
+        const required = ["vehicle_id", "customer_id", "sale_price"];
         for (const field of required) {
             if (!payload[field]) {
                 return NextResponse.json(
@@ -110,47 +112,54 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        // Validate status if provided
-        const validStatuses = ['Pending', 'Paid', 'Overdue', 'Cancelled'];
-        if (payload.status && !validStatuses.includes(payload.status)) {
+        // Validate deal_status if provided
+        const validStatuses = ['Negotiation', 'Down Payment', 'Finance', 'Paid Off', 'Cancelled'];
+        if (payload.deal_status && !validStatuses.includes(payload.deal_status)) {
             return NextResponse.json(
-                { error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },
+                { error: `Invalid deal_status. Must be one of: ${validStatuses.join(', ')}` },
                 { status: 400 }
             );
         }
 
-        // Calculate tax and total if not provided
-        const taxRate = payload.tax_rate ?? 13;
-        const paymentAmount = parseFloat(payload.payment_amount) || 0;
-        const taxAmount = (paymentAmount * taxRate) / 100;
-        const total = paymentAmount + taxAmount;
+        // Set default values
+        const dealData = {
+            vehicle_id: payload.vehicle_id,
+            customer_id: payload.customer_id,
+            deal_status: payload.deal_status || 'Negotiation',
+            finance_term: payload.finance_term || null,
+            interest_rate: payload.interest_rate || null,
+            down_payment: payload.down_payment || 0,
+            sale_price: payload.sale_price,
+            salesperson_id: payload.salesperson_id || user.id,
+            finance_company: payload.finance_company || null,
+            notes: payload.notes || null,
+            deal_date: payload.deal_date || new Date().toISOString().split('T')[0],
+        };
 
         const { data, error: dbError } = await supabase
-            .from("invoices")
-            .insert({
-                invoice_number: payload.invoice_number,
-                customer_id: payload.customer_id,
-                invoice_date: payload.invoice_date || new Date().toISOString().split("T")[0],
-                due_date: payload.due_date || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-                package_name: payload.package_name || null,
-                payment_amount: paymentAmount,
-                tax_rate: taxRate,
-                tax_amount: taxAmount,
-                total: total,
-                status: payload.status || 'Pending',
-                notes: payload.notes || null,
-            })
+            .from("sales_deals")
+            .insert(dealData)
             .select(`
                 *,
-                customer:customers(id, name, email, phone)
+                vehicle:vehicles(id, vin, year, make, model, retail_price, image_gallery, status, condition),
+                customer:customers(id, name, email, phone),
+                salesperson:users(id, full_name, email, avatar)
             `)
             .single();
 
         if (dbError) throw dbError;
 
+        // If deal is marked as Paid Off, update vehicle status to Sold
+        if (payload.deal_status === 'Paid Off' || payload.close_deal) {
+            await supabase
+                .from("vehicles")
+                .update({ status: 'Sold' })
+                .eq("id", payload.vehicle_id);
+        }
+
         return NextResponse.json({ data }, { status: 201 });
     } catch (error: any) {
-        console.error("Error creating invoice:", error);
+        console.error("Error creating deal:", error);
         return NextResponse.json(
             { error: error?.message || "Internal server error" },
             { status: 500 }

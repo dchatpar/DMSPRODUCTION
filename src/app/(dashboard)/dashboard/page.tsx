@@ -70,6 +70,20 @@ interface RecentLead {
 
 interface DashboardData {
     stats: DashboardStats;
+    changes: {
+        vehicles: number;
+        customers: number;
+        leads: number;
+        sales: number;
+        invoices: number;
+        activeVehicles: number;
+    };
+    kpis: {
+        completionRate: number;
+        revenueGrowth: number;
+        activeUsers: number;
+        avgResponseHours: number;
+    };
     recentSales: RecentSale[];
     recentLeads: RecentLead[];
 }
@@ -120,6 +134,87 @@ export default function DashboardPage() {
         fetchDashboard();
     }, [router]);
 
+    // Handle Export Report
+    const handleExportReport = async () => {
+        try {
+            const token = localStorage.getItem("access_token");
+            if (!token) {
+                router.push("/login");
+                return;
+            }
+
+            // Fetch all data for export
+            const [vehiclesRes, customersRes, leadsRes, dealsRes, invoicesRes] = await Promise.all([
+                fetch("/api/vehicles?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
+                fetch("/api/customers?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
+                fetch("/api/leads?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
+                fetch("/api/deals?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
+                fetch("/api/invoices?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
+            ]);
+
+            const [vehicles, customers, leads, deals, invoices] = await Promise.all([
+                vehiclesRes.json(),
+                customersRes.json(),
+                leadsRes.json(),
+                dealsRes.json(),
+                invoicesRes.json(),
+            ]);
+
+            // Convert to CSV
+            const csvRows: string[] = [];
+
+            // Vehicles sheet
+            csvRows.push("=== VEHICLES ===");
+            csvRows.push("VIN,Stock#,Year,Make,Model,Condition,Status,Purchase Price,Retail Price");
+            vehicles.data?.forEach((v: any) => {
+                csvRows.push(`${v.vin},${v.stock_number || ""},${v.year},${v.make},${v.model},${v.condition},${v.status},${v.purchase_price},${v.retail_price}`);
+            });
+
+            csvRows.push("");
+            csvRows.push("=== CUSTOMERS ===");
+            csvRows.push("Name,Email,Phone,Address,City,Province,Status");
+            customers.data?.forEach((c: any) => {
+                csvRows.push(`${c.name},${c.email || ""},${c.phone || ""},${c.address || ""},${c.city || ""},${c.province || ""},${c.status}`);
+            });
+
+            csvRows.push("");
+            csvRows.push("=== LEADS ===");
+            csvRows.push("Customer,Source,Status,Notes,Created Date");
+            leads.data?.forEach((l: any) => {
+                csvRows.push(`${l.customer?.name || ""},${l.source},${l.status},${l.notes || ""},${l.lead_creation_date}`);
+            });
+
+            csvRows.push("");
+            csvRows.push("=== DEALS ===");
+            csvRows.push("Vehicle,Customer,Salesperson,Status,Sale Price,Down Payment,Deal Date");
+            deals.data?.forEach((d: any) => {
+                csvRows.push(`${d.vehicle?.year} ${d.vehicle?.make} ${d.vehicle?.model},${d.customer?.name},${d.salesperson?.full_name},${d.deal_status},${d.sale_price},${d.down_payment},${d.deal_date}`);
+            });
+
+            csvRows.push("");
+            csvRows.push("=== INVOICES ===");
+            csvRows.push("Invoice#,Customer,Amount,Tax,Total,Status,Invoice Date,Due Date");
+            invoices.data?.forEach((i: any) => {
+                csvRows.push(`${i.invoice_number},${i.customer?.name},${i.payment_amount},${i.tax_amount},${i.total},${i.status},${i.invoice_date},${i.due_date}`);
+            });
+
+            // Download CSV
+            const csvContent = csvRows.join("\n");
+            const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `dms-export-${new Date().toISOString().split("T")[0]}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error("Export error:", err);
+            alert("Failed to export data. Please try again.");
+        }
+    };
+
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-[400px]">
@@ -153,7 +248,7 @@ export default function DashboardPage() {
         return null;
     }
 
-    const { stats, recentSales, recentLeads } = data;
+    const { stats, changes, kpis, recentSales, recentLeads } = data;
 
     // Stats cards configuration
     const statCards = [
@@ -162,8 +257,7 @@ export default function DashboardPage() {
             value: stats.totalVehicles,
             icon: Car,
             color: "blue",
-            change: "+12%",
-            trend: "up",
+            change: changes.vehicles,
             subtitle: "Active: " + stats.activeVehicles,
         },
         {
@@ -171,8 +265,7 @@ export default function DashboardPage() {
             value: stats.totalCustomers,
             icon: Users,
             color: "green",
-            change: "+8%",
-            trend: "up",
+            change: changes.customers,
             subtitle: "New this month",
         },
         {
@@ -180,8 +273,7 @@ export default function DashboardPage() {
             value: stats.totalLeads,
             icon: User,
             color: "purple",
-            change: "+5%",
-            trend: "up",
+            change: changes.leads,
             subtitle: "In progress",
         },
         {
@@ -189,8 +281,7 @@ export default function DashboardPage() {
             value: stats.totalSales,
             icon: DollarSign,
             color: "orange",
-            change: "+15%",
-            trend: "up",
+            change: changes.sales,
             subtitle: "This quarter",
         },
         {
@@ -198,8 +289,7 @@ export default function DashboardPage() {
             value: stats.totalInvoices,
             icon: FileText,
             color: "red",
-            change: "-2%",
-            trend: "down",
+            change: changes.invoices,
             subtitle: stats.pendingInvoices + " pending",
         },
         {
@@ -207,8 +297,7 @@ export default function DashboardPage() {
             value: stats.activeVehicles,
             icon: Package,
             color: "teal",
-            change: "+3%",
-            trend: "up",
+            change: changes.activeVehicles,
             subtitle: "Available",
         },
     ];
@@ -249,14 +338,21 @@ export default function DashboardPage() {
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
-                    <button className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2">
+                    <button
+                        onClick={handleExportReport}
+                        className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 flex items-center gap-2 transition-colors"
+                    >
                         <Download className="w-4 h-4" />
                         Export Report
                     </button>
-                    <button className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2">
+                    {/* <button
+                        disabled
+                        className="px-4 py-2 text-sm font-medium text-slate-400 bg-white border border-slate-200 rounded-lg cursor-not-allowed flex items-center gap-2"
+                        title="Deals module coming soon"
+                    >
                         <Plus className="w-4 h-4" />
                         New Deal
-                    </button>
+                    </button> */}
                 </div>
             </div>
 
@@ -264,8 +360,9 @@ export default function DashboardPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                 {statCards.map((stat, index) => {
                     const Icon = stat.icon;
-                    const isTrendUp = stat.trend === "up";
+                    const isTrendUp = stat.change >= 0;
                     const colors = getColorStyles(stat.color);
+                    const changeText = stat.change >= 0 ? `+${stat.change}%` : `${stat.change}%`;
 
                     return (
                         <div
@@ -286,7 +383,7 @@ export default function DashboardPage() {
                                         className={`text-xs font-medium ${isTrendUp ? "text-green-600" : "text-red-600"
                                             }`}
                                     >
-                                        {stat.change}
+                                        {changeText}
                                     </span>
                                 </div>
                             </div>
@@ -311,7 +408,10 @@ export default function DashboardPage() {
                             <h3 className="font-semibold text-slate-900">Recent Sales</h3>
                             <p className="text-xs text-slate-600">Latest deals closed</p>
                         </div>
-                        <button className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
+                        <button
+                            onClick={() => router.push("/deals")}
+                            className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+                        >
                             View All
                             <ArrowUpRight className="w-3 h-3" />
                         </button>
@@ -367,7 +467,10 @@ export default function DashboardPage() {
                             <h3 className="font-semibold text-slate-900">Recent Leads</h3>
                             <p className="text-xs text-slate-600">New inquiries & prospects</p>
                         </div>
-                        <button className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
+                        <button
+                            onClick={() => router.push("/leads")}
+                            className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+                        >
                             View All
                             <ArrowUpRight className="w-3 h-3" />
                         </button>
@@ -445,8 +548,12 @@ export default function DashboardPage() {
                     <p className="text-sm font-medium text-slate-900">Add Lead</p>
                     <p className="text-xs text-slate-600">New prospect</p>
                 </button>
-                <button className="p-4 bg-white rounded-xl border border-slate-200/60 hover:shadow-md transition-all text-left group">
-                    <div className="p-2 rounded-lg bg-orange-50 w-fit mb-2 group-hover:bg-orange-100 transition-colors">
+                <button
+                    disabled
+                    className="p-4 bg-white rounded-xl border border-slate-200/60 text-left group opacity-60 cursor-not-allowed"
+                    title="Invoices module coming soon"
+                >
+                    <div className="p-2 rounded-lg bg-orange-50 w-fit mb-2">
                         <FileText className="w-5 h-5 text-orange-600" />
                     </div>
                     <p className="text-sm font-medium text-slate-900">Create Invoice</p>
@@ -463,7 +570,7 @@ export default function DashboardPage() {
                         </div>
                         <div>
                             <p className="text-xs text-blue-700 font-medium">Completion Rate</p>
-                            <p className="text-lg font-bold text-blue-900">87%</p>
+                            <p className="text-lg font-bold text-blue-900">{kpis.completionRate}%</p>
                         </div>
                     </div>
                 </div>
@@ -474,7 +581,7 @@ export default function DashboardPage() {
                         </div>
                         <div>
                             <p className="text-xs text-green-700 font-medium">Revenue Growth</p>
-                            <p className="text-lg font-bold text-green-900">+23%</p>
+                            <p className="text-lg font-bold text-green-900">{kpis.revenueGrowth >= 0 ? '+' : ''}{kpis.revenueGrowth}%</p>
                         </div>
                     </div>
                 </div>
@@ -485,7 +592,7 @@ export default function DashboardPage() {
                         </div>
                         <div>
                             <p className="text-xs text-purple-700 font-medium">Active Users</p>
-                            <p className="text-lg font-bold text-purple-900">12</p>
+                            <p className="text-lg font-bold text-purple-900">{kpis.activeUsers}</p>
                         </div>
                     </div>
                 </div>
@@ -496,7 +603,7 @@ export default function DashboardPage() {
                         </div>
                         <div>
                             <p className="text-xs text-orange-700 font-medium">Avg. Response</p>
-                            <p className="text-lg font-bold text-orange-900">2.4h</p>
+                            <p className="text-lg font-bold text-orange-900">{kpis.avgResponseHours}h</p>
                         </div>
                     </div>
                 </div>
