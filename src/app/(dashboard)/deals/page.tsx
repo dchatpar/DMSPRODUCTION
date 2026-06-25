@@ -25,10 +25,12 @@ import {
     XCircle,
     LayoutGrid,
     List,
+    FileSignature,
 } from "lucide-react";
 import DealDetailsModal from "@/src/components/DealDetailsModal";
 import DealFormModal from "@/src/components/DealFormModal";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
+import BillOfSaleModal from "@/src/components/BillOfSaleModal";
 
 interface Vehicle {
     id: string;
@@ -122,6 +124,13 @@ export default function DealsPage() {
         loading: boolean;
     }>({ deal: null, loading: false });
 
+    // Bill of Sale modal state
+    const [showBillOfSaleModal, setShowBillOfSaleModal] = useState(false);
+    const [selectedDealForBillOfSale, setSelectedDealForBillOfSale] = useState<Deal | null>(null);
+    const [billOfSaleModalMode, setBillOfSaleModalMode] = useState<"add" | "edit" | "view">("add");
+    const [billOfSaleData, setBillOfSaleData] = useState<any>(null);
+    const [loadingBillOfSale, setLoadingBillOfSale] = useState(false);
+
     useEffect(() => {
         fetchDeals();
     }, [currentPage, statusFilter, searchTerm]);
@@ -184,6 +193,43 @@ export default function DealsPage() {
     const handleDelete = async (deal: Deal) => {
         setConfirmDialogData({ deal, loading: false });
         setShowConfirmDialog(true);
+    };
+
+    const handleOpenBillOfSale = async (deal: Deal) => {
+        setLoadingBillOfSale(true);
+        try {
+            const token = localStorage.getItem("access_token");
+            // Check if bill of sale exists for this deal
+            const response = await fetch(`/api/bill-of-sale?deal_id=${deal.id}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data.data && data.data.length > 0) {
+                    // Bill of sale exists - open in edit mode
+                    setBillOfSaleData(data.data[0]);
+                    setSelectedDealForBillOfSale(deal);
+                    setBillOfSaleModalMode("edit");
+                    setShowBillOfSaleModal(true);
+                } else {
+                    // No bill of sale - open in add mode
+                    setBillOfSaleData(null);
+                    setSelectedDealForBillOfSale(deal);
+                    setBillOfSaleModalMode("add");
+                    setShowBillOfSaleModal(true);
+                }
+            }
+        } catch (err) {
+            console.error("Error fetching bill of sale:", err);
+            // Open anyway in add mode
+            setBillOfSaleData(null);
+            setSelectedDealForBillOfSale(deal);
+            setBillOfSaleModalMode("add");
+            setShowBillOfSaleModal(true);
+        } finally {
+            setLoadingBillOfSale(false);
+        }
     };
 
     const confirmDelete = async () => {
@@ -494,6 +540,18 @@ export default function DealsPage() {
                                             <td className="px-4 py-3 text-right">
                                                 <div className="flex items-center justify-end gap-1">
                                                     <button
+                                                        onClick={() => handleOpenBillOfSale(deal)}
+                                                        disabled={loadingBillOfSale}
+                                                        className="p-1.5 hover:bg-green-50 rounded-lg transition-colors disabled:opacity-50"
+                                                        title="Bill of Sale"
+                                                    >
+                                                        {loadingBillOfSale ? (
+                                                            <Loader2 className="w-4 h-4 text-green-600 animate-spin" />
+                                                        ) : (
+                                                            <FileSignature className="w-4 h-4 text-green-600" />
+                                                        )}
+                                                    </button>
+                                                    <button
                                                         onClick={() => handleViewDetails(deal)}
                                                         className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
                                                         title="View Details"
@@ -660,6 +718,25 @@ export default function DealsPage() {
                     onCancel={() => {
                         setShowConfirmDialog(false);
                         setConfirmDialogData({ deal: null, loading: false });
+                    }}
+                />
+            )}
+
+            {showBillOfSaleModal && selectedDealForBillOfSale && (
+                <BillOfSaleModal
+                    mode={billOfSaleModalMode}
+                    deal={selectedDealForBillOfSale}
+                    billOfSale={billOfSaleData}
+                    onClose={() => {
+                        setShowBillOfSaleModal(false);
+                        setSelectedDealForBillOfSale(null);
+                        setBillOfSaleData(null);
+                    }}
+                    onSuccess={() => {
+                        setShowBillOfSaleModal(false);
+                        setSelectedDealForBillOfSale(null);
+                        setBillOfSaleData(null);
+                        fetchDeals();
                     }}
                 />
             )}
