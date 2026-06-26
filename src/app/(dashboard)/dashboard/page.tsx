@@ -527,21 +527,30 @@ export default function DashboardPage() {
 
             {/* Quick Actions */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <button className="p-4 bg-white rounded-xl border border-slate-200/60 hover:shadow-md transition-all text-left group">
+                <button
+                    onClick={() => router.push("/inventory")}
+                    className="p-4 bg-white rounded-xl border border-slate-200/60 hover:shadow-md transition-all text-left group"
+                >
                     <div className="p-2 rounded-lg bg-blue-50 w-fit mb-2 group-hover:bg-blue-100 transition-colors">
                         <Car className="w-5 h-5 text-blue-600" />
                     </div>
                     <p className="text-sm font-medium text-slate-900">Add Vehicle</p>
                     <p className="text-xs text-slate-600">List new inventory</p>
                 </button>
-                <button className="p-4 bg-white rounded-xl border border-slate-200/60 hover:shadow-md transition-all text-left group">
+                <button
+                    onClick={() => router.push("/customers")}
+                    className="p-4 bg-white rounded-xl border border-slate-200/60 hover:shadow-md transition-all text-left group"
+                >
                     <div className="p-2 rounded-lg bg-green-50 w-fit mb-2 group-hover:bg-green-100 transition-colors">
                         <Users className="w-5 h-5 text-green-600" />
                     </div>
                     <p className="text-sm font-medium text-slate-900">Add Customer</p>
                     <p className="text-xs text-slate-600">New client profile</p>
                 </button>
-                <button className="p-4 bg-white rounded-xl border border-slate-200/60 hover:shadow-md transition-all text-left group">
+                <button
+                    onClick={() => router.push("/leads")}
+                    className="p-4 bg-white rounded-xl border border-slate-200/60 hover:shadow-md transition-all text-left group"
+                >
                     <div className="p-2 rounded-lg bg-purple-50 w-fit mb-2 group-hover:bg-purple-100 transition-colors">
                         <User className="w-5 h-5 text-purple-600" />
                     </div>
@@ -549,11 +558,10 @@ export default function DashboardPage() {
                     <p className="text-xs text-slate-600">New prospect</p>
                 </button>
                 <button
-                    disabled
-                    className="p-4 bg-white rounded-xl border border-slate-200/60 text-left group opacity-60 cursor-not-allowed"
-                    title="Invoices module coming soon"
+                    onClick={() => router.push("/invoices")}
+                    className="p-4 bg-white rounded-xl border border-slate-200/60 hover:shadow-md transition-all text-left group"
                 >
-                    <div className="p-2 rounded-lg bg-orange-50 w-fit mb-2">
+                    <div className="p-2 rounded-lg bg-orange-50 w-fit mb-2 group-hover:bg-orange-100 transition-colors">
                         <FileText className="w-5 h-5 text-orange-600" />
                     </div>
                     <p className="text-sm font-medium text-slate-900">Create Invoice</p>

@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
                 *,
                 vehicle:vehicles(*),
                 customer:customers(*),
-                salesperson:users(id,full_name,email)
+                salesperson:users!sales_deals_salesperson_id_fkey(id,full_name,email)
             `, { count: "exact" })
             .order("created_at", { ascending: false })
             .range(offset, offset + limit - 1);

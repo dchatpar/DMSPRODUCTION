@@ -40,7 +40,7 @@ export async function GET(
                 *,
                 customer:customers(*),
                 vehicle:vehicles(*),
-                assigned_user:users(id, full_name, email, avatar)
+                assigned_user:users!assigned_to(id, full_name, email, avatar)
             `)
             .eq("id", id)
             .single();
@@ -147,7 +147,7 @@ export async function PUT(
                 *,
                 customer:customers(*),
                 vehicle:vehicles(*),
-                assigned_user:users(id, full_name, email, avatar)
+                assigned_user:users!assigned_to(id, full_name, email, avatar)
             `)
             .single();
 
@@ -255,7 +255,7 @@ export async function PATCH(
                 *,
                 customer:customers(*),
                 vehicle:vehicles(*),
-                assigned_user:users(id, full_name, email, avatar)
+                assigned_user:users!assigned_to(id, full_name, email, avatar)
             `)
             .single();
 

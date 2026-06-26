@@ -40,7 +40,7 @@ export async function GET(
                 *,
                 vehicle:vehicles(id, vin, year, make, model, retail_price, image_gallery, status, condition),
                 customer:customers(id, name, email, phone, address, city, province),
-                salesperson:users(id, full_name, email, avatar)
+                salesperson:users!sales_deals_salesperson_id_fkey(id, full_name, email, avatar)
             `)
             .eq("id", id)
             .single();
@@ -138,7 +138,7 @@ export async function PUT(
                 *,
                 vehicle:vehicles(id, vin, year, make, model, retail_price, image_gallery, status, condition),
                 customer:customers(id, name, email, phone),
-                salesperson:users(id, full_name, email, avatar)
+                salesperson:users!sales_deals_salesperson_id_fkey(id, full_name, email, avatar)
             `)
             .single();
 
@@ -235,7 +235,7 @@ export async function PATCH(
                 *,
                 vehicle:vehicles(id, vin, year, make, model, retail_price, image_gallery, status, condition),
                 customer:customers(id, name, email, phone),
-                salesperson:users(id, full_name, email, avatar)
+                salesperson:users!sales_deals_salesperson_id_fkey(id, full_name, email, avatar)
             `)
             .single();
 

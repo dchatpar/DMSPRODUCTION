@@ -27,6 +27,7 @@ import {
     FlaskConical,
     ReceiptIcon,
     Loader2,
+    Store,
 } from "lucide-react";
 
 interface UserData {
@@ -67,6 +68,7 @@ const navigationSections = [
         items: [
             { name: "Invoices", href: "/invoices", icon: Receipt },
             { name: "Expenses", href: "/expenses", icon: ReceiptIcon },
+            { name: "Vendors", href: "/vendors", icon: Store },
             { name: "Reports", href: "/reports", icon: BarChart3 },
         ],
     },

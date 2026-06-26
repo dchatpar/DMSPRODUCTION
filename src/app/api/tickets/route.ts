@@ -1,8 +1,8 @@
-// app/api/deals/route.ts
+// app/api/tickets/route.ts
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
 
-// GET all deals
+// GET all tickets
 export async function GET(req: NextRequest) {
     try {
         let supabase;
@@ -19,7 +19,6 @@ export async function GET(req: NextRequest) {
             throw error;
         }
 
-        // Verify user is authenticated
         const { data: { user }, error: authError } = await supabase.auth.getUser();
 
         if (authError || !user) {
@@ -33,23 +32,26 @@ export async function GET(req: NextRequest) {
         const limit = parseInt(url.searchParams.get("limit") || "50");
         const offset = parseInt(url.searchParams.get("offset") || "0");
         const status = url.searchParams.get("status");
+        const priority = url.searchParams.get("priority");
+        const assigned_to = url.searchParams.get("assigned_to");
         const q = url.searchParams.get("q");
 
         let query = supabase
-            .from("sales_deals")
+            .from("tickets")
             .select(`
                 *,
-                vehicle:vehicles(id, vin, year, make, model, retail_price, image_gallery, status, condition),
-                customer:customers(id, name, email, phone),
-                salesperson:users!sales_deals_salesperson_id_fkey(id, full_name, email, avatar)
+                assigned_user:users!tickets_assigned_to_fkey(id, full_name, email, avatar),
+                created_by_user:users!tickets_created_by_fkey(id, full_name)
             `, { count: "exact" })
             .order("created_at", { ascending: false })
             .range(offset, offset + limit - 1);
 
-        if (status) query = query.eq("deal_status", status);
+        if (status) query = query.eq("status", status);
+        if (priority) query = query.eq("priority", priority);
+        if (assigned_to) query = query.eq("assigned_to", assigned_to);
         if (q) {
             query = query.or(
-                `vehicle.make.ilike.%${q}%,vehicle.model.ilike.%${q}%,customer.name.ilike.%${q}%,notes.ilike.%${q}%`
+                `subject.ilike.%${q}%,description.ilike.%${q}%`
             );
         }
 
@@ -64,7 +66,7 @@ export async function GET(req: NextRequest) {
             offset,
         });
     } catch (error: any) {
-        console.error("Error fetching deals:", error);
+        console.error("Error fetching tickets:", error);
         return NextResponse.json(
             { error: error?.message || "Internal server error" },
             { status: 500 }
@@ -72,7 +74,7 @@ export async function GET(req: NextRequest) {
     }
 }
 
-// POST create deal
+// POST create ticket
 export async function POST(req: NextRequest) {
     try {
         let supabase;
@@ -89,7 +91,6 @@ export async function POST(req: NextRequest) {
             throw error;
         }
 
-        // Verify user is authenticated
         const { data: { user }, error: authError } = await supabase.auth.getUser();
 
         if (authError || !user) {
@@ -101,65 +102,54 @@ export async function POST(req: NextRequest) {
 
         const payload = await req.json();
 
-        // Validate required fields
-        const required = ["vehicle_id", "customer_id", "sale_price"];
-        for (const field of required) {
-            if (!payload[field]) {
-                return NextResponse.json(
-                    { error: `Missing required field: ${field}` },
-                    { status: 400 }
-                );
-            }
-        }
-
-        // Validate deal_status if provided
-        const validStatuses = ['Negotiation', 'Down Payment', 'Finance', 'Paid Off', 'Cancelled'];
-        if (payload.deal_status && !validStatuses.includes(payload.deal_status)) {
+        if (!payload.subject) {
             return NextResponse.json(
-                { error: `Invalid deal_status. Must be one of: ${validStatuses.join(', ')}` },
+                { error: "Subject is required" },
                 { status: 400 }
             );
         }
 
-        // Set default values
-        const dealData = {
-            vehicle_id: payload.vehicle_id,
-            customer_id: payload.customer_id,
-            deal_status: payload.deal_status || 'Negotiation',
-            finance_term: payload.finance_term || null,
-            interest_rate: payload.interest_rate || null,
-            down_payment: payload.down_payment || 0,
-            sale_price: payload.sale_price,
-            salesperson_id: payload.salesperson_id || user.id,
-            finance_company: payload.finance_company || null,
-            notes: payload.notes || null,
-            deal_date: payload.deal_date || new Date().toISOString().split('T')[0],
+        const validStatuses = ['Open', 'In Progress', 'Resolved', 'Closed'];
+        if (payload.status && !validStatuses.includes(payload.status)) {
+            return NextResponse.json(
+                { error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },
+                { status: 400 }
+            );
+        }
+
+        const validPriorities = ['Low', 'Medium', 'High', 'Urgent'];
+        if (payload.priority && !validPriorities.includes(payload.priority)) {
+            return NextResponse.json(
+                { error: `Invalid priority. Must be one of: ${validPriorities.join(', ')}` },
+                { status: 400 }
+            );
+        }
+
+        const ticketData = {
+            subject: payload.subject,
+            description: payload.description || null,
+            assigned_to: payload.assigned_to || null,
+            created_by: user.id,
+            priority: payload.priority || 'Medium',
+            status: payload.status || 'Open',
+            resolved_at: payload.status === 'Resolved' ? new Date().toISOString() : null,
         };
 
         const { data, error: dbError } = await supabase
-            .from("sales_deals")
-            .insert(dealData)
+            .from("tickets")
+            .insert(ticketData)
             .select(`
                 *,
-                vehicle:vehicles(id, vin, year, make, model, retail_price, image_gallery, status, condition),
-                customer:customers(id, name, email, phone),
-                salesperson:users!sales_deals_salesperson_id_fkey(id, full_name, email, avatar)
+                assigned_user:users!tickets_assigned_to_fkey(id, full_name, email, avatar),
+                created_by_user:users!tickets_created_by_fkey(id, full_name)
             `)
             .single();
 
         if (dbError) throw dbError;
 
-        // If deal is marked as Paid Off, update vehicle status to Sold
-        if (payload.deal_status === 'Paid Off' || payload.close_deal) {
-            await supabase
-                .from("vehicles")
-                .update({ status: 'Sold' })
-                .eq("id", payload.vehicle_id);
-        }
-
         return NextResponse.json({ data }, { status: 201 });
     } catch (error: any) {
-        console.error("Error creating deal:", error);
+        console.error("Error creating ticket:", error);
         return NextResponse.json(
             { error: error?.message || "Internal server error" },
             { status: 500 }

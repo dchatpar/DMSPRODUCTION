@@ -1,8 +1,8 @@
-// app/api/leads/route.ts
+// app/api/expenses/route.ts
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
 
-// GET all leads
+// GET all expenses
 export async function GET(req: NextRequest) {
     try {
         let supabase;
@@ -32,28 +32,32 @@ export async function GET(req: NextRequest) {
         const url = new URL(req.url);
         const limit = parseInt(url.searchParams.get("limit") || "50");
         const offset = parseInt(url.searchParams.get("offset") || "0");
+        const category = url.searchParams.get("category");
         const status = url.searchParams.get("status");
-        const source = url.searchParams.get("source");
-        const assigned_to = url.searchParams.get("assigned_to");
+        const vendor_id = url.searchParams.get("vendor_id");
+        const startDate = url.searchParams.get("start_date");
+        const endDate = url.searchParams.get("end_date");
         const q = url.searchParams.get("q");
 
         let query = supabase
-            .from("leads")
+            .from("expenses")
             .select(`
                 *,
-                customer:customers(*),
-                vehicle:vehicles(*),
-                assigned_user:users!assigned_to(id, full_name, email, avatar)
+                vendor:vendors(id, vendor_name, phone, gst_number, hst_number, pst_number),
+                vehicle:vehicles(id, make, model, year, vin),
+                entered_by_user:users!expenses_entered_by_fkey(id, full_name)
             `, { count: "exact" })
-            .order("created_at", { ascending: false })
+            .order("expense_date", { ascending: false })
             .range(offset, offset + limit - 1);
 
+        if (category) query = query.eq("category", category);
         if (status) query = query.eq("status", status);
-        if (source) query = query.eq("source", source);
-        if (assigned_to) query = query.eq("assigned_to", assigned_to);
+        if (vendor_id) query = query.eq("vendor_id", vendor_id);
+        if (startDate) query = query.gte("expense_date", startDate);
+        if (endDate) query = query.lte("expense_date", endDate);
         if (q) {
             query = query.or(
-                `customer.name.ilike.%${q}%,customer.email.ilike.%${q}%,customer.phone.ilike.%${q}%,notes.ilike.%${q}%`
+                `description.ilike.%${q}%,vendor.name.ilike.%${q}%,reference_number.ilike.%${q}%`
             );
         }
 
@@ -68,7 +72,7 @@ export async function GET(req: NextRequest) {
             offset,
         });
     } catch (error: any) {
-        console.error("Error fetching leads:", error);
+        console.error("Error fetching expenses:", error);
         return NextResponse.json(
             { error: error?.message || "Internal server error" },
             { status: 500 }
@@ -76,7 +80,7 @@ export async function GET(req: NextRequest) {
     }
 }
 
-// POST create lead
+// POST create expense
 export async function POST(req: NextRequest) {
     try {
         let supabase;
@@ -106,27 +110,29 @@ export async function POST(req: NextRequest) {
         const payload = await req.json();
 
         // Validate required fields
-        const required = ["customer_id"];
-        for (const field of required) {
-            if (!payload[field]) {
-                return NextResponse.json(
-                    { error: `Missing required field: ${field}` },
-                    { status: 400 }
-                );
-            }
+        if (!payload.amount || payload.amount <= 0) {
+            return NextResponse.json(
+                { error: "Amount must be greater than 0" },
+                { status: 400 }
+            );
         }
 
-        // Validate source if provided
-        const validSources = ['Website', 'Referral', 'Event', 'Walk-in', 'Facebook', 'Craigslist', 'Kijiji', 'Phone'];
-        if (payload.source && !validSources.includes(payload.source)) {
+        if (!payload.category) {
             return NextResponse.json(
-                { error: `Invalid source. Must be one of: ${validSources.join(', ')}` },
+                { error: "Category is required" },
+                { status: 400 }
+            );
+        }
+
+        if (!payload.expense_date) {
+            return NextResponse.json(
+                { error: "Expense date is required" },
                 { status: 400 }
             );
         }
 
         // Validate status if provided
-        const validStatuses = ['Not Started', 'In Progress', 'Qualified', 'Closed', 'Lost'];
+        const validStatuses = ['Pending', 'Approved', 'Paid', 'Cancelled'];
         if (payload.status && !validStatuses.includes(payload.status)) {
             return NextResponse.json(
                 { error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },
@@ -134,27 +140,54 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Set default values
-        const now = new Date().toISOString();
-        const leadData = {
-            customer_id: payload.customer_id,
-            source: payload.source || 'Website',
-            status: payload.status || 'Not Started',
-            interest_vehicle_id: payload.interest_vehicle_id || null,
-            assigned_to: payload.assigned_to || null,
+        // Validate category
+        const validCategories = [
+            'Vehicle Acquisition',
+            'Repair & Maintenance',
+            'Parts & Supplies',
+            'Utilities',
+            'Rent & Lease',
+            'Insurance',
+            'Marketing',
+            'Office Supplies',
+            'Professional Services',
+            'Travel & Entertainment',
+            'Payroll',
+            'Taxes & Licenses',
+            'Interest & Finance',
+            'Miscellaneous'
+        ];
+        if (!validCategories.includes(payload.category)) {
+            return NextResponse.json(
+                { error: `Invalid category. Must be one of: ${validCategories.join(', ')}` },
+                { status: 400 }
+            );
+        }
+
+        const expenseData = {
+            description: payload.description || null,
+            amount: payload.amount,
+            category: payload.category,
+            vendor_id: payload.vendor_id || null,
+            vehicle_id: payload.vehicle_id || null,
+            expense_date: payload.expense_date,
+            due_date: payload.due_date || null,
+            status: payload.status || 'Pending',
+            reference_number: payload.reference_number || null,
             notes: payload.notes || null,
-            lead_creation_date: now,
-            last_engagement: now,
+            entered_by: user.id,
+            tax_amount: payload.tax_amount || 0,
+            payment_method: payload.payment_method || null,
         };
 
         const { data, error: dbError } = await supabase
-            .from("leads")
-            .insert(leadData)
+            .from("expenses")
+            .insert(expenseData)
             .select(`
                 *,
-                customer:customers(*),
-                vehicle:vehicles(*),
-                assigned_user:users!assigned_to(id, full_name, email, avatar)
+                vendor:vendors(id, vendor_name, phone, gst_number, hst_number, pst_number),
+                vehicle:vehicles(id, make, model, year, vin),
+                entered_by_user:users!expenses_entered_by_fkey(id, full_name)
             `)
             .single();
 
@@ -162,7 +195,7 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({ data }, { status: 201 });
     } catch (error: any) {
-        console.error("Error creating lead:", error);
+        console.error("Error creating expense:", error);
         return NextResponse.json(
             { error: error?.message || "Internal server error" },
             { status: 500 }
