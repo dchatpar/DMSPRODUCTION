@@ -248,7 +248,7 @@ export default function InvoicesPage() {
     const totalOverdue = invoices.filter((i) => isOverdue(i)).reduce((sum, i) => sum + i.total, 0);
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 py-10">
             {/* Page Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -315,7 +315,7 @@ export default function InvoicesPage() {
 
             {/* Table */}
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <div className="overflow-x-auto">
+                <div className="hidden lg:block overflow-x-auto">
                     <table className="w-full">
                         <thead className="bg-gray-50 border-b border-gray-200">
                             <tr>
@@ -464,6 +464,99 @@ export default function InvoicesPage() {
                             )}
                         </tbody>
                     </table>
+                </div>
+
+                {/* Mobile Cards */}
+                <div className="lg:hidden divide-y divide-gray-200">
+                    {loading ? (
+                        <div className="px-4 py-12 text-center">
+                            <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
+                            <p className="mt-2 text-sm text-gray-500">Loading invoices...</p>
+                        </div>
+                    ) : error ? (
+                        <div className="px-4 py-12 text-center">
+                            <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
+                            <p className="mt-2 text-sm text-red-600">{error}</p>
+                            <button
+                                onClick={fetchInvoices}
+                                className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                            >
+                                Try Again
+                            </button>
+                        </div>
+                    ) : invoices.length === 0 ? (
+                        <div className="px-4 py-12 text-center">
+                            <FileText className="w-12 h-12 text-gray-300 mx-auto" />
+                            <p className="mt-2 text-sm text-gray-500">No invoices found</p>
+                            <button
+                                onClick={handleAdd}
+                                className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                            >
+                                Create Your First Invoice
+                            </button>
+                        </div>
+                    ) : (
+                        invoices.map((invoice) => {
+                            const statusConfig = getStatusConfig(invoice.status);
+                            const overdue = isOverdue(invoice);
+                            const StatusIcon = statusConfig.icon;
+                            return (
+                                <div key={invoice.id} className="p-4 hover:bg-gray-50 transition-colors">
+                                    <div className="flex items-start justify-between mb-3">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`p-2 rounded-lg ${statusConfig.bg}`}>
+                                                <FileText className={`w-5 h-5 ${statusConfig.text}`} />
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-medium text-gray-900">{invoice.invoice_number}</p>
+                                                {invoice.package_name && (
+                                                    <p className="text-xs text-gray-500 truncate max-w-[150px]">{invoice.package_name}</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                onClick={() => handleViewDetails(invoice)}
+                                                className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
+                                            >
+                                                <Eye className="w-4 h-4 text-blue-500" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleEdit(invoice)}
+                                                className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                            >
+                                                <Edit className="w-4 h-4 text-amber-500" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(invoice)}
+                                                className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                            >
+                                                <Trash2 className="w-4 h-4 text-red-500" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2 mb-2">
+                                        <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full ${statusConfig.bg} ${statusConfig.text}`}>
+                                            <StatusIcon className="w-3.5 h-3.5" />
+                                            {invoice.status}
+                                        </span>
+                                        <span className="text-sm font-semibold text-gray-900">{formatCurrency(invoice.total)}</span>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
+                                        <div>
+                                            <span className="font-medium text-gray-400">Customer:</span> {invoice.customer?.name || "Unknown"}
+                                        </div>
+                                        <div>
+                                            <span className="font-medium text-gray-400">Due:</span>{" "}
+                                            <span className={overdue ? "text-red-600 font-medium" : ""}>
+                                                {formatDate(invoice.due_date)}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
                 </div>
 
                 {/* Pagination */}

@@ -201,7 +201,7 @@ export default function VendorsPage() {
     const totalPages = Math.ceil(totalItems / itemsPerPage);
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 py-10">
             {/* Page Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -350,7 +350,7 @@ export default function VendorsPage() {
                     </div>
                 ) : (
                     <>
-                        <div className="overflow-x-auto">
+                        <div className="hidden lg:block overflow-x-auto">
                             <table className="w-full">
                                 <thead>
                                     <tr className="border-b border-gray-200">
@@ -457,6 +457,77 @@ export default function VendorsPage() {
                                     ))}
                                 </tbody>
                             </table>
+                        </div>
+
+                        {/* Mobile Cards */}
+                        <div className="lg:hidden divide-y divide-gray-200">
+                            {vendors.length === 0 ? (
+                                <div className="flex items-center justify-center min-h-[300px]">
+                                    <div className="text-center">
+                                        <Store className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                                        <p className="text-gray-500">No vendors found</p>
+                                        <button
+                                            onClick={handleAdd}
+                                            className="mt-3 text-blue-600 hover:underline"
+                                        >
+                                            Add your first vendor
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                vendors.map((vendor) => (
+                                    <div key={vendor.id} className="p-4 hover:bg-gray-50 transition-colors">
+                                        <div className="flex items-start justify-between mb-3">
+                                            <div>
+                                                <p className="text-sm font-medium text-gray-900">{vendor.vendor_name}</p>
+                                                <span className={`px-2 py-0.5 text-xs font-medium rounded ${getTypeColor(vendor.vendor_type)}`}>
+                                                    {vendor.vendor_type || "General"}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                                <button
+                                                    onClick={() => handleViewDetails(vendor)}
+                                                    className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
+                                                >
+                                                    <Eye className="w-4 h-4 text-blue-500" />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleEdit(vendor)}
+                                                    className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                                >
+                                                    <Edit className="w-4 h-4 text-amber-500" />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDelete(vendor)}
+                                                    className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                                >
+                                                    <Trash2 className="w-4 h-4 text-red-500" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
+                                            {vendor.phone && (
+                                                <div className="flex items-center gap-1">
+                                                    <Phone className="w-3.5 h-3.5 text-gray-400" />
+                                                    <span>{vendor.phone}</span>
+                                                </div>
+                                            )}
+                                            {vendor.contact_email && (
+                                                <div className="flex items-center gap-1">
+                                                    <Mail className="w-3.5 h-3.5 text-gray-400" />
+                                                    <span className="truncate">{vendor.contact_email}</span>
+                                                </div>
+                                            )}
+                                            {vendor.address && (
+                                                <div className="col-span-2 flex items-center gap-1">
+                                                    <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                                                    <span className="truncate">{vendor.address}{vendor.city && `, ${vendor.city}`}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))
+                            )}
                         </div>
 
                         {/* Pagination */}

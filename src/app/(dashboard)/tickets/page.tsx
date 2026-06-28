@@ -237,7 +237,7 @@ export default function TicketsPage() {
     const closedCount = tickets.filter((t) => t.status === "Closed").length;
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 py-10">
             {/* Page Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -250,22 +250,20 @@ export default function TicketsPage() {
                     <div className="flex bg-gray-100 rounded-lg p-1">
                         <button
                             onClick={() => setViewMode("kanban")}
-                            className={`p-1.5 rounded-md transition-colors ${
-                                viewMode === "kanban"
+                            className={`p-1.5 rounded-md transition-colors ${viewMode === "kanban"
                                     ? "bg-white shadow-sm text-blue-600"
                                     : "text-gray-500 hover:text-gray-700"
-                            }`}
+                                }`}
                             title="Kanban View"
                         >
                             <LayoutGrid className="w-4 h-4" />
                         </button>
                         <button
                             onClick={() => setViewMode("list")}
-                            className={`p-1.5 rounded-md transition-colors ${
-                                viewMode === "list"
+                            className={`p-1.5 rounded-md transition-colors ${viewMode === "list"
                                     ? "bg-white shadow-sm text-blue-600"
                                     : "text-gray-500 hover:text-gray-700"
-                            }`}
+                                }`}
                             title="List View"
                         >
                             <List className="w-4 h-4" />
@@ -410,24 +408,108 @@ export default function TicketsPage() {
                 </div>
             )}
 
-            {/* Kanban View */}
+            {/* Kanban View - Desktop only */}
             {!loading && !error && viewMode === "kanban" && (
-                <TicketsKanban
-                    tickets={tickets}
-                    loading={loading}
-                    error={error}
-                    onRefresh={fetchTickets}
-                    onTicketClick={handleViewDetails}
-                    onTicketEdit={handleEdit}
-                    onTicketDelete={handleDelete}
-                    onStatusChange={handleStatusChange}
-                />
+                <div className="hidden lg:block">
+                    <TicketsKanban
+                        tickets={tickets}
+                        loading={loading}
+                        error={error}
+                        onRefresh={fetchTickets}
+                        onTicketClick={handleViewDetails}
+                        onTicketEdit={handleEdit}
+                        onTicketDelete={handleDelete}
+                        onStatusChange={handleStatusChange}
+                    />
+                </div>
+            )}
+
+            {/* Kanban Mobile Card View */}
+            {!loading && !error && viewMode === "kanban" && (
+                <div className="lg:hidden">
+                    <div className="space-y-4">
+                        {tickets.length === 0 ? (
+                            <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+                                <Ticket className="w-12 h-12 text-gray-300 mx-auto" />
+                                <p className="mt-2 text-sm text-gray-500">No tickets found</p>
+                                <button
+                                    onClick={handleAdd}
+                                    className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                >
+                                    Add Your First Ticket
+                                </button>
+                            </div>
+                        ) : (
+                            tickets.map((ticket) => (
+                                <div
+                                    key={ticket.id}
+                                    className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow"
+                                    onClick={() => handleViewDetails(ticket)}
+                                >
+                                    <div className="flex items-start justify-between mb-3">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`p-2 rounded-lg ${STATUS_COLORS[ticket.status].bg}`}>
+                                                <Ticket className={`w-5 h-5 ${STATUS_COLORS[ticket.status].text}`} />
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-semibold text-gray-900 line-clamp-1">
+                                                    {ticket.subject}
+                                                </p>
+                                                <p className="text-xs text-gray-500">
+                                                    #{ticket.id.slice(0, 8)}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleViewDetails(ticket); }}
+                                                className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
+                                            >
+                                                <Eye className="w-4 h-4 text-blue-500" />
+                                            </button>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleEdit(ticket); }}
+                                                className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                            >
+                                                <Edit className="w-4 h-4 text-amber-500" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {ticket.description && (
+                                        <p className="text-xs text-gray-500 line-clamp-2 mb-3">
+                                            {ticket.description}
+                                        </p>
+                                    )}
+                                    <div className="flex flex-wrap gap-2 mb-3">
+                                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${PRIORITY_COLORS[ticket.priority]}`}>
+                                            {ticket.priority}
+                                        </span>
+                                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${STATUS_COLORS[ticket.status].bg} ${STATUS_COLORS[ticket.status].text}`}>
+                                            {ticket.status}
+                                        </span>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
+                                        <div>
+                                            <span className="font-medium text-gray-400">Created:</span>{" "}
+                                            {formatDate(ticket.created_at)}
+                                        </div>
+                                        <div>
+                                            <span className="font-medium text-gray-400">Assigned:</span>{" "}
+                                            {ticket.assigned_user?.full_name || "Unassigned"}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
             )}
 
             {/* List View */}
             {!loading && !error && viewMode === "list" && (
                 <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                    <div className="overflow-x-auto">
+                    {/* Desktop Table - Hidden on mobile */}
+                    <div className="hidden lg:block overflow-x-auto">
                         <table className="w-full">
                             <thead className="bg-gray-50 border-b border-gray-200">
                                 <tr>
@@ -590,6 +672,112 @@ export default function TicketsPage() {
                                 </button>
                                 <span className="text-sm text-gray-600">
                                     Page {currentPage} of {totalPages}
+                                </span>
+                                <button
+                                    onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                                    disabled={currentPage === totalPages}
+                                    className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    <ChevronRight className="w-4 h-4" />
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                    {/* Mobile Cards - Hidden on desktop */}
+                    <div className="lg:hidden divide-y divide-gray-200">
+                        {tickets.length === 0 ? (
+                            <div className="px-4 py-12 text-center">
+                                <Ticket className="w-12 h-12 text-gray-300 mx-auto" />
+                                <p className="mt-2 text-sm text-gray-500">No tickets found</p>
+                                <button
+                                    onClick={handleAdd}
+                                    className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                >
+                                    Add Your First Ticket
+                                </button>
+                            </div>
+                        ) : (
+                            tickets.map((ticket) => (
+                                <div key={ticket.id} className="p-4 hover:bg-gray-50 transition-colors">
+                                    {/* Header Row */}
+                                    <div className="flex items-start justify-between mb-3">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`p-1.5 rounded-lg ${STATUS_COLORS[ticket.status].bg}`}>
+                                                <Ticket className={`w-4 h-4 ${STATUS_COLORS[ticket.status].text}`} />
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-medium text-gray-900 line-clamp-1">
+                                                    {ticket.subject}
+                                                </p>
+                                                {ticket.description && (
+                                                    <p className="text-xs text-gray-500 truncate max-w-[180px]">
+                                                        {ticket.description}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                onClick={() => handleViewDetails(ticket)}
+                                                className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
+                                            >
+                                                <Eye className="w-4 h-4 text-blue-500" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleEdit(ticket)}
+                                                className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                            >
+                                                <Edit className="w-4 h-4 text-amber-500" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(ticket)}
+                                                className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                            >
+                                                <Trash2 className="w-4 h-4 text-red-500" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {/* Info Row */}
+                                    <div className="flex flex-wrap gap-2 mb-2">
+                                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${PRIORITY_COLORS[ticket.priority]}`}>
+                                            {ticket.priority}
+                                        </span>
+                                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${STATUS_COLORS[ticket.status].bg} ${STATUS_COLORS[ticket.status].text}`}>
+                                            {ticket.status}
+                                        </span>
+                                    </div>
+                                    {/* Details Row */}
+                                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
+                                        <div>
+                                            <span className="font-medium text-gray-400">Created:</span>{" "}
+                                            {formatDate(ticket.created_at)}
+                                        </div>
+                                        <div>
+                                            <span className="font-medium text-gray-400">Assigned:</span>{" "}
+                                            {ticket.assigned_user?.full_name || "Unassigned"}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+
+                    {/* Mobile Pagination */}
+                    {!loading && !error && tickets.length > 0 && (
+                        <div className="lg:hidden px-4 py-3 border-t border-gray-200 flex items-center justify-between">
+                            <p className="text-xs text-gray-500">
+                                Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalItems)} of {totalItems}
+                            </p>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                                    disabled={currentPage === 1}
+                                    className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    <ChevronLeft className="w-4 h-4" />
+                                </button>
+                                <span className="text-xs text-gray-600">
+                                    {currentPage}/{totalPages}
                                 </span>
                                 <button
                                     onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}

@@ -253,16 +253,16 @@ export default function LeadsPage() {
     const totalPages = Math.ceil(totalItems / itemsPerPage);
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 py-10">
             {/* Page Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Leads</h1>
-                    <p className="text-sm text-gray-500 mt-1">
+                    <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Leads</h1>
+                    <p className="text-xs sm:text-sm text-gray-500 mt-1">
                         Manage your sales leads and track progress
                     </p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                     {/* View Toggle */}
                     <div className="flex bg-gray-100 rounded-lg p-1">
                         <button
@@ -288,71 +288,72 @@ export default function LeadsPage() {
                     </div>
                     <button
                         onClick={fetchLeads}
-                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
+                        className="px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-1 sm:gap-2"
                     >
                         <RefreshCw className="w-4 h-4" />
-                        Refresh
+                        <span className="hidden sm:inline">Refresh</span>
                     </button>
                     <button
                         onClick={handleAdd}
-                        className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2"
+                        className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-1 sm:gap-2"
                     >
                         <UserPlus className="w-4 h-4" />
-                        Add Lead
+                        <span className="hidden sm:inline">Add Lead</span>
                     </button>
                 </div>
             </div>
 
             {/* Filters */}
             <div className="bg-white rounded-xl border border-gray-200 p-4">
-                <div className="flex flex-col sm:flex-row gap-4">
-                    <div className="flex-1 relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                            type="text"
-                            placeholder="Search leads by customer name, email, phone..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        />
-                    </div>
-                    <div className="flex gap-3">
-                        <select
-                            value={statusFilter}
-                            onChange={(e) => setStatusFilter(e.target.value)}
-                            className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                        >
-                            <option value="">All Status</option>
-                            <option value="Not Started">Not Started</option>
-                            <option value="In Progress">In Progress</option>
-                            <option value="Qualified">Qualified</option>
-                            <option value="Closed">Closed</option>
-                            <option value="Lost">Lost</option>
-                        </select>
-                        <select
-                            value={sourceFilter}
-                            onChange={(e) => setSourceFilter(e.target.value)}
-                            className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                        >
-                            <option value="">All Sources</option>
-                            <option value="Website">Website</option>
-                            <option value="Referral">Referral</option>
-                            <option value="Event">Event</option>
-                            <option value="Walk-in">Walk-in</option>
-                            <option value="Facebook">Facebook</option>
-                            <option value="Craigslist">Craigslist</option>
-                            <option value="Kijiji">Kijiji</option>
-                            <option value="Phone">Phone</option>
-                        </select>
-                        <button className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2">
-                            <Filter className="w-4 h-4" />
-                            More Filters
-                        </button>
-                        <button className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2">
-                            <Download className="w-4 h-4" />
-                            Export
-                        </button>
-                    </div>
+                {/* Search - Full width on mobile */}
+                <div className="relative mb-3 sm:mb-0">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                        type="text"
+                        placeholder="Search leads..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                    />
+                </div>
+
+                {/* Filters Row */}
+                <div className="flex flex-wrap gap-2">
+                    <select
+                        value={statusFilter}
+                        onChange={(e) => setStatusFilter(e.target.value)}
+                        className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-sm flex-1 min-w-[120px]"
+                    >
+                        <option value="">All Status</option>
+                        <option value="Not Started">Not Started</option>
+                        <option value="In Progress">In Progress</option>
+                        <option value="Qualified">Qualified</option>
+                        <option value="Closed">Closed</option>
+                        <option value="Lost">Lost</option>
+                    </select>
+                    <select
+                        value={sourceFilter}
+                        onChange={(e) => setSourceFilter(e.target.value)}
+                        className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-sm flex-1 min-w-[120px]"
+                    >
+                        <option value="">All Sources</option>
+                        <option value="Website">Website</option>
+                        <option value="Referral">Referral</option>
+                        <option value="Event">Event</option>
+                        <option value="Walk-in">Walk-in</option>
+                        <option value="Facebook">Facebook</option>
+                        <option value="Craigslist">Craigslist</option>
+                        <option value="Kijiji">Kijiji</option>
+                        <option value="Phone">Phone</option>
+                    </select>
+                    <button className="px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 text-sm text-gray-600">
+                        <Filter className="w-4 h-4" />
+                        <span className="hidden sm:inline">More</span>
+                    </button>
+                    <button className="px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 text-sm text-gray-600">
+                        <Download className="w-4 h-4" />
+                        <span className="hidden sm:inline">Export</span>
+                    </button>
                 </div>
             </div>
 
@@ -360,7 +361,8 @@ export default function LeadsPage() {
             {viewMode === "table" ? (
                 // Table View
                 <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                    <div className="overflow-x-auto">
+                    {/* Desktop Table - Hidden on mobile */}
+                    <div className="hidden lg:block overflow-x-auto">
                         <table className="w-full">
                             <thead className="bg-gray-50 border-b border-gray-200">
                                 <tr>
@@ -517,6 +519,114 @@ export default function LeadsPage() {
                                 )}
                             </tbody>
                         </table>
+                    </div>
+
+                    {/* Mobile Cards - Hidden on desktop */}
+                    <div className="lg:hidden divide-y divide-gray-200">
+                        {loading ? (
+                            <div className="px-4 py-12 text-center">
+                                <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
+                                <p className="mt-2 text-sm text-gray-500">Loading leads...</p>
+                            </div>
+                        ) : error ? (
+                            <div className="px-4 py-12 text-center">
+                                <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
+                                <p className="mt-2 text-sm text-red-600">{error}</p>
+                                <button
+                                    onClick={fetchLeads}
+                                    className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                >
+                                    Try Again
+                                </button>
+                            </div>
+                        ) : leads.length === 0 ? (
+                            <div className="px-4 py-12 text-center">
+                                <Users className="w-12 h-12 text-gray-300 mx-auto" />
+                                <p className="mt-2 text-sm text-gray-500">No leads found</p>
+                                <button
+                                    onClick={handleAdd}
+                                    className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                >
+                                    Add Your First Lead
+                                </button>
+                            </div>
+                        ) : (
+                            leads.map((lead) => (
+                                <div key={lead.id} className="p-4 hover:bg-gray-50 transition-colors">
+                                    {/* Header Row */}
+                                    <div className="flex items-start justify-between mb-3">
+                                        <div className="flex items-center gap-3">
+                                            {lead.customer?.avatar ? (
+                                                <img
+                                                    src={lead.customer.avatar}
+                                                    alt={lead.customer.name}
+                                                    className="w-10 h-10 rounded-full object-cover"
+                                                />
+                                            ) : (
+                                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-sm font-medium">
+                                                    {lead.customer?.name?.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) || "C"}
+                                                </div>
+                                            )}
+                                            <div>
+                                                <p className="text-sm font-medium text-gray-900">
+                                                    {lead.customer?.name || "Unknown"}
+                                                </p>
+                                                {lead.customer?.email && (
+                                                    <p className="text-xs text-gray-500">{lead.customer.email}</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                onClick={() => handleViewDetails(lead)}
+                                                className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
+                                            >
+                                                <Eye className="w-4 h-4 text-blue-500" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleEdit(lead)}
+                                                className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                            >
+                                                <Edit className="w-4 h-4 text-amber-500" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(lead)}
+                                                className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                            >
+                                                <Trash2 className="w-4 h-4 text-red-500" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {/* Info Row */}
+                                    <div className="flex flex-wrap gap-2 mb-2">
+                                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getSourceColor(lead.source)}`}>
+                                            {lead.source}
+                                        </span>
+                                        <div className="flex items-center gap-1">
+                                            {getStatusIcon(lead.status)}
+                                            <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getStatusColor(lead.status)}`}>
+                                                {lead.status}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    {/* Details Row */}
+                                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
+                                        <div>
+                                            <span className="font-medium text-gray-400">Vehicle:</span>{" "}
+                                            {lead.vehicle ? `${lead.vehicle.year} ${lead.vehicle.make} ${lead.vehicle.model}` : "N/A"}
+                                        </div>
+                                        <div>
+                                            <span className="font-medium text-gray-400">Assigned:</span>{" "}
+                                            {lead.assigned_user?.full_name || "Unassigned"}
+                                        </div>
+                                        <div className="col-span-2">
+                                            <span className="font-medium text-gray-400">Last Contact:</span>{" "}
+                                            {formatDate(lead.last_engagement)}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                        )}
                     </div>
 
                     {/* Pagination */}

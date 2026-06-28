@@ -324,7 +324,7 @@ export default function DealsPage() {
     }, {} as Record<string, Deal[]>);
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 py-10">
             {/* Page Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -338,22 +338,20 @@ export default function DealsPage() {
                     <div className="flex bg-gray-100 rounded-lg p-1">
                         <button
                             onClick={() => setViewMode("table")}
-                            className={`p-1.5 rounded-md transition-colors ${
-                                viewMode === "table"
+                            className={`p-1.5 rounded-md transition-colors ${viewMode === "table"
                                     ? "bg-white shadow-sm text-blue-600"
                                     : "text-gray-500 hover:text-gray-700"
-                            }`}
+                                }`}
                             title="Table View"
                         >
                             <List className="w-4 h-4" />
                         </button>
                         <button
                             onClick={() => setViewMode("kanban")}
-                            className={`p-1.5 rounded-md transition-colors ${
-                                viewMode === "kanban"
+                            className={`p-1.5 rounded-md transition-colors ${viewMode === "kanban"
                                     ? "bg-white shadow-sm text-blue-600"
                                     : "text-gray-500 hover:text-gray-700"
-                            }`}
+                                }`}
                             title="Kanban View"
                         >
                             <LayoutGrid className="w-4 h-4" />
@@ -418,7 +416,8 @@ export default function DealsPage() {
             {viewMode === "table" ? (
                 // Table View
                 <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                    <div className="overflow-x-auto">
+                    {/* Desktop Table - Hidden on mobile */}
+                    <div className="hidden lg:block overflow-x-auto">
                         <table className="w-full">
                             <thead className="bg-gray-50 border-b border-gray-200">
                                 <tr>
@@ -581,6 +580,130 @@ export default function DealsPage() {
                         </table>
                     </div>
 
+                    {/* Mobile Cards - Hidden on desktop */}
+                    <div className="lg:hidden divide-y divide-gray-200">
+                        {loading ? (
+                            <div className="px-4 py-12 text-center">
+                                <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
+                                <p className="mt-2 text-sm text-gray-500">Loading deals...</p>
+                            </div>
+                        ) : error ? (
+                            <div className="px-4 py-12 text-center">
+                                <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
+                                <p className="mt-2 text-sm text-red-600">{error}</p>
+                                <button
+                                    onClick={fetchDeals}
+                                    className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                >
+                                    Try Again
+                                </button>
+                            </div>
+                        ) : deals.length === 0 ? (
+                            <div className="px-4 py-12 text-center">
+                                <FileText className="w-12 h-12 text-gray-300 mx-auto" />
+                                <p className="mt-2 text-sm text-gray-500">No deals found</p>
+                                <button
+                                    onClick={handleAdd}
+                                    className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                >
+                                    Create Your First Deal
+                                </button>
+                            </div>
+                        ) : (
+                            deals.map((deal) => (
+                                <div key={deal.id} className="p-4 hover:bg-gray-50 transition-colors">
+                                    {/* Header Row */}
+                                    <div className="flex items-start justify-between mb-3">
+                                        <div className="flex items-center gap-3">
+                                            {deal.vehicle?.image_gallery?.[0] ? (
+                                                <img
+                                                    src={deal.vehicle.image_gallery[0]}
+                                                    alt={`${deal.vehicle.make} ${deal.vehicle.model}`}
+                                                    className="w-12 h-12 rounded-lg object-cover"
+                                                />
+                                            ) : (
+                                                <div className="w-12 h-12 rounded-lg bg-gray-200 flex items-center justify-center">
+                                                    <Car className="w-5 h-5 text-gray-400" />
+                                                </div>
+                                            )}
+                                            <div>
+                                                <p className="text-sm font-medium text-gray-900">
+                                                    {deal.vehicle
+                                                        ? `${deal.vehicle.year} ${deal.vehicle.make} ${deal.vehicle.model}`
+                                                        : "Unknown Vehicle"}
+                                                </p>
+                                                <p className="text-xs text-gray-500">
+                                                    {deal.customer?.name || "Unknown Customer"}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                onClick={() => handleOpenBillOfSale(deal)}
+                                                disabled={loadingBillOfSale}
+                                                className="p-1.5 hover:bg-green-50 rounded-lg transition-colors disabled:opacity-50"
+                                            >
+                                                {loadingBillOfSale ? (
+                                                    <Loader2 className="w-4 h-4 text-green-600 animate-spin" />
+                                                ) : (
+                                                    <FileSignature className="w-4 h-4 text-green-600" />
+                                                )}
+                                            </button>
+                                            <button
+                                                onClick={() => handleViewDetails(deal)}
+                                                className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
+                                            >
+                                                <Eye className="w-4 h-4 text-blue-500" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleEdit(deal)}
+                                                className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                            >
+                                                <Edit className="w-4 h-4 text-amber-500" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(deal)}
+                                                className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                            >
+                                                <Trash2 className="w-4 h-4 text-red-500" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {/* Status and Price Row */}
+                                    <div className="flex flex-wrap items-center gap-2 mb-2">
+                                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(deal.deal_status)} ${getStatusTextColor(deal.deal_status)}`}>
+                                            {deal.deal_status}
+                                        </span>
+                                        <span className="text-sm font-semibold text-green-600">
+                                            {formatCurrency(deal.sale_price)}
+                                        </span>
+                                    </div>
+                                    {/* Details Grid */}
+                                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
+                                        <div>
+                                            <span className="font-medium text-gray-400">VIN:</span>{" "}
+                                            {deal.vehicle?.vin || "N/A"}
+                                        </div>
+                                        <div>
+                                            <span className="font-medium text-gray-400">Salesperson:</span>{" "}
+                                            {deal.salesperson?.full_name || "Unassigned"}
+                                        </div>
+                                        <div>
+                                            <span className="font-medium text-gray-400">Deal Date:</span>{" "}
+                                            {formatDate(deal.deal_date)}
+                                        </div>
+                                        {deal.down_payment > 0 && (
+                                            <div>
+                                                <span className="font-medium text-gray-400">Down Payment:</span>{" "}
+                                                {formatCurrency(deal.down_payment)}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+
                     {/* Pagination */}
                     {!loading && !error && deals.length > 0 && (
                         <div className="px-4 py-3 border-t border-gray-200 flex items-center justify-between">
@@ -611,72 +734,192 @@ export default function DealsPage() {
                 </div>
             ) : (
                 // Kanban View
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-                    {DEAL_STAGES.map((stage) => (
-                        <div
-                            key={stage}
-                            className={`rounded-xl border-2 ${STATUS_COLORS[stage]?.border || "border-gray-200"} ${STATUS_COLORS[stage]?.bg || "bg-gray-50"} p-4`}
-                        >
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className={`font-semibold ${STATUS_COLORS[stage]?.text || "text-gray-700"}`}>
-                                    {stage}
-                                </h3>
-                                <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${STATUS_COLORS[stage]?.bg || "bg-gray-100"} ${STATUS_COLORS[stage]?.text || "text-gray-600"}`}>
-                                    {dealsByStatus[stage]?.length || 0}
-                                </span>
-                            </div>
-                            <div className="space-y-3">
-                                {dealsByStatus[stage]?.map((deal) => (
-                                    <div
-                                        key={deal.id}
-                                        className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-                                        onClick={() => handleViewDetails(deal)}
-                                    >
-                                        <div className="flex items-start gap-3">
-                                            {deal.vehicle?.image_gallery?.[0] ? (
-                                                <img
-                                                    src={deal.vehicle.image_gallery[0]}
-                                                    alt={`${deal.vehicle.make} ${deal.vehicle.model}`}
-                                                    className="w-12 h-12 rounded-lg object-cover"
-                                                />
-                                            ) : (
-                                                <div className="w-12 h-12 rounded-lg bg-gray-200 flex items-center justify-center">
-                                                    <Car className="w-5 h-5 text-gray-400" />
+                <>
+                    {/* Desktop Kanban - Hidden on mobile */}
+                    <div className="hidden lg:block grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+                        {DEAL_STAGES.map((stage) => (
+                            <div
+                                key={stage}
+                                className={`rounded-xl border-2 ${STATUS_COLORS[stage]?.border || "border-gray-200"} ${STATUS_COLORS[stage]?.bg || "bg-gray-50"} p-4`}
+                            >
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className={`font-semibold ${STATUS_COLORS[stage]?.text || "text-gray-700"}`}>
+                                        {stage}
+                                    </h3>
+                                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${STATUS_COLORS[stage]?.bg || "bg-gray-100"} ${STATUS_COLORS[stage]?.text || "text-gray-600"}`}>
+                                        {dealsByStatus[stage]?.length || 0}
+                                    </span>
+                                </div>
+                                <div className="space-y-3">
+                                    {dealsByStatus[stage]?.map((deal) => (
+                                        <div
+                                            key={deal.id}
+                                            className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                                            onClick={() => handleViewDetails(deal)}
+                                        >
+                                            <div className="flex items-start gap-3">
+                                                {deal.vehicle?.image_gallery?.[0] ? (
+                                                    <img
+                                                        src={deal.vehicle.image_gallery[0]}
+                                                        alt={`${deal.vehicle.make} ${deal.vehicle.model}`}
+                                                        className="w-12 h-12 rounded-lg object-cover"
+                                                    />
+                                                ) : (
+                                                    <div className="w-12 h-12 rounded-lg bg-gray-200 flex items-center justify-center">
+                                                        <Car className="w-5 h-5 text-gray-400" />
+                                                    </div>
+                                                )}
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-medium text-gray-900 truncate">
+                                                        {deal.vehicle
+                                                            ? `${deal.vehicle.year} ${deal.vehicle.make} ${deal.vehicle.model}`
+                                                            : "Unknown"}
+                                                    </p>
+                                                    <p className="text-xs text-gray-500 truncate">
+                                                        {deal.customer?.name || "Unknown Customer"}
+                                                    </p>
+                                                    <p className="text-sm font-semibold text-green-600 mt-1">
+                                                        {formatCurrency(deal.sale_price)}
+                                                    </p>
                                                 </div>
-                                            )}
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-medium text-gray-900 truncate">
-                                                    {deal.vehicle
-                                                        ? `${deal.vehicle.year} ${deal.vehicle.make} ${deal.vehicle.model}`
-                                                        : "Unknown"}
-                                                </p>
-                                                <p className="text-xs text-gray-500 truncate">
-                                                    {deal.customer?.name || "Unknown Customer"}
-                                                </p>
-                                                <p className="text-sm font-semibold text-green-600 mt-1">
-                                                    {formatCurrency(deal.sale_price)}
-                                                </p>
+                                            </div>
+                                            <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
+                                                <span className="text-xs text-gray-500">
+                                                    {deal.salesperson?.full_name || "Unassigned"}
+                                                </span>
+                                                <span className="text-xs text-gray-500">
+                                                    {formatDate(deal.deal_date)}
+                                                </span>
                                             </div>
                                         </div>
-                                        <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
-                                            <span className="text-xs text-gray-500">
-                                                {deal.salesperson?.full_name || "Unassigned"}
-                                            </span>
-                                            <span className="text-xs text-gray-500">
-                                                {formatDate(deal.deal_date)}
-                                            </span>
+                                    ))}
+                                    {(!dealsByStatus[stage] || dealsByStatus[stage].length === 0) && (
+                                        <div className="text-center py-8 text-gray-400">
+                                            <p className="text-sm">No deals</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Mobile Kanban (Card List) - Hidden on desktop */}
+                    <div className="lg:hidden space-y-4">
+                        {loading ? (
+                            <div className="px-4 py-12 text-center">
+                                <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
+                                <p className="mt-2 text-sm text-gray-500">Loading deals...</p>
+                            </div>
+                        ) : error ? (
+                            <div className="px-4 py-12 text-center">
+                                <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
+                                <p className="mt-2 text-sm text-red-600">{error}</p>
+                                <button
+                                    onClick={fetchDeals}
+                                    className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                >
+                                    Try Again
+                                </button>
+                            </div>
+                        ) : deals.length === 0 ? (
+                            <div className="px-4 py-12 text-center">
+                                <FileText className="w-12 h-12 text-gray-300 mx-auto" />
+                                <p className="mt-2 text-sm text-gray-500">No deals found</p>
+                                <button
+                                    onClick={handleAdd}
+                                    className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                >
+                                    Create Your First Deal
+                                </button>
+                            </div>
+                        ) : (
+                            deals.map((deal) => (
+                                <div
+                                    key={deal.id}
+                                    className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm"
+                                >
+                                    <div className="flex items-start gap-3 mb-3">
+                                        {deal.vehicle?.image_gallery?.[0] ? (
+                                            <img
+                                                src={deal.vehicle.image_gallery[0]}
+                                                alt={`${deal.vehicle.make} ${deal.vehicle.model}`}
+                                                className="w-12 h-12 rounded-lg object-cover"
+                                            />
+                                        ) : (
+                                            <div className="w-12 h-12 rounded-lg bg-gray-200 flex items-center justify-center">
+                                                <Car className="w-5 h-5 text-gray-400" />
+                                            </div>
+                                        )}
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium text-gray-900 truncate">
+                                                {deal.vehicle
+                                                    ? `${deal.vehicle.year} ${deal.vehicle.make} ${deal.vehicle.model}`
+                                                    : "Unknown"}
+                                            </p>
+                                            <p className="text-xs text-gray-500 truncate">
+                                                {deal.customer?.name || "Unknown Customer"}
+                                            </p>
                                         </div>
                                     </div>
-                                ))}
-                                {(!dealsByStatus[stage] || dealsByStatus[stage].length === 0) && (
-                                    <div className="text-center py-8 text-gray-400">
-                                        <p className="text-sm">No deals</p>
+                                    <div className="flex flex-wrap items-center gap-2 mb-3">
+                                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(deal.deal_status)} ${getStatusTextColor(deal.deal_status)}`}>
+                                            {deal.deal_status}
+                                        </span>
+                                        <span className="text-sm font-semibold text-green-600">
+                                            {formatCurrency(deal.sale_price)}
+                                        </span>
                                     </div>
-                                )}
-                            </div>
-                        </div>
-                    ))}
-                </div>
+                                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 mb-3">
+                                        <div>
+                                            <span className="font-medium text-gray-400">Salesperson:</span>{" "}
+                                            {deal.salesperson?.full_name || "Unassigned"}
+                                        </div>
+                                        <div>
+                                            <span className="font-medium text-gray-400">Date:</span>{" "}
+                                            {formatDate(deal.deal_date)}
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                                        <span className="text-xs text-gray-400">
+                                            {DEAL_STAGES.findIndex(s => s === deal.deal_status) + 1} of {DEAL_STAGES.length}
+                                        </span>
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                onClick={() => handleOpenBillOfSale(deal)}
+                                                disabled={loadingBillOfSale}
+                                                className="p-1.5 hover:bg-green-50 rounded-lg transition-colors disabled:opacity-50"
+                                            >
+                                                {loadingBillOfSale ? (
+                                                    <Loader2 className="w-4 h-4 text-green-600 animate-spin" />
+                                                ) : (
+                                                    <FileSignature className="w-4 h-4 text-green-600" />
+                                                )}
+                                            </button>
+                                            <button
+                                                onClick={() => handleViewDetails(deal)}
+                                                className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
+                                            >
+                                                <Eye className="w-4 h-4 text-blue-500" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleEdit(deal)}
+                                                className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                            >
+                                                <Edit className="w-4 h-4 text-amber-500" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(deal)}
+                                                className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                            >
+                                                <Trash2 className="w-4 h-4 text-red-500" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </>
             )}
 
             {/* Modals */}

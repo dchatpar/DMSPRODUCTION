@@ -18,6 +18,7 @@ import {
     Tag,
     XCircle,
     MoreVertical,
+    CheckSquare,
 } from 'lucide-react';
 
 interface UserData {
@@ -238,6 +239,8 @@ const TasksKanban: React.FC<TasksKanbanProps> = ({
 
     return (
         <div className="w-full">
+            {/* Desktop Kanban View - Hidden on mobile */}
+            <div className="hidden lg:block">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
                 {columns.map((column) => {
                     const columnTasks = getTasksByStatus(column.status);
@@ -388,6 +391,125 @@ const TasksKanban: React.FC<TasksKanbanProps> = ({
                         </div>
                     );
                 })}
+            </div>
+            </div>
+
+            {/* Mobile List View - Hidden on desktop */}
+            <div className="lg:hidden space-y-3">
+                {loading ? (
+                    <div className="flex items-center justify-center min-h-[300px] bg-white rounded-xl border border-gray-200">
+                        <div className="flex flex-col items-center gap-4">
+                            <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+                            <p className="text-sm text-gray-500">Loading tasks...</p>
+                        </div>
+                    </div>
+                ) : error ? (
+                    <div className="flex items-center justify-center min-h-[300px] bg-white rounded-xl border border-gray-200">
+                        <div className="text-center">
+                            <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-3" />
+                            <p className="text-sm text-red-600">{error}</p>
+                            <button
+                                onClick={onRefresh}
+                                className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                            >
+                                Try Again
+                            </button>
+                        </div>
+                    </div>
+                ) : tasks.length === 0 ? (
+                    <div className="flex items-center justify-center min-h-[300px] bg-white rounded-xl border border-gray-200">
+                        <div className="text-center">
+                            <CheckSquare className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                            <p className="text-sm text-gray-500">No tasks found</p>
+                        </div>
+                    </div>
+                ) : (
+                    optimisticTasks.map((task) => {
+                        const taskColumn = columns.find(col => col.status === task.status);
+                        const ColumnIcon = taskColumn?.icon || Clock;
+                        return (
+                            <div
+                                key={task.id}
+                                onClick={() => onTaskClick(task)}
+                                className={`bg-white rounded-lg border p-4 hover:shadow-md transition-all cursor-pointer ${isOverdue(task) ? 'border-red-300 bg-red-50/50' : 'border-gray-200 hover:border-blue-300'}`}
+                            >
+                                {/* Header Row */}
+                                <div className="flex items-start justify-between mb-3">
+                                    <div className="flex items-center gap-2">
+                                        <ColumnIcon size={16} className={taskColumn?.iconColor || 'text-gray-400'} />
+                                        <span className={`text-xs px-2 py-0.5 rounded-full ${taskColumn?.bgColor || 'bg-gray-100'} ${taskColumn?.color || 'text-gray-600'}`}>
+                                            {task.status}
+                                        </span>
+                                    </div>
+                                    <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                                        <button
+                                            onClick={() => onTaskEdit(task)}
+                                            className="p-1 text-gray-400 hover:text-amber-600 transition-colors"
+                                        >
+                                            <Edit size={14} />
+                                        </button>
+                                        <button
+                                            onClick={() => onTaskDelete(task)}
+                                            className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
+                                </div>
+                                {/* Task Title */}
+                                <h4 className="font-semibold text-gray-900 text-sm mb-2">
+                                    {task.title}
+                                </h4>
+                                {/* Description */}
+                                {task.description && (
+                                    <p className="text-xs text-gray-500 line-clamp-2 mb-2">
+                                        {task.description}
+                                    </p>
+                                )}
+                                {/* Info Row - Badges */}
+                                <div className="flex flex-wrap items-center gap-2 mb-2">
+                                    <span className={`px-2 py-0.5 text-xs font-medium rounded ${priorityColors[task.priority] || 'bg-gray-100 text-gray-700'}`}>
+                                        {task.priority}
+                                    </span>
+                                    {task.due_date && (
+                                        <div className={`flex items-center gap-1 text-xs ${isOverdue(task) ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
+                                            <Calendar size={12} />
+                                            {formatDate(task.due_date)}
+                                        </div>
+                                    )}
+                                </div>
+                                {/* Tags */}
+                                {task.tags && task.tags.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mb-2">
+                                        {task.tags.slice(0, 3).map((tag, i) => (
+                                            <span key={i} className="px-1.5 py-0.5 text-[10px] bg-blue-50 text-blue-700 rounded">
+                                                {tag}
+                                            </span>
+                                        ))}
+                                        {task.tags.length > 3 && (
+                                            <span className="px-1.5 py-0.5 text-[10px] bg-gray-100 text-gray-600 rounded">
+                                                +{task.tags.length - 3}
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+                                {/* Assigned User */}
+                                <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+                                    {task.assigned_user?.avatar ? (
+                                        <img src={task.assigned_user.avatar} alt="" className="w-5 h-5 rounded-full object-cover" />
+                                    ) : (
+                                        <div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-xs font-medium">
+                                            {task.assigned_user?.full_name?.[0] || '?'}
+                                        </div>
+                                    )}
+                                    <span className="text-xs text-gray-500 truncate">
+                                        {task.assigned_user?.full_name || 'Unassigned'}
+                                    </span>
+                                </div>
+                            </div>
+                        );
+                    })
+                )}
             </div>
         </div>
     );

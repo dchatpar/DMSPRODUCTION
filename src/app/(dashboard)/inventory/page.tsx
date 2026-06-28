@@ -227,7 +227,7 @@ export default function InventoryPage() {
     const totalPages = Math.ceil(totalItems / itemsPerPage);
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 py-10">
             {/* Page Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -293,7 +293,7 @@ export default function InventoryPage() {
 
             {/* Table */}
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <div className="overflow-x-auto">
+                <div className="hidden lg:block overflow-x-auto">
                     <table className="w-full">
                         <thead className="bg-gray-50 border-b border-gray-200">
                             <tr>
@@ -474,6 +474,113 @@ export default function InventoryPage() {
                             )}
                         </tbody>
                     </table>
+                </div>
+
+                {/* Mobile Cards */}
+                <div className="lg:hidden divide-y divide-gray-200">
+                    {loading ? (
+                        <div className="px-4 py-12 text-center">
+                            <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
+                            <p className="mt-2 text-sm text-gray-500">Loading vehicles...</p>
+                        </div>
+                    ) : error ? (
+                        <div className="px-4 py-12 text-center">
+                            <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
+                            <p className="mt-2 text-sm text-red-600">{error}</p>
+                            <button
+                                onClick={fetchVehicles}
+                                className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                            >
+                                Try Again
+                            </button>
+                        </div>
+                    ) : vehicles.length === 0 ? (
+                        <div className="px-4 py-12 text-center">
+                            <Car className="w-12 h-12 text-gray-300 mx-auto" />
+                            <p className="mt-2 text-sm text-gray-500">No vehicles found</p>
+                            <button
+                                onClick={handleAdd}
+                                className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                            >
+                                Add Your First Vehicle
+                            </button>
+                        </div>
+                    ) : (
+                        vehicles.map((vehicle) => {
+                            const grossProfit = calculateGrossProfit(vehicle);
+                            const isProfitable = grossProfit > 0;
+                            const imageUrl = vehicle.image_gallery?.[0] || null;
+                            return (
+                                <div key={vehicle.id} className="p-4 hover:bg-gray-50 transition-colors">
+                                    <div className="flex items-start justify-between mb-3">
+                                        <div className="flex items-center gap-3">
+                                            {imageUrl ? (
+                                                <img
+                                                    src={imageUrl}
+                                                    alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
+                                                    className="w-12 h-12 rounded-lg object-cover"
+                                                />
+                                            ) : (
+                                                <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center">
+                                                    <ImageIcon className="w-6 h-6 text-gray-400" />
+                                                </div>
+                                            )}
+                                            <div>
+                                                <p className="text-sm font-medium text-gray-900">
+                                                    {vehicle.year} {vehicle.make} {vehicle.model}
+                                                </p>
+                                                <p className="text-xs text-gray-500 font-mono">{vehicle.vin}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                onClick={() => handleViewDetails(vehicle)}
+                                                className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
+                                            >
+                                                <Eye className="w-4 h-4 text-blue-500" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleEdit(vehicle)}
+                                                className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                            >
+                                                <Edit className="w-4 h-4 text-amber-500" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(vehicle)}
+                                                className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                            >
+                                                <Trash2 className="w-4 h-4 text-red-500" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2 mb-2">
+                                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getStatusColor(vehicle.status)}`}>
+                                            {vehicle.status}
+                                        </span>
+                                        {vehicle.stock_number && (
+                                            <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-700">
+                                                Stock: {vehicle.stock_number}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-2 text-xs text-gray-500">
+                                        <div>
+                                            <span className="font-medium text-gray-400">Purchase:</span> {formatCurrency(vehicle.purchase_price)}
+                                        </div>
+                                        <div>
+                                            <span className="font-medium text-gray-400">Retail:</span> {formatCurrency(vehicle.retail_price)}
+                                        </div>
+                                        <div>
+                                            <span className="font-medium text-gray-400">Profit:</span>{" "}
+                                            <span className={isProfitable ? "text-green-600" : "text-red-600"}>
+                                                {formatCurrency(grossProfit)}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
                 </div>
 
                 {/* Pagination */}

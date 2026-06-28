@@ -225,7 +225,7 @@ export default function ProfilePage() {
     }
 
     return (
-        <div className="space-y-6 max-w-3xl">
+        <div className="space-y-6 max-w-3xl py-10">
             {/* Page Header */}
             <div>
                 <h1 className="text-2xl font-bold text-gray-900">Profile Settings</h1>

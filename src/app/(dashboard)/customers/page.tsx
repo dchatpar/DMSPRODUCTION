@@ -221,7 +221,7 @@ export default function CustomersPage() {
     const totalPages = Math.ceil(totalItems / itemsPerPage);
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 py-10">
             {/* Page Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -289,7 +289,7 @@ export default function CustomersPage() {
 
             {/* Table */}
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <div className="overflow-x-auto">
+                <div className="hidden lg:block overflow-x-auto">
                     <table className="w-full">
                         <thead className="bg-gray-50 border-b border-gray-200">
                             <tr>
@@ -444,6 +444,105 @@ export default function CustomersPage() {
                             )}
                         </tbody>
                     </table>
+                </div>
+
+                {/* Mobile Cards */}
+                <div className="lg:hidden divide-y divide-gray-200">
+                    {loading ? (
+                        <div className="px-4 py-12 text-center">
+                            <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
+                            <p className="mt-2 text-sm text-gray-500">Loading customers...</p>
+                        </div>
+                    ) : error ? (
+                        <div className="px-4 py-12 text-center">
+                            <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
+                            <p className="mt-2 text-sm text-red-600">{error}</p>
+                            <button
+                                onClick={fetchCustomers}
+                                className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                            >
+                                Try Again
+                            </button>
+                        </div>
+                    ) : customers.length === 0 ? (
+                        <div className="px-4 py-12 text-center">
+                            <Users className="w-12 h-12 text-gray-300 mx-auto" />
+                            <p className="mt-2 text-sm text-gray-500">No customers found</p>
+                            <button
+                                onClick={handleAdd}
+                                className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                            >
+                                Add Your First Customer
+                            </button>
+                        </div>
+                    ) : (
+                        customers.map((customer) => (
+                            <div key={customer.id} className="p-4 hover:bg-gray-50 transition-colors">
+                                <div className="flex items-start justify-between mb-3">
+                                    <div className="flex items-center gap-3">
+                                        {customer.avatar ? (
+                                            <img
+                                                src={customer.avatar}
+                                                alt={customer.name}
+                                                className="w-10 h-10 rounded-full object-cover"
+                                            />
+                                        ) : (
+                                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-sm font-medium">
+                                                {getInitials(customer.name)}
+                                            </div>
+                                        )}
+                                        <div>
+                                            <p className="text-sm font-medium text-gray-900">{customer.name}</p>
+                                            <p className="text-xs text-gray-500">ID: {customer.id.slice(0, 8)}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            onClick={() => handleViewDetails(customer)}
+                                            className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
+                                        >
+                                            <Eye className="w-4 h-4 text-blue-500" />
+                                        </button>
+                                        <button
+                                            onClick={() => handleEdit(customer)}
+                                            className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                        >
+                                            <Edit className="w-4 h-4 text-amber-500" />
+                                        </button>
+                                        <button
+                                            onClick={() => handleDelete(customer)}
+                                            className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                        >
+                                            <Trash2 className="w-4 h-4 text-red-500" />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 mb-2">
+                                    {customer.email && (
+                                        <div className="flex items-center gap-1">
+                                            <Mail className="w-3.5 h-3.5 text-gray-400" />
+                                            <span className="truncate">{customer.email}</span>
+                                        </div>
+                                    )}
+                                    {customer.phone && (
+                                        <div className="flex items-center gap-1">
+                                            <Phone className="w-3.5 h-3.5 text-gray-400" />
+                                            <span>{customer.phone}</span>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="flex flex-wrap gap-2 text-xs">
+                                    {customer.city && (
+                                        <span className="flex items-center gap-1 text-gray-500">
+                                            <MapPin className="w-3.5 h-3.5" />
+                                            {customer.city}{customer.province && `, ${customer.province}`}
+                                        </span>
+                                    )}
+                                    <span className="text-gray-400">Joined: {formatDate(customer.created_at)}</span>
+                                </div>
+                            </div>
+                        ))
+                    )}
                 </div>
 
                 {/* Pagination */}

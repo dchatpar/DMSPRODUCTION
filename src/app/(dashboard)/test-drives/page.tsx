@@ -279,7 +279,7 @@ export default function TestDrivesPage() {
     const totalPages = Math.ceil(totalItems / itemsPerPage);
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 py-10">
             {/* Page Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -346,7 +346,7 @@ export default function TestDrivesPage() {
 
             {/* Table */}
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <div className="overflow-x-auto">
+                <div className="hidden lg:block overflow-x-auto">
                     <table className="w-full">
                         <thead className="bg-gray-50 border-b border-gray-200">
                             <tr>
@@ -512,6 +512,95 @@ export default function TestDrivesPage() {
                             )}
                         </tbody>
                     </table>
+                </div>
+
+                {/* Mobile Cards */}
+                <div className="lg:hidden divide-y divide-gray-200">
+                    {loading ? (
+                        <div className="px-4 py-12 text-center">
+                            <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
+                            <p className="mt-2 text-sm text-gray-500">Loading test drives...</p>
+                        </div>
+                    ) : error ? (
+                        <div className="px-4 py-12 text-center">
+                            <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
+                            <p className="mt-2 text-sm text-red-600">{error}</p>
+                            <button
+                                onClick={fetchTestDrives}
+                                className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                            >
+                                Try Again
+                            </button>
+                        </div>
+                    ) : testDrives.length === 0 ? (
+                        <div className="px-4 py-12 text-center">
+                            <Car className="w-12 h-12 text-gray-300 mx-auto" />
+                            <p className="mt-2 text-sm text-gray-500">No test drives found</p>
+                            <button
+                                onClick={handleAdd}
+                                className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                            >
+                                Schedule First Test Drive
+                            </button>
+                        </div>
+                    ) : (
+                        testDrives.map((testDrive) => (
+                            <div key={testDrive.id} className="p-4 hover:bg-gray-50 transition-colors">
+                                <div className="flex items-start justify-between mb-3">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-sm font-medium">
+                                            {getCustomerName(testDrive).split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)}
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-medium text-gray-900">{getCustomerName(testDrive)}</p>
+                                            {getCustomerPhone(testDrive) && (
+                                                <p className="text-xs text-gray-500">{getCustomerPhone(testDrive)}</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            onClick={() => handleViewDetails(testDrive)}
+                                            className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
+                                        >
+                                            <Eye className="w-4 h-4 text-blue-500" />
+                                        </button>
+                                        <button
+                                            onClick={() => handleEdit(testDrive)}
+                                            className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                        >
+                                            <Edit className="w-4 h-4 text-amber-500" />
+                                        </button>
+                                        <button
+                                            onClick={() => handleDelete(testDrive)}
+                                            className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                        >
+                                            <Trash2 className="w-4 h-4 text-red-500" />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="flex flex-wrap gap-2 mb-2">
+                                    {getStatusIcon(testDrive.status || "Scheduled")}
+                                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getStatusColor(testDrive.status || "Scheduled")}`}>
+                                        {testDrive.status || "Scheduled"}
+                                    </span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
+                                    <div>
+                                        <span className="font-medium text-gray-400">Vehicle:</span>{" "}
+                                        {testDrive.vehicle ? `${testDrive.vehicle.year} ${testDrive.vehicle.make} ${testDrive.vehicle.model}` : "N/A"}
+                                    </div>
+                                    <div>
+                                        <span className="font-medium text-gray-400">Salesperson:</span>{" "}
+                                        {testDrive.salesperson?.full_name || "Unassigned"}
+                                    </div>
+                                    <div className="col-span-2">
+                                        <span className="font-medium text-gray-400">Date:</span> {formatDateTime(testDrive.start_time)}
+                                    </div>
+                                </div>
+                            </div>
+                        ))
+                    )}
                 </div>
 
                 {/* Pagination */}

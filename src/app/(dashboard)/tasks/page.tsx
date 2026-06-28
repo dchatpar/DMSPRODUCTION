@@ -327,7 +327,7 @@ export default function TasksPage() {
     const hasActiveFilters = filters.status || filters.priority || filters.assigned_to || filters.due_date_from || filters.due_date_to || filters.my_tasks || filters.overdue || filters.search;
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 py-10">
             {/* Page Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -484,7 +484,8 @@ export default function TasksPage() {
             ) : (
                 /* Table View */
                 <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                    <div className="overflow-x-auto">
+                    {/* Desktop Table - Hidden on mobile */}
+                    <div className="hidden lg:block overflow-x-auto">
                         <table className="w-full">
                             <thead className="bg-gray-50 border-b border-gray-200">
                                 <tr>
@@ -586,6 +587,100 @@ export default function TasksPage() {
                                 )}
                             </tbody>
                         </table>
+                    </div>
+
+                    {/* Mobile Cards - Hidden on desktop */}
+                    <div className="lg:hidden divide-y divide-gray-200">
+                        {loading ? (
+                            <div className="px-4 py-12 text-center">
+                                <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
+                                <p className="mt-2 text-sm text-gray-500">Loading tasks...</p>
+                            </div>
+                        ) : error ? (
+                            <div className="px-4 py-12 text-center">
+                                <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
+                                <p className="mt-2 text-sm text-red-600">{error}</p>
+                                <button onClick={fetchTasks} className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Try Again</button>
+                            </div>
+                        ) : tasks.length === 0 ? (
+                            <div className="px-4 py-12 text-center">
+                                <CheckSquare className="w-12 h-12 text-gray-300 mx-auto" />
+                                <p className="mt-2 text-sm text-gray-500">No tasks found</p>
+                                <button onClick={handleAdd} className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Your First Task</button>
+                            </div>
+                        ) : (
+                            tasks.map((task) => {
+                                const overdue = isOverdue(task);
+                                return (
+                                    <div key={task.id} className="p-4 hover:bg-gray-50 transition-colors">
+                                        {/* Header Row */}
+                                        <div className="flex items-start justify-between mb-3">
+                                            <div className="flex items-center gap-3">
+                                                <button
+                                                    onClick={() => handleStatusChange(task, task.status === "Completed" ? "Pending" : "Completed")}
+                                                    className={`p-1.5 rounded-full ${task.status === "Completed" ? "bg-green-100 text-green-600" : "bg-gray-100 text-gray-400 hover:text-green-600"}`}
+                                                >
+                                                    {task.status === "Completed" ? <CheckCircle className="w-5 h-5" /> : <Circle className="w-5 h-5" />}
+                                                </button>
+                                                <div>
+                                                    <p className={`text-sm font-medium ${task.status === "Completed" ? "line-through text-gray-400" : "text-gray-900"}`}>
+                                                        {task.title}
+                                                    </p>
+                                                    {task.description && (
+                                                        <p className="text-xs text-gray-500 truncate max-w-[200px]">{task.description}</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                                <button
+                                                    onClick={() => handleEdit(task)}
+                                                    className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                                >
+                                                    Edit
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDelete(task)}
+                                                    className="p-1.5 hover:bg-red-50 rounded-lg text-red-500 transition-colors"
+                                                >
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        </div>
+                                        {/* Info Row - Badges */}
+                                        <div className="flex flex-wrap items-center gap-2 mb-2">
+                                            <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${PRIORITY_COLORS[task.priority]?.bg} ${PRIORITY_COLORS[task.priority]?.text}`}>
+                                                {task.priority}
+                                            </span>
+                                            <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${STATUS_COLORS[task.status]?.bg} ${STATUS_COLORS[task.status]?.text}`}>
+                                                {task.status}
+                                            </span>
+                                            {overdue && (
+                                                <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-700">
+                                                    Overdue
+                                                </span>
+                                            )}
+                                        </div>
+                                        {/* Details Row - Grid */}
+                                        <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
+                                            <div className="flex items-center gap-1">
+                                                <Calendar className="w-3 h-3 text-gray-400" />
+                                                <span className={overdue ? "text-red-600 font-medium" : ""}>{formatDate(task.due_date)}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                {task.assigned_user?.avatar ? (
+                                                    <img src={task.assigned_user.avatar} alt="" className="w-4 h-4 rounded-full" />
+                                                ) : (
+                                                    <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 text-[8px]">
+                                                        {task.assigned_user?.full_name?.[0] || "?"}
+                                                    </div>
+                                                )}
+                                                <span>{task.assigned_user?.full_name || "Unassigned"}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
                     </div>
 
                     {/* Pagination */}

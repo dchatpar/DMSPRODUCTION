@@ -256,158 +256,238 @@ const LeadsKanban: React.FC<LeadsKanbanProps> = ({
     }
 
     return (
-        <div className="w-full">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+        <>
+            {/* Desktop Kanban - Hidden on mobile */}
+            <div className="hidden lg:block w-full overflow-x-auto pb-4">
+                <div className="min-w-[900px] grid grid-cols-5 gap-4">
+                    {columns.map((column) => {
+                        const columnLeads = getLeadsByStatus(column.status);
+                        const ColumnIcon = column.icon;
+
+                        return (
+                            <div
+                                key={column.id}
+                                className={`rounded-lg ${column.bgColor} ${column.borderColor} border p-3 flex flex-col min-h-[400px] transition-colors ${updating ? 'opacity-70' : ''}`}
+                                onDragOver={handleDragOver}
+                                onDrop={(e) => handleDrop(e, column.status)}
+                            >
+                                {/* Column Header */}
+                                <div className="flex items-center justify-between p-2 rounded-t-lg">
+                                    <div className="flex items-center gap-2">
+                                        <ColumnIcon size={18} className={column.iconColor} />
+                                        <h3 className="font-semibold text-gray-700 text-sm">{column.title}</h3>
+                                        <span className={`text-xs px-2 py-0.5 rounded-full ${column.color} bg-white`}>
+                                            {columnLeads.length}
+                                        </span>
+                                    </div>
+                                    {updating && (
+                                        <Loader2 size={14} className="text-blue-500 animate-spin" />
+                                    )}
+                                </div>
+
+                                {/* Column Content */}
+                                <div
+                                    className="mt-3 space-y-3 flex-1 overflow-y-auto"
+                                    style={{ maxHeight: 'calc(100vh - 300px)' }}
+                                >
+                                    {columnLeads.map((lead) => (
+                                        <div
+                                            key={lead.id}
+                                            draggable={!updating}
+                                            onDragStart={(e) => handleDragStart(e, lead)}
+                                            className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-all cursor-grab active:cursor-grabbing hover:border-blue-300"
+                                        >
+                                            <div className="p-3">
+                                                {/* Drag Handle & Actions */}
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <div className="flex items-center gap-2 text-gray-400">
+                                                        <GripVertical size={14} />
+                                                        <span className="text-xs font-mono truncate max-w-[80px] text-gray-500">
+                                                            #{lead.id.slice(0, 8)}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex gap-1">
+                                                        <button
+                                                            onClick={() => onLeadClick(lead)}
+                                                            className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                                                            title="View Details"
+                                                        >
+                                                            <Eye size={14} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => onLeadEdit(lead)}
+                                                            className="p-1 text-gray-400 hover:text-amber-600 transition-colors"
+                                                            title="Edit"
+                                                        >
+                                                            <Edit size={14} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => onLeadDelete(lead)}
+                                                            className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                                                            title="Delete"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                {/* Customer Info */}
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    {lead.customer?.avatar ? (
+                                                        <img
+                                                            src={lead.customer.avatar}
+                                                            alt={lead.customer.name || 'Customer'}
+                                                            className="w-8 h-8 rounded-full object-cover flex-shrink-0"
+                                                        />
+                                                    ) : (
+                                                        <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-indigo-600 flex items-center justify-center shadow-sm flex-shrink-0">
+                                                            <User className="text-white" size={14} />
+                                                        </div>
+                                                    )}
+                                                    <div className="min-w-0 flex-1">
+                                                        <h4 className="font-semibold text-gray-900 text-sm truncate">
+                                                            {lead.customer?.name || 'Unknown Customer'}
+                                                        </h4>
+                                                        <div className="flex items-center gap-2 text-xs">
+                                                            <span className={`px-1.5 py-0.5 rounded ${getSourceColor(lead.source)}`}>
+                                                                {lead.source}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Contact Info */}
+                                                <div className="mb-2 text-xs">
+                                                    {lead.customer?.email && (
+                                                        <div className="flex items-center gap-1 mt-0.5">
+                                                            <Mail size={10} className="text-gray-400 flex-shrink-0" />
+                                                            <span className="text-gray-600 truncate">{lead.customer.email}</span>
+                                                        </div>
+                                                    )}
+                                                    {lead.customer?.phone && (
+                                                        <div className="flex items-center gap-1 mt-0.5">
+                                                            <Phone size={10} className="text-gray-400 flex-shrink-0" />
+                                                            <span className="text-gray-600 truncate">{lead.customer.phone}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* Vehicle Interest */}
+                                                {lead.vehicle && (
+                                                    <div className="flex items-center gap-1 mt-2 px-2 py-1 bg-gray-50 rounded-lg">
+                                                        <Car size={12} className="text-blue-500 flex-shrink-0" />
+                                                        <span className="text-xs text-gray-700 truncate">
+                                                            {lead.vehicle.year} {lead.vehicle.make} {lead.vehicle.model}
+                                                        </span>
+                                                    </div>
+                                                )}
+
+                                                {/* Assigned To & Last Engagement */}
+                                                <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
+                                                    <span className="text-xs text-gray-500">
+                                                        {lead.assigned_user?.full_name || 'Unassigned'}
+                                                    </span>
+                                                    <span className="text-xs text-gray-400">
+                                                        {new Date(lead.last_engagement).toLocaleDateString()}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+
+                                    {/* Empty State */}
+                                    {columnLeads.length === 0 && (
+                                        <div className="bg-gray-50 rounded-lg border border-dashed border-gray-300 p-6 text-center">
+                                            <ColumnIcon size={24} className={`mx-auto mb-2 ${column.iconColor} opacity-50`} />
+                                            <p className="text-xs text-gray-400">No leads</p>
+                                            <p className="text-xs text-gray-400">Drop here to move</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+
+            {/* Mobile Kanban - Card List View */}
+            <div className="lg:hidden space-y-4">
                 {columns.map((column) => {
                     const columnLeads = getLeadsByStatus(column.status);
                     const ColumnIcon = column.icon;
 
-                    return (
-                        <div
-                            key={column.id}
-                            className={`rounded-lg ${column.bgColor} ${column.borderColor} border p-3 flex flex-col min-h-[400px] transition-colors ${updating ? 'opacity-70' : ''
-                                }`}
-                            onDragOver={handleDragOver}
-                            onDrop={(e) => handleDrop(e, column.status)}
-                        >
-                            {/* Column Header */}
-                            <div className="flex items-center justify-between p-2 rounded-t-lg">
-                                <div className="flex items-center gap-2">
-                                    <ColumnIcon size={18} className={column.iconColor} />
-                                    <h3 className="font-semibold text-gray-700 text-sm">{column.title}</h3>
-                                    <span className={`text-xs px-2 py-0.5 rounded-full ${column.color} bg-white`}>
-                                        {columnLeads.length}
-                                    </span>
-                                </div>
-                                {updating && (
-                                    <Loader2 size={14} className="text-blue-500 animate-spin" />
-                                )}
-                            </div>
+                    if (columnLeads.length === 0) return null;
 
-                            {/* Column Content */}
-                            <div
-                                className="mt-3 space-y-3 flex-1 overflow-y-auto"
-                                style={{ maxHeight: 'calc(100vh - 300px)' }}
-                            >
+                    return (
+                        <div key={column.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                            <div className={`flex items-center gap-2 px-4 py-3 ${column.bgColor} border-b ${column.borderColor}`}>
+                                <ColumnIcon size={18} className={column.iconColor} />
+                                <h3 className="font-semibold text-gray-700 text-sm">{column.title}</h3>
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${column.color} bg-white`}>
+                                    {columnLeads.length}
+                                </span>
+                            </div>
+                            <div className="divide-y divide-gray-100">
                                 {columnLeads.map((lead) => (
                                     <div
                                         key={lead.id}
-                                        draggable={!updating}
-                                        onDragStart={(e) => handleDragStart(e, lead)}
-                                        className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-all cursor-grab active:cursor-grabbing hover:border-blue-300"
+                                        className="p-4 hover:bg-gray-50 transition-colors"
                                     >
-                                        <div className="p-3">
-                                            {/* Drag Handle & Actions */}
-                                            <div className="flex items-center justify-between mb-2">
-                                                <div className="flex items-center gap-2 text-gray-400">
-                                                    <GripVertical size={14} />
-                                                    <span className="text-xs font-mono truncate max-w-[80px] text-gray-500">
-                                                        #{lead.id.slice(0, 8)}
-                                                    </span>
-                                                </div>
-                                                <div className="flex gap-1">
-                                                    <button
-                                                        onClick={() => onLeadClick(lead)}
-                                                        className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
-                                                        title="View Details"
-                                                    >
-                                                        <Eye size={14} />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => onLeadEdit(lead)}
-                                                        className="p-1 text-gray-400 hover:text-amber-600 transition-colors"
-                                                        title="Edit"
-                                                    >
-                                                        <Edit size={14} />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => onLeadDelete(lead)}
-                                                        className="p-1 text-gray-400 hover:text-red-600 transition-colors"
-                                                        title="Delete"
-                                                    >
-                                                        <Trash2 size={14} />
-                                                    </button>
-                                                </div>
-                                            </div>
-
-                                            {/* Customer Info */}
-                                            <div className="flex items-center gap-2 mb-2">
+                                        <div className="flex items-start justify-between mb-2">
+                                            <div className="flex items-center gap-3">
                                                 {lead.customer?.avatar ? (
                                                     <img
                                                         src={lead.customer.avatar}
                                                         alt={lead.customer.name || 'Customer'}
-                                                        className="w-8 h-8 rounded-full object-cover flex-shrink-0"
+                                                        className="w-10 h-10 rounded-full object-cover"
                                                     />
                                                 ) : (
-                                                    <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-indigo-600 flex items-center justify-center shadow-sm flex-shrink-0">
-                                                        <User className="text-white" size={14} />
+                                                    <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-indigo-600 flex items-center justify-center text-white text-sm font-medium">
+                                                        {getInitials(lead.customer?.name || 'C')}
                                                     </div>
                                                 )}
-                                                <div className="min-w-0 flex-1">
-                                                    <h4 className="font-semibold text-gray-900 text-sm truncate">
+                                                <div>
+                                                    <h4 className="font-semibold text-gray-900 text-sm">
                                                         {lead.customer?.name || 'Unknown Customer'}
                                                     </h4>
-                                                    <div className="flex items-center gap-2 text-xs">
-                                                        <span className={`px-1.5 py-0.5 rounded ${getSourceColor(lead.source)}`}>
-                                                            {lead.source}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* Contact Info */}
-                                            <div className="mb-2 text-xs">
-                                                {lead.customer?.email && (
-                                                    <div className="flex items-center gap-1 mt-0.5">
-                                                        <Mail size={10} className="text-gray-400 flex-shrink-0" />
-                                                        <span className="text-gray-600 truncate">{lead.customer.email}</span>
-                                                    </div>
-                                                )}
-                                                {lead.customer?.phone && (
-                                                    <div className="flex items-center gap-1 mt-0.5">
-                                                        <Phone size={10} className="text-gray-400 flex-shrink-0" />
-                                                        <span className="text-gray-600 truncate">{lead.customer.phone}</span>
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            {/* Vehicle Interest */}
-                                            {lead.vehicle && (
-                                                <div className="flex items-center gap-1 mt-2 px-2 py-1 bg-gray-50 rounded-lg">
-                                                    <Car size={12} className="text-blue-500 flex-shrink-0" />
-                                                    <span className="text-xs text-gray-700 truncate">
-                                                        {lead.vehicle.year} {lead.vehicle.make} {lead.vehicle.model}
+                                                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getSourceColor(lead.source)}`}>
+                                                        {lead.source}
                                                     </span>
                                                 </div>
-                                            )}
-
-                                            {/* Assigned To & Last Engagement */}
-                                            <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
-                                                <span className="text-xs text-gray-500">
-                                                    {lead.assigned_user?.full_name || 'Unassigned'}
-                                                </span>
-                                                <span className="text-xs text-gray-400">
-                                                    {new Date(lead.last_engagement).toLocaleDateString()}
-                                                </span>
                                             </div>
+                                            <div className="flex gap-1">
+                                                <button
+                                                    onClick={() => onLeadClick(lead)}
+                                                    className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
+                                                >
+                                                    <Eye size={16} className="text-blue-500" />
+                                                </button>
+                                                <button
+                                                    onClick={() => onLeadEdit(lead)}
+                                                    className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                                >
+                                                    <Edit size={16} className="text-amber-500" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                        {lead.vehicle && (
+                                            <div className="text-xs text-gray-600 mb-1">
+                                                <Car size={12} className="inline mr-1 text-blue-500" />
+                                                {lead.vehicle.year} {lead.vehicle.make} {lead.vehicle.model}
+                                            </div>
+                                        )}
+                                        <div className="flex items-center justify-between text-xs text-gray-500">
+                                            <span>{lead.assigned_user?.full_name || 'Unassigned'}</span>
+                                            <span>{new Date(lead.last_engagement).toLocaleDateString()}</span>
                                         </div>
                                     </div>
                                 ))}
-
-                                {/* Empty State */}
-                                {columnLeads.length === 0 && (
-                                    <div className="bg-gray-50 rounded-lg border border-dashed border-gray-300 p-6 text-center">
-                                        <ColumnIcon size={24} className={`mx-auto mb-2 ${column.iconColor} opacity-50`} />
-                                        <p className="text-xs text-gray-400">No leads</p>
-                                        <p className="text-xs text-gray-400">Drop here to move</p>
-                                    </div>
-                                )}
                             </div>
                         </div>
                     );
                 })}
             </div>
-        </div>
+        </>
     );
 };
 
