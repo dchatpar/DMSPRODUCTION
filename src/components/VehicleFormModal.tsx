@@ -11,12 +11,15 @@ import {
     X as XIcon,
     Image as ImageIcon,
     ChevronDown,
+    Upload,
+    CloudUpload,
 } from "lucide-react";
 import {
     vehicleMakes,
     getModelsForMake,
     yearRange,
 } from "@/src/data/vehicle-makes-models";
+import { supabaseBrowser } from "@/src/lib/supabase-browser";
 
 interface Vehicle {
     id: string;
@@ -73,6 +76,8 @@ export default function VehicleFormModal({
     const [showMakeDropdown, setShowMakeDropdown] = useState(false);
     const [showModelDropdown, setShowModelDropdown] = useState(false);
     const [newImageUrl, setNewImageUrl] = useState("");
+    const [uploadingImage, setUploadingImage] = useState(false);
+    const [imageInputKey, setImageInputKey] = useState(0);
 
     useEffect(() => {
         if (mode === "edit" && vehicle) {
@@ -170,6 +175,76 @@ export default function VehicleFormModal({
             ...prev,
             image_gallery: prev.image_gallery.filter((_, i) => i !== index),
         }));
+    };
+
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        // Validate file type
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+        if (!allowedTypes.includes(file.type)) {
+            setError("Please upload a valid image file (JPG, PNG, WebP, or GIF)");
+            setTimeout(() => setError(null), 3000);
+            return;
+        }
+
+        // Validate file size (5MB max)
+        if (file.size > 5 * 1024 * 1024) {
+            setError("File size must be less than 5MB");
+            setTimeout(() => setError(null), 3000);
+            return;
+        }
+
+        setUploadingImage(true);
+        setError(null);
+
+        try {
+            const token = localStorage.getItem("access_token");
+            if (!token) throw new Error("Not authenticated");
+
+            // Generate unique file name
+            const fileExt = file.name.split('.').pop();
+            const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+
+            // Upload to Supabase Storage
+            const { data, error: uploadError } = await supabaseBrowser.storage
+                .from('vehicles')
+                .upload(fileName, file, {
+                    contentType: file.type,
+                });
+
+            if (uploadError) throw uploadError;
+
+            // Get public URL
+            const { data: urlData } = supabaseBrowser.storage
+                .from('vehicles')
+                .getPublicUrl(fileName);
+
+            const imageUrl = urlData.publicUrl;
+
+            // Check for duplicates
+            if (formData.image_gallery.includes(imageUrl)) {
+                setError("This image is already added");
+                setTimeout(() => setError(null), 3000);
+                return;
+            }
+
+            // Add to gallery
+            setFormData((prev) => ({
+                ...prev,
+                image_gallery: [...prev.image_gallery, imageUrl],
+            }));
+
+            // Reset file input
+            setImageInputKey((prev) => prev + 1);
+        } catch (err) {
+            console.error("Upload error:", err);
+            setError(err instanceof Error ? err.message : "Failed to upload image");
+            setTimeout(() => setError(null), 3000);
+        } finally {
+            setUploadingImage(false);
+        }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -524,6 +599,49 @@ export default function VehicleFormModal({
                                 <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
                                     Images
                                 </h3>
+
+                                {/* File Upload Option */}
+                                <div className="border-2 border-dashed border-gray-200 rounded-lg p-4 text-center hover:border-blue-400 transition-colors">
+                                    <input
+                                        key={imageInputKey}
+                                        type="file"
+                                        accept="image/jpeg,image/png,image/webp,image/gif"
+                                        onChange={handleFileUpload}
+                                        className="hidden"
+                                        id="vehicle-image-upload"
+                                        disabled={uploadingImage}
+                                    />
+                                    <label
+                                        htmlFor="vehicle-image-upload"
+                                        className={`cursor-pointer flex flex-col items-center gap-2 ${uploadingImage ? 'opacity-50' : ''}`}
+                                    >
+                                        {uploadingImage ? (
+                                            <>
+                                                <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+                                                <span className="text-sm text-gray-500">Uploading...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <CloudUpload className="w-8 h-8 text-gray-400" />
+                                                <span className="text-sm text-gray-500">
+                                                    Click to upload an image file
+                                                </span>
+                                                <span className="text-xs text-gray-400">
+                                                    JPG, PNG, WebP or GIF (max 5MB)
+                                                </span>
+                                            </>
+                                        )}
+                                    </label>
+                                </div>
+
+                                {/* OR divider */}
+                                <div className="flex items-center gap-3">
+                                    <div className="flex-1 h-px bg-gray-200"></div>
+                                    <span className="text-xs text-gray-400">OR</span>
+                                    <div className="flex-1 h-px bg-gray-200"></div>
+                                </div>
+
+                                {/* URL Upload */}
                                 <div className="flex gap-2">
                                     <input
                                         type="url"
@@ -581,7 +699,7 @@ export default function VehicleFormModal({
                                     <div className="text-center py-4 border-2 border-dashed border-gray-200 rounded-lg">
                                         <ImageIcon className="w-8 h-8 text-gray-300 mx-auto mb-2" />
                                         <p className="text-sm text-gray-400">No images added yet</p>
-                                        <p className="text-xs text-gray-400">Add image URLs above</p>
+                                        <p className="text-xs text-gray-400">Upload a file or add image URL above</p>
                                     </div>
                                 )}
                             </div>

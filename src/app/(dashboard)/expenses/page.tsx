@@ -137,19 +137,31 @@ export default function ExpensesPage() {
         setExportLoading(true);
         try {
             const token = localStorage.getItem("access_token");
+            if (!token) {
+                throw new Error("Not authenticated. Please login again.");
+            }
+
             const response = await fetch("/api/expenses?limit=10000", {
                 headers: { Authorization: `Bearer ${token}` },
             });
-            if (!response.ok) throw new Error("Failed to fetch expenses for export");
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `Failed to fetch expenses (${response.status})`);
+            }
 
             const data = await response.json();
             const exportData = data.data || [];
 
-            const worksheetData = exportData.map((expense: Expense) => ({
+            if (exportData.length === 0) {
+                throw new Error("No expenses found to export");
+            }
+
+            const worksheetData = exportData.map((expense: any) => ({
                 "Date": expense.expense_date ? new Date(expense.expense_date).toLocaleDateString() : "",
                 "Category": expense.category || "",
                 "Description": expense.description || "",
-                "Vendor": expense.vendor?.name || "",
+                "Vendor": expense.vendor?.vendor_name || "",
                 "Vehicle": expense.vehicle ? `${expense.vehicle.year} ${expense.vehicle.make} ${expense.vehicle.model}` : "",
                 "Amount": expense.amount || 0,
                 "Tax Amount": expense.tax_amount || 0,
@@ -174,7 +186,7 @@ export default function ExpensesPage() {
             XLSX.writeFile(workbook, `expenses-export-${new Date().toISOString().split("T")[0]}.xlsx`);
         } catch (error) {
             console.error("Export error:", error);
-            alert("Failed to export expenses");
+            alert(error instanceof Error ? error.message : "Failed to export expenses");
         } finally {
             setExportLoading(false);
         }

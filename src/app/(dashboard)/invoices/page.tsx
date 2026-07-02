@@ -111,13 +111,25 @@ export default function InvoicesPage() {
         setExportLoading(true);
         try {
             const token = localStorage.getItem("access_token");
+            if (!token) {
+                throw new Error("Not authenticated. Please login again.");
+            }
+
             const response = await fetch("/api/invoices?limit=10000", {
                 headers: { Authorization: `Bearer ${token}` },
             });
-            if (!response.ok) throw new Error("Failed to fetch invoices for export");
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `Failed to fetch invoices (${response.status})`);
+            }
 
             const data = await response.json();
             const exportData = data.data || [];
+
+            if (exportData.length === 0) {
+                throw new Error("No invoices found to export");
+            }
 
             const worksheetData = exportData.map((invoice: Invoice) => ({
                 "Invoice Number": invoice.invoice_number || "",
@@ -147,7 +159,7 @@ export default function InvoicesPage() {
             XLSX.writeFile(workbook, `invoices-export-${new Date().toISOString().split("T")[0]}.xlsx`);
         } catch (error) {
             console.error("Export error:", error);
-            alert("Failed to export invoices");
+            alert(error instanceof Error ? error.message : "Failed to export invoices");
         } finally {
             setExportLoading(false);
         }
