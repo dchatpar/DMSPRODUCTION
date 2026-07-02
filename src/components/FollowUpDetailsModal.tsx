@@ -13,6 +13,8 @@ import {
     CheckCircle,
     AlertCircle,
     Bell,
+    History,
+    ArrowRight,
 } from "lucide-react";
 
 interface Customer {
@@ -36,6 +38,19 @@ interface UserData {
     avatar: string | null;
 }
 
+interface FollowUpHistory {
+    id: string;
+    follow_up_id: string;
+    edited_by: string;
+    action: string;
+    previous_description: string | null;
+    new_description: string | null;
+    previous_status: string | null;
+    new_status: string | null;
+    created_at: string;
+    edited_by_user: UserData | null;
+}
+
 interface FollowUp {
     id: string;
     title: string;
@@ -53,6 +68,7 @@ interface FollowUp {
     customer: Customer | null;
     lead: Lead | null;
     assigned_user: UserData | null;
+    history?: FollowUpHistory[];
 }
 
 interface FollowUpDetailsModalProps {
@@ -280,6 +296,81 @@ export default function FollowUpDetailsModal({
                                 <p className="text-gray-700 bg-gray-50 rounded-lg p-3 whitespace-pre-wrap">
                                     {followUp.notes}
                                 </p>
+                            </div>
+                        )}
+
+                        {/* History */}
+                        {followUp.history && followUp.history.length > 0 && (
+                            <div className="mb-6">
+                                <h4 className="text-sm font-medium text-gray-500 mb-3 flex items-center gap-2">
+                                    <History className="w-4 h-4" />
+                                    Change History
+                                </h4>
+                                <div className="space-y-3">
+                                    {followUp.history.map((entry) => (
+                                        <div key={entry.id} className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                                                        entry.action === 'created' ? 'bg-green-100 text-green-700' :
+                                                        entry.action === 'completed' ? 'bg-blue-100 text-blue-700' :
+                                                        entry.action === 'cancelled' ? 'bg-gray-200 text-gray-700' :
+                                                        entry.action === 'status_changed' ? 'bg-purple-100 text-purple-700' :
+                                                        'bg-yellow-100 text-yellow-700'
+                                                    }`}>
+                                                        {entry.action.charAt(0).toUpperCase() + entry.action.slice(1)}
+                                                    </span>
+                                                    <span className="text-xs text-gray-500">
+                                                        by {entry.edited_by_user?.full_name || 'Unknown'}
+                                                    </span>
+                                                </div>
+                                                <span className="text-xs text-gray-400">
+                                                    {new Date(entry.created_at).toLocaleString()}
+                                                </span>
+                                            </div>
+
+                                            {/* Description changes */}
+                                            {(entry.previous_description !== entry.new_description) && (
+                                                <div className="mb-2">
+                                                    <span className="text-xs text-gray-500">Description: </span>
+                                                    {entry.action === 'created' ? (
+                                                        <span className="text-sm text-gray-700">{entry.new_description || '(no description)'}</span>
+                                                    ) : (
+                                                        <div className="flex items-center gap-2 text-sm">
+                                                            <span className="text-red-600 line-through">{entry.previous_description || '(no description)'}</span>
+                                                            <ArrowRight className="w-3 h-3 text-gray-400" />
+                                                            <span className="text-green-600">{entry.new_description || '(no description)'}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* Status changes */}
+                                            {(entry.previous_status !== entry.new_status) && (
+                                                <div>
+                                                    <span className="text-xs text-gray-500">Status: </span>
+                                                    <div className="flex items-center gap-2 text-sm">
+                                                        <span className={`px-2 py-0.5 rounded-full ${
+                                                            entry.previous_status === 'Pending' ? 'bg-yellow-100 text-yellow-700' :
+                                                            entry.previous_status === 'Completed' ? 'bg-green-100 text-green-700' :
+                                                            'bg-gray-100 text-gray-700'
+                                                        }`}>
+                                                            {entry.previous_status || 'None'}
+                                                        </span>
+                                                        <ArrowRight className="w-3 h-3 text-gray-400" />
+                                                        <span className={`px-2 py-0.5 rounded-full ${
+                                                            entry.new_status === 'Pending' ? 'bg-yellow-100 text-yellow-700' :
+                                                            entry.new_status === 'Completed' ? 'bg-green-100 text-green-700' :
+                                                            'bg-gray-100 text-gray-700'
+                                                        }`}>
+                                                            {entry.new_status || 'None'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         )}
 

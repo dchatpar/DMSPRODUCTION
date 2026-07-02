@@ -49,6 +49,19 @@ interface UserData {
     avatar: string | null;
 }
 
+interface FollowUpHistory {
+    id: string;
+    follow_up_id: string;
+    edited_by: string;
+    action: string;
+    previous_description: string | null;
+    new_description: string | null;
+    previous_status: string | null;
+    new_status: string | null;
+    created_at: string;
+    edited_by_user: UserData | null;
+}
+
 interface FollowUp {
     id: string;
     title: string;
@@ -66,6 +79,7 @@ interface FollowUp {
     customer: Customer | null;
     lead: Lead | null;
     assigned_user: UserData | null;
+    history?: FollowUpHistory[];
 }
 
 interface ApiResponse {
@@ -138,9 +152,21 @@ export default function FollowUpsPage() {
         }
     };
 
-    const handleViewDetails = (followUp: FollowUp) => {
-        setSelectedFollowUp(followUp);
-        setShowDetailsModal(true);
+    const handleViewDetails = async (followUp: FollowUp) => {
+        try {
+            const token = localStorage.getItem("access_token");
+            const response = await fetch(`/api/follow-ups/${followUp.id}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+
+            if (!response.ok) throw new Error("Failed to fetch follow-up details");
+
+            const { data } = await response.json();
+            setSelectedFollowUp(data);
+            setShowDetailsModal(true);
+        } catch (err) {
+            alert(err instanceof Error ? err.message : "Failed to load follow-up details");
+        }
     };
 
     const handleEdit = (followUp: FollowUp) => {

@@ -18,6 +18,7 @@ import {
     Image,
     Signature,
     UserPlus,
+    Plus,
 } from "lucide-react";
 
 interface TestDrive {
@@ -60,6 +61,9 @@ export default function TestDriveFormModal({
     const [loadingData, setLoadingData] = useState(true);
     const [customerType, setCustomerType] = useState<"customer" | "lead">("customer");
     const [errors, setErrors] = useState<Record<string, string>>({});
+    const [showAddCustomer, setShowAddCustomer] = useState(false);
+    const [newCustomer, setNewCustomer] = useState({ name: "", email: "", phone: "" });
+    const [addingCustomer, setAddingCustomer] = useState(false);
 
     const [formData, setFormData] = useState({
         customer_id: "",
@@ -154,6 +158,57 @@ export default function TestDriveFormModal({
                 delete newErrors[name];
                 return newErrors;
             });
+        }
+    };
+
+    const handleNewCustomerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const { name, value } = e.target;
+        setNewCustomer((prev) => ({ ...prev, [name]: value }));
+    };
+
+    const handleAddCustomer = async () => {
+        if (!newCustomer.name.trim()) {
+            setError("Customer name is required");
+            return;
+        }
+
+        setAddingCustomer(true);
+        setError(null);
+
+        try {
+            const token = localStorage.getItem("access_token");
+            const response = await fetch("/api/customers", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify(newCustomer),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || "Failed to add customer");
+            }
+
+            const { data: newCustomerData } = await response.json();
+
+            // Refresh customers list
+            const customersRes = await fetch("/api/customers?limit=1000", {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            const customersData = await customersRes.json();
+            setCustomers(customersData.data || []);
+
+            // Select the new customer and switch to customer type
+            setFormData((prev) => ({ ...prev, customer_id: newCustomerData.id }));
+            setCustomerType("customer");
+            setShowAddCustomer(false);
+            setNewCustomer({ name: "", email: "", phone: "" });
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to add customer");
+        } finally {
+            setAddingCustomer(false);
         }
     };
 
@@ -358,29 +413,124 @@ export default function TestDriveFormModal({
                             {/* Customer/Lead Selection */}
                             {customerType === "customer" ? (
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                                        Select Customer *
-                                    </label>
-                                    <div className="relative">
-                                        <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                        <select
-                                            name="customer_id"
-                                            value={formData.customer_id}
-                                            onChange={handleChange}
-                                            className={`w-full pl-10 pr-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:border-transparent bg-white ${
-                                                errors.customer_id
-                                                    ? "border-red-500 focus:ring-red-500"
-                                                    : "border-gray-200 focus:ring-blue-500"
-                                            }`}
-                                        >
-                                            <option value="">Select Customer</option>
-                                            {customers.map((customer) => (
-                                                <option key={customer.id} value={customer.id}>
-                                                    {customer.name} {customer.email ? `(${customer.email})` : ""}
-                                                </option>
-                                            ))}
-                                        </select>
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <label className="block text-sm font-medium text-gray-700">
+                                            Select Customer *
+                                        </label>
+                                        {!showAddCustomer && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowAddCustomer(true)}
+                                                className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+                                            >
+                                                <Plus className="w-3 h-3" />
+                                                Add New Customer
+                                            </button>
+                                        )}
                                     </div>
+
+                                    {showAddCustomer ? (
+                                        <div className="border border-blue-200 rounded-lg p-4 bg-blue-50 space-y-3">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-sm font-medium text-blue-700">Add New Customer</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setShowAddCustomer(false);
+                                                        setNewCustomer({ name: "", email: "", phone: "" });
+                                                        setError(null);
+                                                    }}
+                                                    className="text-gray-400 hover:text-gray-600"
+                                                >
+                                                    <X className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                            <div className="grid grid-cols-3 gap-3">
+                                                <div>
+                                                    <input
+                                                        type="text"
+                                                        name="name"
+                                                        value={newCustomer.name}
+                                                        onChange={handleNewCustomerChange}
+                                                        placeholder="Name *"
+                                                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                        required
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <input
+                                                        type="email"
+                                                        name="email"
+                                                        value={newCustomer.email}
+                                                        onChange={handleNewCustomerChange}
+                                                        placeholder="Email"
+                                                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <input
+                                                        type="tel"
+                                                        name="phone"
+                                                        value={newCustomer.phone}
+                                                        onChange={handleNewCustomerChange}
+                                                        placeholder="Phone"
+                                                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="flex justify-end gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setShowAddCustomer(false);
+                                                        setNewCustomer({ name: "", email: "", phone: "" });
+                                                    }}
+                                                    className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                                                >
+                                                    Cancel
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={handleAddCustomer}
+                                                    disabled={addingCustomer}
+                                                    className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-1"
+                                                >
+                                                    {addingCustomer ? (
+                                                        <>
+                                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                                            Adding...
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <Save className="w-3 h-3" />
+                                                            Add Customer
+                                                        </>
+                                                    )}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="relative">
+                                            <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                            <select
+                                                name="customer_id"
+                                                value={formData.customer_id}
+                                                onChange={handleChange}
+                                                className={`w-full pl-10 pr-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:border-transparent bg-white ${
+                                                    errors.customer_id
+                                                        ? "border-red-500 focus:ring-red-500"
+                                                        : "border-gray-200 focus:ring-blue-500"
+                                                }`}
+                                            >
+                                                <option value="">Select Customer</option>
+                                                {customers.map((customer) => (
+                                                    <option key={customer.id} value={customer.id}>
+                                                        {customer.name} {customer.email ? `(${customer.email})` : ""}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
                                     {errors.customer_id && (
                                         <p className="mt-1 text-xs text-red-500">{errors.customer_id}</p>
                                     )}

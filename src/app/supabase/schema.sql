@@ -384,6 +384,7 @@ CREATE TABLE IF NOT EXISTS follow_ups (
     customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
     lead_id UUID REFERENCES leads(id) ON DELETE SET NULL,
     assigned_to UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_by UUID REFERENCES users(id) ON DELETE SET NULL,
     follow_up_date DATE NOT NULL,
     follow_up_time TIME,
     priority TEXT DEFAULT 'Medium' CHECK (priority IN ('Low', 'Medium', 'High', 'Urgent')),
@@ -396,6 +397,20 @@ CREATE TABLE IF NOT EXISTS follow_ups (
     completed_by UUID REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Follow-up History table
+CREATE TABLE IF NOT EXISTS follow_up_history (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    follow_up_id UUID REFERENCES follow_ups(id) ON DELETE CASCADE NOT NULL,
+    edited_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    edited_at TIMESTAMPTZ DEFAULT NOW(),
+    previous_description TEXT,
+    new_description TEXT,
+    previous_status TEXT,
+    new_status TEXT,
+    action TEXT NOT NULL CHECK (action IN ('created', 'updated', 'status_changed', 'completed', 'cancelled')),
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Follow-up Activity Log table
@@ -536,8 +551,10 @@ CREATE INDEX IF NOT EXISTS idx_ticket_attachments_ticket_id ON ticket_attachment
 CREATE INDEX IF NOT EXISTS idx_follow_ups_customer_id ON follow_ups(customer_id);
 CREATE INDEX IF NOT EXISTS idx_follow_ups_lead_id ON follow_ups(lead_id);
 CREATE INDEX IF NOT EXISTS idx_follow_ups_assigned_to ON follow_ups(assigned_to);
+CREATE INDEX IF NOT EXISTS idx_follow_ups_created_by ON follow_ups(created_by);
 CREATE INDEX IF NOT EXISTS idx_follow_ups_status ON follow_ups(status);
 CREATE INDEX IF NOT EXISTS idx_follow_ups_follow_up_date ON follow_ups(follow_up_date);
+CREATE INDEX IF NOT EXISTS idx_follow_up_history_follow_up_id ON follow_up_history(follow_up_id);
 
 CREATE INDEX IF NOT EXISTS idx_expenses_vendor_id ON expenses(vendor_id);
 CREATE INDEX IF NOT EXISTS idx_expenses_vehicle_id ON expenses(vehicle_id);
@@ -711,6 +728,7 @@ ALTER TABLE ticket_comments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ticket_attachments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ticket_activity ENABLE ROW LEVEL SECURITY;
 ALTER TABLE follow_ups ENABLE ROW LEVEL SECURITY;
+ALTER TABLE follow_up_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE follow_up_activity ENABLE ROW LEVEL SECURITY;
 ALTER TABLE expense_activity ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bill_of_sale ENABLE ROW LEVEL SECURITY;
@@ -1055,6 +1073,17 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'follow_up_activity_insert_policy' AND polrelid = 'follow_up_activity'::regclass) THEN
         CREATE POLICY follow_up_activity_insert_policy ON follow_up_activity FOR INSERT WITH CHECK (true);
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    -- Follow-up History policies
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'follow_up_history_select_policy' AND polrelid = 'follow_up_history'::regclass) THEN
+        CREATE POLICY follow_up_history_select_policy ON follow_up_history FOR SELECT USING (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'follow_up_history_insert_policy' AND polrelid = 'follow_up_history'::regclass) THEN
+        CREATE POLICY follow_up_history_insert_policy ON follow_up_history FOR INSERT WITH CHECK (true);
     END IF;
 END $$;
 

@@ -39,7 +39,9 @@ export async function GET(
             .select(`
                 *,
                 customer:customers(id, name, email, phone),
-                assigned_user:users!assigned_to(id, full_name, email)
+                assigned_user:users!assigned_to(id, full_name, email),
+                created_by_user:users!created_by(id, full_name, email),
+                completed_by_user:users!completed_by(id, full_name, email)
             `)
             .eq("id", id)
             .single();
@@ -53,7 +55,17 @@ export async function GET(
             );
         }
 
-        return NextResponse.json({ data });
+        // Get history
+        const { data: history } = await supabase
+            .from("follow_up_history")
+            .select(`
+                *,
+                edited_by_user:users!edited_by(id, full_name, email)
+            `)
+            .eq("follow_up_id", id)
+            .order("created_at", { ascending: true });
+
+        return NextResponse.json({ data: { ...data, history: history || [] } });
     } catch (error: any) {
         console.error("Error fetching follow-up:", error);
         return NextResponse.json(
@@ -132,6 +144,13 @@ export async function PATCH(
             updateData.completed_at = new Date().toISOString();
         }
 
+        // Get current follow-up for history
+        const { data: currentFollowUp } = await supabase
+            .from("follow_ups")
+            .select("description, status")
+            .eq("id", id)
+            .single();
+
         const { data, error: dbError } = await supabase
             .from("follow_ups")
             .update(updateData)
@@ -139,7 +158,9 @@ export async function PATCH(
             .select(`
                 *,
                 customer:customers(id, name, email, phone),
-                assigned_user:users!assigned_to(id, full_name, email)
+                assigned_user:users!assigned_to(id, full_name, email),
+                created_by_user:users!created_by(id, full_name, email),
+                completed_by_user:users!completed_by(id, full_name, email)
             `)
             .single();
 
@@ -152,7 +173,39 @@ export async function PATCH(
             );
         }
 
-        return NextResponse.json({ data });
+        // Create history entry for the update
+        let historyAction = "updated";
+        if (payload.status === 'Completed' && currentFollowUp?.status !== 'Completed') {
+            historyAction = "completed";
+        } else if (payload.status === 'Cancelled') {
+            historyAction = "cancelled";
+        } else if (payload.status !== undefined && payload.status !== currentFollowUp?.status) {
+            historyAction = "status_changed";
+        }
+
+        await supabase
+            .from("follow_up_history")
+            .insert({
+                follow_up_id: id,
+                edited_by: user.id,
+                action: historyAction,
+                previous_description: currentFollowUp?.description,
+                new_description: payload.description !== undefined ? payload.description : currentFollowUp?.description,
+                previous_status: currentFollowUp?.status,
+                new_status: payload.status !== undefined ? payload.status : currentFollowUp?.status,
+            });
+
+        // Get updated history
+        const { data: history } = await supabase
+            .from("follow_up_history")
+            .select(`
+                *,
+                edited_by_user:users!edited_by(id, full_name, email)
+            `)
+            .eq("follow_up_id", id)
+            .order("created_at", { ascending: true });
+
+        return NextResponse.json({ data: { ...data, history: history || [] } });
     } catch (error: any) {
         console.error("Error updating follow-up:", error);
         return NextResponse.json(

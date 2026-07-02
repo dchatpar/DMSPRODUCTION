@@ -42,7 +42,9 @@ export async function GET(req: NextRequest) {
             .select(`
                 *,
                 customer:customers(id, name, email, phone),
-                assigned_user:users!assigned_to(id, full_name, email)
+                assigned_user:users!assigned_to(id, full_name, email),
+                created_by_user:users!created_by(id, full_name, email),
+                completed_by_user:users!completed_by(id, full_name, email)
             `, { count: "exact" })
             .order("follow_up_date", { ascending: true })
             .range(offset, offset + limit - 1);
@@ -142,12 +144,14 @@ export async function POST(req: NextRequest) {
             customer_id: payload.customer_id || null,
             lead_id: payload.lead_id || null,
             assigned_to: payload.assigned_to || user.id,
+            created_by: user.id,
             follow_up_date: payload.follow_up_date,
             follow_up_time: payload.follow_up_time || null,
             priority: payload.priority || 'Medium',
             status: payload.status || 'Pending',
             notes: payload.notes || null,
             completed_at: payload.status === 'Completed' ? new Date().toISOString() : null,
+            completed_by: payload.status === 'Completed' ? user.id : null,
         };
 
         const { data, error: dbError } = await supabase
@@ -156,11 +160,26 @@ export async function POST(req: NextRequest) {
             .select(`
                 *,
                 customer:customers(id, name, email, phone),
-                assigned_user:users!assigned_to(id, full_name, email)
+                assigned_user:users!assigned_to(id, full_name, email),
+                created_by_user:users!created_by(id, full_name, email),
+                completed_by_user:users!completed_by(id, full_name, email)
             `)
             .single();
 
         if (dbError) throw dbError;
+
+        // Create initial history entry
+        if (data) {
+            await supabase
+                .from("follow_up_history")
+                .insert({
+                    follow_up_id: data.id,
+                    edited_by: user.id,
+                    action: "created",
+                    new_description: data.description,
+                    new_status: data.status,
+                });
+        }
 
         return NextResponse.json({ data }, { status: 201 });
     } catch (error: any) {
