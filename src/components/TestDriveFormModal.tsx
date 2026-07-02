@@ -59,6 +59,7 @@ export default function TestDriveFormModal({
     const [users, setUsers] = useState<any[]>([]);
     const [loadingData, setLoadingData] = useState(true);
     const [customerType, setCustomerType] = useState<"customer" | "lead">("customer");
+    const [errors, setErrors] = useState<Record<string, string>>({});
 
     const [formData, setFormData] = useState({
         customer_id: "",
@@ -146,9 +147,64 @@ export default function TestDriveFormModal({
             ...prev,
             [name]: value,
         }));
+        // Clear error when user types
+        if (errors[name]) {
+            setErrors((prev) => {
+                const newErrors = { ...prev };
+                delete newErrors[name];
+                return newErrors;
+            });
+        }
+    };
+
+    const validateForm = (): boolean => {
+        const newErrors: Record<string, string> = {};
+
+        // Validate customer/lead selection
+        if (customerType === "customer" && !formData.customer_id) {
+            newErrors.customer_id = "Customer is required";
+        }
+        if (customerType === "lead" && !formData.lead_id) {
+            newErrors.lead_id = "Lead is required";
+        }
+
+        // Validate vehicle
+        if (!formData.vehicle_id) {
+            newErrors.vehicle_id = "Vehicle is required";
+        }
+
+        // Validate driver license
+        if (!formData.driver_license_number) {
+            newErrors.driver_license_number = "Driver license number is required";
+        }
+        if (!formData.driver_license_expiry) {
+            newErrors.driver_license_expiry = "License expiry date is required";
+        } else {
+            const expiryDate = new Date(formData.driver_license_expiry);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (expiryDate < today) {
+                newErrors.driver_license_expiry = "License has expired";
+            }
+        }
+
+        // Validate start time
+        if (!formData.start_time) {
+            newErrors.start_time = "Start time is required";
+        }
+
+        setErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+
+        // Validate before submission
+        if (!validateForm()) {
+            setError("Please fill in all required fields");
+            return;
+        }
         e.preventDefault();
         setLoading(true);
         setError(null);
@@ -158,16 +214,37 @@ export default function TestDriveFormModal({
             const url = mode === "add" ? "/api/test-drives" : `/api/test-drives/${testDrive?.id}`;
             const method = mode === "add" ? "POST" : "PUT";
 
-            const payload = {
-                ...formData,
-                customer_id: customerType === "customer" ? formData.customer_id : null,
-                lead_id: customerType === "lead" ? formData.lead_id : null,
-                end_time: formData.end_time || null,
-                driver_license_image_url: formData.driver_license_image_url || null,
-                signature_image_url: formData.signature_image_url || null,
-                notes: formData.notes || null,
-                salesperson_id: formData.salesperson_id || null,
+            // Build payload only with required fields and non-empty optional fields
+            const payload: Record<string, any> = {
+                vehicle_id: formData.vehicle_id,
+                driver_license_number: formData.driver_license_number,
+                driver_license_expiry: formData.driver_license_expiry,
+                start_time: formData.start_time,
+                status: formData.status || "Scheduled",
             };
+
+            // Only add optional fields if they have values
+            if (customerType === "customer" && formData.customer_id) {
+                payload.customer_id = formData.customer_id;
+            }
+            if (customerType === "lead" && formData.lead_id) {
+                payload.lead_id = formData.lead_id;
+            }
+            if (formData.end_time) {
+                payload.end_time = formData.end_time;
+            }
+            if (formData.driver_license_image_url) {
+                payload.driver_license_image_url = formData.driver_license_image_url;
+            }
+            if (formData.signature_image_url) {
+                payload.signature_image_url = formData.signature_image_url;
+            }
+            if (formData.notes) {
+                payload.notes = formData.notes;
+            }
+            if (formData.salesperson_id) {
+                payload.salesperson_id = formData.salesperson_id;
+            }
 
             const response = await fetch(url, {
                 method,
@@ -290,8 +367,11 @@ export default function TestDriveFormModal({
                                             name="customer_id"
                                             value={formData.customer_id}
                                             onChange={handleChange}
-                                            className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                                            required
+                                            className={`w-full pl-10 pr-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:border-transparent bg-white ${
+                                                errors.customer_id
+                                                    ? "border-red-500 focus:ring-red-500"
+                                                    : "border-gray-200 focus:ring-blue-500"
+                                            }`}
                                         >
                                             <option value="">Select Customer</option>
                                             {customers.map((customer) => (
@@ -301,6 +381,9 @@ export default function TestDriveFormModal({
                                             ))}
                                         </select>
                                     </div>
+                                    {errors.customer_id && (
+                                        <p className="mt-1 text-xs text-red-500">{errors.customer_id}</p>
+                                    )}
                                 </div>
                             ) : (
                                 <div>
@@ -313,8 +396,11 @@ export default function TestDriveFormModal({
                                             name="lead_id"
                                             value={formData.lead_id}
                                             onChange={handleChange}
-                                            className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                                            required
+                                            className={`w-full pl-10 pr-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:border-transparent bg-white ${
+                                                errors.lead_id
+                                                    ? "border-red-500 focus:ring-red-500"
+                                                    : "border-gray-200 focus:ring-blue-500"
+                                            }`}
                                         >
                                             <option value="">Select Lead</option>
                                             {leads.map((lead) => (
@@ -324,6 +410,9 @@ export default function TestDriveFormModal({
                                             ))}
                                         </select>
                                     </div>
+                                    {errors.lead_id && (
+                                        <p className="mt-1 text-xs text-red-500">{errors.lead_id}</p>
+                                    )}
                                 </div>
                             )}
 
@@ -338,8 +427,11 @@ export default function TestDriveFormModal({
                                         name="vehicle_id"
                                         value={formData.vehicle_id}
                                         onChange={handleChange}
-                                        className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                                        required
+                                        className={`w-full pl-10 pr-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:border-transparent bg-white ${
+                                            errors.vehicle_id
+                                                ? "border-red-500 focus:ring-red-500"
+                                                : "border-gray-200 focus:ring-blue-500"
+                                        }`}
                                     >
                                         <option value="">Select Vehicle</option>
                                         {vehicles.map((vehicle) => (
@@ -349,6 +441,9 @@ export default function TestDriveFormModal({
                                         ))}
                                     </select>
                                 </div>
+                                {errors.vehicle_id && (
+                                    <p className="mt-1 text-xs text-red-500">{errors.vehicle_id}</p>
+                                )}
                             </div>
 
                             {/* Driver License */}
@@ -364,11 +459,17 @@ export default function TestDriveFormModal({
                                             name="driver_license_number"
                                             value={formData.driver_license_number}
                                             onChange={handleChange}
-                                            className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                            className={`w-full pl-10 pr-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:border-transparent ${
+                                                errors.driver_license_number
+                                                    ? "border-red-500 focus:ring-red-500"
+                                                    : "border-gray-200 focus:ring-blue-500"
+                                            }`}
                                             placeholder="DL123456"
-                                            required
                                         />
                                     </div>
+                                    {errors.driver_license_number && (
+                                        <p className="mt-1 text-xs text-red-500">{errors.driver_license_number}</p>
+                                    )}
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -381,10 +482,16 @@ export default function TestDriveFormModal({
                                             name="driver_license_expiry"
                                             value={formData.driver_license_expiry}
                                             onChange={handleChange}
-                                            className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                            required
+                                            className={`w-full pl-10 pr-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:border-transparent ${
+                                                errors.driver_license_expiry
+                                                    ? "border-red-500 focus:ring-red-500"
+                                                    : "border-gray-200 focus:ring-blue-500"
+                                            }`}
                                         />
                                     </div>
+                                    {errors.driver_license_expiry && (
+                                        <p className="mt-1 text-xs text-red-500">{errors.driver_license_expiry}</p>
+                                    )}
                                 </div>
                             </div>
 
@@ -437,10 +544,16 @@ export default function TestDriveFormModal({
                                             name="start_time"
                                             value={formData.start_time}
                                             onChange={handleChange}
-                                            className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                            required
+                                            className={`w-full pl-10 pr-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:border-transparent ${
+                                                errors.start_time
+                                                    ? "border-red-500 focus:ring-red-500"
+                                                    : "border-gray-200 focus:ring-blue-500"
+                                            }`}
                                         />
                                     </div>
+                                    {errors.start_time && (
+                                        <p className="mt-1 text-xs text-red-500">{errors.start_time}</p>
+                                    )}
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -493,7 +606,6 @@ export default function TestDriveFormModal({
                                         className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                                     >
                                         <option value="Scheduled">Scheduled</option>
-                                        <option value="In Progress">In Progress</option>
                                         <option value="Completed">Completed</option>
                                         <option value="Cancelled">Cancelled</option>
                                         <option value="No Show">No Show</option>

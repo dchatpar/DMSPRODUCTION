@@ -46,9 +46,8 @@ export async function GET(req: NextRequest) {
 
         if (status) query = query.eq("status", status);
         if (q) {
-            query = query.or(
-                `invoice_number.ilike.%${q}%,customer.name.ilike.%${q}%,package_name.ilike.%${q}%`
-            );
+            // Search only on invoice columns since PostgREST doesn't support FK refs in .or()
+            query = query.or(`invoice_number.ilike.%${q}%,notes.ilike.%${q}%`);
         }
 
         const { data, error: dbError, count } = await query;

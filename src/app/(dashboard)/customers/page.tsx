@@ -26,6 +26,7 @@ import {
     Clock,
     UserPlus,
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import CustomerDetailsModal from "@/src/components/CustomerDetailsModal";
 import CustomerFormModal from "@/src/components/CustomerFormModal";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
@@ -59,9 +60,11 @@ export default function CustomersPage() {
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
     const [statusFilter, setStatusFilter] = useState<string>("");
+    const [statusOptions, setStatusOptions] = useState<string[]>([]);
     const [currentPage, setCurrentPage] = useState(1);
     const [totalItems, setTotalItems] = useState(0);
     const [itemsPerPage] = useState(10);
+    const [exportLoading, setExportLoading] = useState(false);
 
     // Modal states
     const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -78,7 +81,78 @@ export default function CustomersPage() {
 
     useEffect(() => {
         fetchCustomers();
+        fetchStatusOptions();
     }, [currentPage, statusFilter, searchTerm]);
+
+    const fetchStatusOptions = async () => {
+        try {
+            const token = localStorage.getItem("access_token");
+            const response = await fetch("/api/customers?distinct_status=true", {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setStatusOptions(data.data || []);
+            }
+        } catch (error) {
+            console.error("Error fetching status options:", error);
+        }
+    };
+
+    const exportToExcel = async () => {
+        setExportLoading(true);
+        try {
+            const token = localStorage.getItem("access_token");
+            // Fetch all customers for export (without pagination)
+            const response = await fetch("/api/customers?limit=10000", {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!response.ok) throw new Error("Failed to fetch customers for export");
+
+            const data = await response.json();
+            const exportData = data.data || [];
+
+            // Prepare data for Excel
+            const worksheetData = exportData.map((customer: Customer) => ({
+                "Customer Name": customer.name || "",
+                "Email": customer.email || "",
+                "Phone": customer.phone || "",
+                "Address": customer.address || "",
+                "City": customer.city || "",
+                "Province": customer.province || "",
+                "Postal Code": customer.postal_code || "",
+                "Status": customer.status || "",
+                "Notes": customer.notes || "",
+                "Created At": customer.created_at ? new Date(customer.created_at).toLocaleDateString() : "",
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(worksheetData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Customers");
+
+            // Auto-size columns
+            const colWidths = [
+                { wch: 25 }, // Customer Name
+                { wch: 30 }, // Email
+                { wch: 15 }, // Phone
+                { wch: 30 }, // Address
+                { wch: 15 }, // City
+                { wch: 15 }, // Province
+                { wch: 12 }, // Postal Code
+                { wch: 12 }, // Status
+                { wch: 30 }, // Notes
+                { wch: 15 }, // Created At
+            ];
+            worksheet["!cols"] = colWidths;
+
+            XLSX.writeFile(workbook, `customers-export-${new Date().toISOString().split("T")[0]}.xlsx`);
+        } catch (error) {
+            console.error("Export error:", error);
+            alert("Failed to export customers");
+        } finally {
+            setExportLoading(false);
+        }
+    };
 
     const fetchCustomers = async () => {
         try {
@@ -268,19 +342,24 @@ export default function CustomersPage() {
                             className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                         >
                             <option value="">All Status</option>
-                            <option value="Active">Active</option>
-                            <option value="Inactive">Inactive</option>
-                            <option value="Lead">Lead</option>
-                            <option value="In Progress">In Progress</option>
-                            <option value="Converted">Converted</option>
-                            <option value="Lost">Lost</option>
+                            {statusOptions.map((status) => (
+                                <option key={status} value={status}>{status}</option>
+                            ))}
                         </select>
                         <button className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2">
                             <Filter className="w-4 h-4" />
                             More Filters
                         </button>
-                        <button className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2">
-                            <Download className="w-4 h-4" />
+                        <button
+                            onClick={exportToExcel}
+                            disabled={exportLoading}
+                            className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 disabled:opacity-50"
+                        >
+                            {exportLoading ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                                <Download className="w-4 h-4" />
+                            )}
                             Export
                         </button>
                     </div>

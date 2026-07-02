@@ -5,7 +5,6 @@ import {
     Ticket,
     Plus,
     Search,
-    Filter,
     MoreVertical,
     Edit,
     Trash2,
@@ -27,6 +26,7 @@ import {
     Phone,
     User,
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import TicketFormModal from "@/src/components/TicketFormModal";
 import TicketDetailsModal from "@/src/components/TicketDetailsModal";
 import TicketsKanban from "@/src/components/TicketsKanban";
@@ -81,10 +81,14 @@ export default function TicketsPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
+    const [debouncedSearch, setDebouncedSearch] = useState("");
+    const [priorityFilter, setPriorityFilter] = useState("");
+    const [statusFilter, setStatusFilter] = useState("");
     const [currentPage, setCurrentPage] = useState(1);
     const [totalItems, setTotalItems] = useState(0);
     const [itemsPerPage] = useState(20);
     const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
+    const [exportLoading, setExportLoading] = useState(false);
 
     // Modal states
     const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -101,7 +105,58 @@ export default function TicketsPage() {
 
     useEffect(() => {
         fetchTickets();
-    }, [currentPage, searchTerm]);
+    }, [currentPage, debouncedSearch, priorityFilter, statusFilter]);
+
+    // Debounce search input
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearch(searchTerm);
+            setCurrentPage(1); // Reset to first page when search changes
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
+
+    const exportToExcel = async () => {
+        setExportLoading(true);
+        try {
+            const token = localStorage.getItem("access_token");
+            const response = await fetch("/api/tickets?limit=10000", {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!response.ok) throw new Error("Failed to fetch tickets for export");
+
+            const data = await response.json();
+            const exportData = data.data || [];
+
+            const worksheetData = exportData.map((ticket: Ticket) => ({
+                "Subject": ticket.subject || "",
+                "Description": ticket.description || "",
+                "Priority": ticket.priority || "",
+                "Status": ticket.status || "",
+                "Created By": ticket.created_by_user?.full_name || "",
+                "Assigned To": ticket.assigned_user?.full_name || "",
+                "Created At": ticket.created_at ? new Date(ticket.created_at).toLocaleDateString() : "",
+                "Resolved At": ticket.resolved_at ? new Date(ticket.resolved_at).toLocaleDateString() : "",
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(worksheetData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Tickets");
+
+            const colWidths = [
+                { wch: 30 }, { wch: 40 }, { wch: 12 }, { wch: 15 },
+                { wch: 20 }, { wch: 20 }, { wch: 15 }, { wch: 15 },
+            ];
+            worksheet["!cols"] = colWidths;
+
+            XLSX.writeFile(workbook, `tickets-export-${new Date().toISOString().split("T")[0]}.xlsx`);
+        } catch (error) {
+            console.error("Export error:", error);
+            alert("Failed to export tickets");
+        } finally {
+            setExportLoading(false);
+        }
+    };
 
     const fetchTickets = async () => {
         try {
@@ -112,7 +167,9 @@ export default function TicketsPage() {
             const offset = (currentPage - 1) * itemsPerPage;
 
             let url = `/api/tickets?limit=${itemsPerPage}&offset=${offset}`;
-            if (searchTerm) url += `&q=${encodeURIComponent(searchTerm)}`;
+            if (debouncedSearch) url += `&q=${encodeURIComponent(debouncedSearch)}`;
+            if (priorityFilter) url += `&priority=${encodeURIComponent(priorityFilter)}`;
+            if (statusFilter) url += `&status=${encodeURIComponent(statusFilter)}`;
 
             const response = await fetch(url, {
                 headers: {
@@ -352,6 +409,11 @@ export default function TicketsPage() {
                     </div>
                     <div className="flex gap-3">
                         <select
+                            value={priorityFilter}
+                            onChange={(e) => {
+                                setPriorityFilter(e.target.value);
+                                setCurrentPage(1);
+                            }}
                             className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                         >
                             <option value="">All Priority</option>
@@ -361,6 +423,11 @@ export default function TicketsPage() {
                             <option value="Urgent">Urgent</option>
                         </select>
                         <select
+                            value={statusFilter}
+                            onChange={(e) => {
+                                setStatusFilter(e.target.value);
+                                setCurrentPage(1);
+                            }}
                             className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                         >
                             <option value="">All Status</option>
@@ -369,12 +436,16 @@ export default function TicketsPage() {
                             <option value="Resolved">Resolved</option>
                             <option value="Closed">Closed</option>
                         </select>
-                        <button className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2">
-                            <Filter className="w-4 h-4" />
-                            More Filters
-                        </button>
-                        <button className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2">
-                            <Download className="w-4 h-4" />
+                        <button
+                            onClick={exportToExcel}
+                            disabled={exportLoading}
+                            className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 disabled:opacity-50"
+                        >
+                            {exportLoading ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                                <Download className="w-4 h-4" />
+                            )}
                             Export
                         </button>
                     </div>

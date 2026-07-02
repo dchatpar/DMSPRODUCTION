@@ -56,9 +56,7 @@ export async function GET(req: NextRequest) {
         if (startDate) query = query.gte("expense_date", startDate);
         if (endDate) query = query.lte("expense_date", endDate);
         if (q) {
-            query = query.or(
-                `description.ilike.%${q}%,vendor.name.ilike.%${q}%,reference_number.ilike.%${q}%`
-            );
+            query = query.or(`description.ilike.%${q}%,reference_number.ilike.%${q}%`);
         }
 
         const { data, error: dbError, count } = await query;

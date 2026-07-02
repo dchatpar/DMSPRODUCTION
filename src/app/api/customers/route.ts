@@ -34,6 +34,21 @@ export async function GET(req: NextRequest) {
         const offset = parseInt(url.searchParams.get("offset") || "0");
         const q = url.searchParams.get("q");
         const status = url.searchParams.get("status");
+        const distinctStatus = url.searchParams.get("distinct_status");
+
+        // If requesting distinct status values, return them from database
+        if (distinctStatus === "true") {
+            const { data, error: dbError } = await supabase
+                .from("customers")
+                .select("status")
+                .not("status", "is", null);
+
+            if (dbError) throw dbError;
+
+            // Get unique statuses
+            const uniqueStatuses = [...new Set(data?.map((c: any) => c.status).filter(Boolean) || [])];
+            return NextResponse.json({ data: uniqueStatuses });
+        }
 
         let query = supabase
             .from("customers")
@@ -42,7 +57,7 @@ export async function GET(req: NextRequest) {
             .range(offset, offset + limit - 1);
 
         if (status) query = query.eq("status", status);
-        if (q) query = query.or(`name.ilike.%${q}%,phone.ilike.%${q}%,email.ilike.%${q}%,company.ilike.%${q}%`);
+        if (q) query = query.or(`name.ilike.%${q}%,phone.ilike.%${q}%,email.ilike.%${q}%`);
 
         const { data, error: dbError, count } = await query;
 

@@ -5,7 +5,6 @@ import {
     FileText,
     Plus,
     Search,
-    Filter,
     MoreVertical,
     Edit,
     Trash2,
@@ -23,6 +22,7 @@ import {
     XCircle,
     User,
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import InvoiceDetailsModal from "@/src/components/InvoiceDetailsModal";
 import InvoiceFormModal from "@/src/components/InvoiceFormModal";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
@@ -74,10 +74,12 @@ export default function InvoicesPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
+    const [debouncedSearch, setDebouncedSearch] = useState("");
     const [statusFilter, setStatusFilter] = useState<string>("");
     const [currentPage, setCurrentPage] = useState(1);
     const [totalItems, setTotalItems] = useState(0);
     const [itemsPerPage] = useState(10);
+    const [exportLoading, setExportLoading] = useState(false);
 
     // Modal states
     const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -94,7 +96,62 @@ export default function InvoicesPage() {
 
     useEffect(() => {
         fetchInvoices();
-    }, [currentPage, statusFilter, searchTerm]);
+    }, [currentPage, statusFilter, debouncedSearch]);
+
+    // Debounce search input
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearch(searchTerm);
+            setCurrentPage(1); // Reset to first page when search changes
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
+
+    const exportToExcel = async () => {
+        setExportLoading(true);
+        try {
+            const token = localStorage.getItem("access_token");
+            const response = await fetch("/api/invoices?limit=10000", {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!response.ok) throw new Error("Failed to fetch invoices for export");
+
+            const data = await response.json();
+            const exportData = data.data || [];
+
+            const worksheetData = exportData.map((invoice: Invoice) => ({
+                "Invoice Number": invoice.invoice_number || "",
+                "Customer": invoice.customer?.name || "Unknown",
+                "Package": invoice.package_name || "",
+                "Status": invoice.status || "",
+                "Payment Amount": invoice.payment_amount || 0,
+                "Tax Rate": invoice.tax_rate || 0,
+                "Tax Amount": invoice.tax_amount || 0,
+                "Total": invoice.total || 0,
+                "Invoice Date": invoice.invoice_date ? new Date(invoice.invoice_date).toLocaleDateString() : "",
+                "Due Date": invoice.due_date ? new Date(invoice.due_date).toLocaleDateString() : "",
+                "Notes": invoice.notes || "",
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(worksheetData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Invoices");
+
+            const colWidths = [
+                { wch: 20 }, { wch: 25 }, { wch: 25 }, { wch: 12 },
+                { wch: 15 }, { wch: 10 }, { wch: 12 }, { wch: 12 },
+                { wch: 15 }, { wch: 15 }, { wch: 30 },
+            ];
+            worksheet["!cols"] = colWidths;
+
+            XLSX.writeFile(workbook, `invoices-export-${new Date().toISOString().split("T")[0]}.xlsx`);
+        } catch (error) {
+            console.error("Export error:", error);
+            alert("Failed to export invoices");
+        } finally {
+            setExportLoading(false);
+        }
+    };
 
     const fetchInvoices = async () => {
         try {
@@ -106,7 +163,7 @@ export default function InvoicesPage() {
 
             let url = `/api/invoices?limit=${itemsPerPage}&offset=${offset}`;
             if (statusFilter) url += `&status=${encodeURIComponent(statusFilter)}`;
-            if (searchTerm) url += `&q=${encodeURIComponent(searchTerm)}`;
+            if (debouncedSearch) url += `&q=${encodeURIComponent(debouncedSearch)}`;
 
             const response = await fetch(url, {
                 headers: {
@@ -301,12 +358,16 @@ export default function InvoicesPage() {
                             <option value="Overdue">Overdue</option>
                             <option value="Cancelled">Cancelled</option>
                         </select>
-                        <button className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2">
-                            <Filter className="w-4 h-4" />
-                            More Filters
-                        </button>
-                        <button className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2">
-                            <Download className="w-4 h-4" />
+                        <button
+                            onClick={exportToExcel}
+                            disabled={exportLoading}
+                            className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 disabled:opacity-50"
+                        >
+                            {exportLoading ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                                <Download className="w-4 h-4" />
+                            )}
                             Export
                         </button>
                     </div>

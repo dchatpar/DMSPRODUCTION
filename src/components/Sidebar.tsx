@@ -101,7 +101,9 @@ export default function Sidebar() {
     const [userData, setUserData] = useState<UserData | null>(null);
     const [loading, setLoading] = useState(true);
     const [logoutLoading, setLogoutLoading] = useState(false);
-    const [expandedSections, setExpandedSections] = useState<string[]>([]);
+    const [expandedSections, setExpandedSections] = useState<string[]>([
+        "OVERVIEW", "SALES", "INVENTORY", "CUSTOMERS", "FINANCIAL", "MANAGEMENT", "SETTINGS"
+    ]);
 
     // Close mobile sidebar on route change
     useEffect(() => {
@@ -272,47 +274,49 @@ export default function Sidebar() {
                                     >
                                         <span>{section.title}</span>
                                         {isExpanded ? (
-                                            <ChevronDown className="w-3 h-3" />
+                                            <ChevronDown className="w-3 h-3 transition-transform duration-200" />
                                         ) : (
-                                            <ChevronRight className="w-3 h-3" />
+                                            <ChevronRight className="w-3 h-3 transition-transform duration-200" />
                                         )}
                                     </button>
                                 )}
 
                                 {/* Navigation Items */}
-                                <ul className="space-y-1 mt-1">
-                                    {section.items.map((item) => {
-                                        const Icon = item.icon;
-                                        const isActive = pathname === item.href;
+                                {isExpanded && (
+                                    <ul className="space-y-1 mt-1">
+                                        {section.items.map((item) => {
+                                            const Icon = item.icon;
+                                            const isActive = pathname === item.href;
 
-                                        return (
-                                            <li key={item.href}>
-                                                <Link
-                                                    href={item.href}
-                                                    className={`
-                                                        flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200
-                                                        ${isActive
-                                                            ? "bg-blue-50 text-blue-700"
-                                                            : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                                                        }
-                                                        ${isCollapsed ? "justify-center" : ""}
-                                                    `}
-                                                    title={isCollapsed ? item.name : undefined}
-                                                >
-                                                    <Icon className={`w-5 h-5 flex-shrink-0`} />
-                                                    {!isCollapsed && (
-                                                        <span className="text-sm font-medium truncate">
-                                                            {item.name}
-                                                        </span>
-                                                    )}
-                                                    {isActive && !isCollapsed && (
-                                                        <span className="ml-auto w-1.5 h-6 bg-blue-600 rounded-full"></span>
-                                                    )}
-                                                </Link>
-                                            </li>
-                                        );
-                                    })}
-                                </ul>
+                                            return (
+                                                <li key={item.href}>
+                                                    <Link
+                                                        href={item.href}
+                                                        className={`
+                                                            flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200
+                                                            ${isActive
+                                                                ? "bg-blue-50 text-blue-700"
+                                                                : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                                                            }
+                                                            ${isCollapsed ? "justify-center" : ""}
+                                                        `}
+                                                        title={isCollapsed ? item.name : undefined}
+                                                    >
+                                                        <Icon className={`w-5 h-5 flex-shrink-0`} />
+                                                        {!isCollapsed && (
+                                                            <span className="text-sm font-medium truncate">
+                                                                {item.name}
+                                                            </span>
+                                                        )}
+                                                        {isActive && !isCollapsed && (
+                                                            <span className="ml-auto w-1.5 h-6 bg-blue-600 rounded-full"></span>
+                                                        )}
+                                                    </Link>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                )}
                             </div>
                         );
                     })}
@@ -435,47 +439,49 @@ export default function Sidebar() {
                                     >
                                         <span>{section.title}</span>
                                         {isExpanded ? (
-                                            <ChevronDown className="w-3 h-3" />
+                                            <ChevronDown className="w-3 h-3 transition-transform duration-200" />
                                         ) : (
-                                            <ChevronRight className="w-3 h-3" />
+                                            <ChevronRight className="w-3 h-3 transition-transform duration-200" />
                                         )}
                                     </button>
                                 )}
 
                                 {/* Navigation Items */}
-                                <ul className="space-y-1 mt-1">
-                                    {section.items.map((item) => {
-                                        const Icon = item.icon;
-                                        const isActive = pathname === item.href;
+                                {isExpanded && (
+                                    <ul className="space-y-1 mt-1">
+                                        {section.items.map((item) => {
+                                            const Icon = item.icon;
+                                            const isActive = pathname === item.href;
 
-                                        return (
-                                            <li key={item.href}>
-                                                <Link
-                                                    href={item.href}
-                                                    className={`
-                                                        flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200
-                                                        ${isActive
-                                                            ? "bg-blue-50 text-blue-700"
-                                                            : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                                                        }
-                                                        ${isCollapsed ? "justify-center" : ""}
-                                                    `}
-                                                    title={isCollapsed ? item.name : undefined}
-                                                >
-                                                    <Icon className={`w-5 h-5 flex-shrink-0`} />
-                                                    {!isCollapsed && (
-                                                        <span className="text-sm font-medium truncate">
-                                                            {item.name}
-                                                        </span>
-                                                    )}
-                                                    {isActive && !isCollapsed && (
-                                                        <span className="ml-auto w-1.5 h-6 bg-blue-600 rounded-full"></span>
-                                                    )}
-                                                </Link>
-                                            </li>
-                                        );
-                                    })}
-                                </ul>
+                                            return (
+                                                <li key={item.href}>
+                                                    <Link
+                                                        href={item.href}
+                                                        className={`
+                                                            flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200
+                                                            ${isActive
+                                                                ? "bg-blue-50 text-blue-700"
+                                                                : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                                                            }
+                                                            ${isCollapsed ? "justify-center" : ""}
+                                                        `}
+                                                        title={isCollapsed ? item.name : undefined}
+                                                    >
+                                                        <Icon className={`w-5 h-5 flex-shrink-0`} />
+                                                        {!isCollapsed && (
+                                                            <span className="text-sm font-medium truncate">
+                                                                {item.name}
+                                                            </span>
+                                                        )}
+                                                        {isActive && !isCollapsed && (
+                                                            <span className="ml-auto w-1.5 h-6 bg-blue-600 rounded-full"></span>
+                                                        )}
+                                                    </Link>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                )}
                             </div>
                         );
                     })}

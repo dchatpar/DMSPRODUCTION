@@ -5,7 +5,6 @@ import {
     Receipt,
     Plus,
     Search,
-    Filter,
     MoreVertical,
     Edit,
     Trash2,
@@ -25,6 +24,7 @@ import {
     TrendingDown,
     AlertTriangle,
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import ExpenseDetailsModal from "@/src/components/ExpenseDetailsModal";
 import ExpenseFormModal from "@/src/components/ExpenseFormModal";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
@@ -99,11 +99,13 @@ export default function ExpensesPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
+    const [debouncedSearch, setDebouncedSearch] = useState("");
     const [categoryFilter, setCategoryFilter] = useState("");
     const [statusFilter, setStatusFilter] = useState("");
     const [currentPage, setCurrentPage] = useState(1);
     const [totalItems, setTotalItems] = useState(0);
     const [itemsPerPage] = useState(10);
+    const [exportLoading, setExportLoading] = useState(false);
 
     // Modal states
     const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -120,7 +122,63 @@ export default function ExpensesPage() {
 
     useEffect(() => {
         fetchExpenses();
-    }, [currentPage, categoryFilter, statusFilter, searchTerm]);
+    }, [currentPage, categoryFilter, statusFilter, debouncedSearch]);
+
+    // Debounce search input
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearch(searchTerm);
+            setCurrentPage(1); // Reset to first page when search changes
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
+
+    const exportToExcel = async () => {
+        setExportLoading(true);
+        try {
+            const token = localStorage.getItem("access_token");
+            const response = await fetch("/api/expenses?limit=10000", {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!response.ok) throw new Error("Failed to fetch expenses for export");
+
+            const data = await response.json();
+            const exportData = data.data || [];
+
+            const worksheetData = exportData.map((expense: Expense) => ({
+                "Date": expense.expense_date ? new Date(expense.expense_date).toLocaleDateString() : "",
+                "Category": expense.category || "",
+                "Description": expense.description || "",
+                "Vendor": expense.vendor?.name || "",
+                "Vehicle": expense.vehicle ? `${expense.vehicle.year} ${expense.vehicle.make} ${expense.vehicle.model}` : "",
+                "Amount": expense.amount || 0,
+                "Tax Amount": expense.tax_amount || 0,
+                "Total": (expense.amount || 0) + (expense.tax_amount || 0),
+                "Status": expense.status || "",
+                "Due Date": expense.due_date ? new Date(expense.due_date).toLocaleDateString() : "",
+                "Reference": expense.reference_number || "",
+                "Payment Method": expense.payment_method || "",
+                "Notes": expense.notes || "",
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(worksheetData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Expenses");
+
+            const colWidths = [
+                { wch: 15 }, { wch: 20 }, { wch: 25 }, { wch: 20 }, { wch: 20 },
+                { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 30 },
+            ];
+            worksheet["!cols"] = colWidths;
+
+            XLSX.writeFile(workbook, `expenses-export-${new Date().toISOString().split("T")[0]}.xlsx`);
+        } catch (error) {
+            console.error("Export error:", error);
+            alert("Failed to export expenses");
+        } finally {
+            setExportLoading(false);
+        }
+    };
 
     const fetchExpenses = async () => {
         try {
@@ -133,7 +191,7 @@ export default function ExpensesPage() {
             let url = `/api/expenses?limit=${itemsPerPage}&offset=${offset}`;
             if (categoryFilter) url += `&category=${encodeURIComponent(categoryFilter)}`;
             if (statusFilter) url += `&status=${encodeURIComponent(statusFilter)}`;
-            if (searchTerm) url += `&q=${encodeURIComponent(searchTerm)}`;
+            if (debouncedSearch) url += `&q=${encodeURIComponent(debouncedSearch)}`;
 
             const response = await fetch(url, {
                 headers: {
@@ -408,9 +466,17 @@ export default function ExpensesPage() {
                             <option value="Paid">Paid</option>
                             <option value="Cancelled">Cancelled</option>
                         </select>
-                        <button className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2">
-                            <Filter className="w-4 h-4" />
-                            More
+                        <button
+                            onClick={exportToExcel}
+                            disabled={exportLoading}
+                            className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 disabled:opacity-50"
+                        >
+                            {exportLoading ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                                <Download className="w-4 h-4" />
+                            )}
+                            Export
                         </button>
                     </div>
                 </div>
