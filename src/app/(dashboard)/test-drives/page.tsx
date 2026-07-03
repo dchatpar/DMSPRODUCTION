@@ -29,6 +29,7 @@ import {
 import TestDriveDetailsModal from "@/src/components/TestDriveDetailsModal";
 import TestDriveFormModal from "@/src/components/TestDriveFormModal";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
+import * as XLSX from "xlsx";
 
 interface TestDrive {
     id: string;
@@ -95,6 +96,7 @@ export default function TestDrivesPage() {
     const [statusFilter, setStatusFilter] = useState<string>("");
     const [currentPage, setCurrentPage] = useState(1);
     const [totalItems, setTotalItems] = useState(0);
+    const [exportLoading, setExportLoading] = useState(false);
     const [itemsPerPage] = useState(10);
 
     // Modal states
@@ -143,6 +145,64 @@ export default function TestDrivesPage() {
             setError(err instanceof Error ? err.message : "An error occurred");
         } finally {
             setLoading(false);
+        }
+    };
+
+    const exportToExcel = async () => {
+        setExportLoading(true);
+        try {
+            const token = localStorage.getItem("access_token");
+            if (!token) {
+                throw new Error("Not authenticated. Please login again.");
+            }
+
+            const response = await fetch("/api/test-drives?limit=10000", {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `Failed to fetch test drives (${response.status})`);
+            }
+
+            const data = await response.json();
+            const exportData = data.data || [];
+
+            if (exportData.length === 0) {
+                throw new Error("No test drives found to export");
+            }
+
+            const worksheetData = exportData.map((td: any) => ({
+                "Customer": td.customer?.name || "Unknown",
+                "Email": td.customer?.email || "",
+                "Phone": td.customer?.phone || "",
+                "Vehicle": td.vehicle ? `${td.vehicle.year} ${td.vehicle.make} ${td.vehicle.model}` : "",
+                "VIN": td.vehicle?.vin || "",
+                "Driver License": td.driver_license_number || "",
+                "Status": td.status || "",
+                "Scheduled Date": td.start_time ? new Date(td.start_time).toLocaleDateString() : "",
+                "Scheduled Time": td.start_time ? new Date(td.start_time).toLocaleTimeString() : "",
+                "Salesperson": td.salesperson?.full_name || "",
+                "Notes": td.notes || "",
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(worksheetData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Test Drives");
+
+            const colWidths = [
+                { wch: 25 }, { wch: 30 }, { wch: 15 }, { wch: 25 },
+                { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 15 },
+                { wch: 15 }, { wch: 20 }, { wch: 30 },
+            ];
+            worksheet["!cols"] = colWidths;
+
+            XLSX.writeFile(workbook, `test-drives-export-${new Date().toISOString().split("T")[0]}.xlsx`);
+        } catch (error) {
+            console.error("Export error:", error);
+            alert(error instanceof Error ? error.message : "Failed to export test drives");
+        } finally {
+            setExportLoading(false);
         }
     };
 
@@ -336,8 +396,16 @@ export default function TestDrivesPage() {
                             <Filter className="w-4 h-4" />
                             More Filters
                         </button>
-                        <button className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2">
-                            <Download className="w-4 h-4" />
+                        <button
+                            onClick={exportToExcel}
+                            disabled={exportLoading}
+                            className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 disabled:opacity-50"
+                        >
+                            {exportLoading ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                                <Download className="w-4 h-4" />
+                            )}
                             Export
                         </button>
                     </div>

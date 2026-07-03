@@ -55,8 +55,9 @@ export async function GET(req: NextRequest) {
             query = query.eq("status", "Pending").lt("follow_up_date", new Date().toISOString());
         }
         if (q) {
+            // PostgREST doesn't support FK references in .or(), so only search on direct columns
             query = query.or(
-                `title.ilike.%${q}%,notes.ilike.%${q}%,customer.name.ilike.%${q}%`
+                `title.ilike.%${q}%,notes.ilike.%${q}%,description.ilike.%${q}%`
             );
         }
 

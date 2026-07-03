@@ -105,7 +105,7 @@ interface BillOfSale {
     amount_to_finance?: number;
     total_balance_due?: number;
 
-    // Section D: Financing
+    // Section D: Financings
     payment_type?: string;
     cost_of_borrowing?: number;
     payment_start_date?: string | null;
@@ -598,11 +598,10 @@ export default function BillOfSaleModal({
                                         key={type}
                                         onClick={() => !isReadOnly && setSaleType(type as any)}
                                         disabled={isReadOnly}
-                                        className={`px-4 py-1.5 text-sm rounded-md transition-colors ${
-                                            saleType === type
+                                        className={`px-4 py-1.5 text-sm rounded-md transition-colors ${saleType === type
                                                 ? "bg-blue-600 text-white"
                                                 : "text-gray-600 hover:bg-gray-50"
-                                        }`}
+                                            }`}
                                     >
                                         {type}
                                     </button>
@@ -619,11 +618,10 @@ export default function BillOfSaleModal({
                                 <span>GST/PST Applicable</span>
                             </label>
                             {formData.status && (
-                                <span className={`px-2 py-0.5 text-xs rounded-full ${
-                                    formData.status === "Sold" ? "bg-green-100 text-green-700" :
-                                    formData.status === "Calculated" ? "bg-blue-100 text-blue-700" :
-                                    "bg-gray-100 text-gray-600"
-                                }`}>
+                                <span className={`px-2 py-0.5 text-xs rounded-full ${formData.status === "Sold" ? "bg-green-100 text-green-700" :
+                                        formData.status === "Calculated" ? "bg-blue-100 text-blue-700" :
+                                            "bg-gray-100 text-gray-600"
+                                    }`}>
                                     {formData.status}
                                 </span>
                             )}
@@ -643,11 +641,10 @@ export default function BillOfSaleModal({
                                 <button
                                     key={tab.id}
                                     onClick={() => setActiveTab(tab.id as any)}
-                                    className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                                        activeTab === tab.id
+                                    className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${activeTab === tab.id
                                             ? "bg-green-100 text-green-700 font-medium"
                                             : "text-gray-600 hover:bg-gray-100"
-                                    }`}
+                                        }`}
                                 >
                                     {tab.label}
                                 </button>

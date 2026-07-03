@@ -32,6 +32,7 @@ import LeadDetailsModal from "@/src/components/LeadDetailsModal";
 import LeadFormModal from "@/src/components/LeadFormModal";
 import LeadsKanban from "@/src/components/LeadsKanban";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
+import * as XLSX from "xlsx";
 
 
 interface Lead {
@@ -82,6 +83,7 @@ export default function LeadsPage() {
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
     const [statusFilter, setStatusFilter] = useState<string>("");
+    const [exportLoading, setExportLoading] = useState(false);
     const [sourceFilter, setSourceFilter] = useState<string>("");
     const [currentPage, setCurrentPage] = useState(1);
     const [totalItems, setTotalItems] = useState(0);
@@ -135,6 +137,61 @@ export default function LeadsPage() {
             setError(err instanceof Error ? err.message : "An error occurred");
         } finally {
             setLoading(false);
+        }
+    };
+
+    const exportToExcel = async () => {
+        setExportLoading(true);
+        try {
+            const token = localStorage.getItem("access_token");
+            if (!token) {
+                throw new Error("Not authenticated. Please login again.");
+            }
+
+            const response = await fetch("/api/leads?limit=10000", {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `Failed to fetch leads (${response.status})`);
+            }
+
+            const data = await response.json();
+            const exportData = data.data || [];
+
+            if (exportData.length === 0) {
+                throw new Error("No leads found to export");
+            }
+
+            const worksheetData = exportData.map((lead: any) => ({
+                "Customer": lead.customer?.name || "Unknown",
+                "Email": lead.customer?.email || "",
+                "Phone": lead.customer?.phone || "",
+                "Source": lead.source || "",
+                "Status": lead.status || "",
+                "Vehicle Interest": lead.vehicle ? `${lead.vehicle.year} ${lead.vehicle.make} ${lead.vehicle.model}` : "",
+                "Assigned To": lead.assigned_user?.full_name || "",
+                "Notes": lead.notes || "",
+                "Created Date": lead.created_at ? new Date(lead.created_at).toLocaleDateString() : "",
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(worksheetData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Leads");
+
+            const colWidths = [
+                { wch: 25 }, { wch: 30 }, { wch: 15 }, { wch: 15 },
+                { wch: 15 }, { wch: 25 }, { wch: 20 }, { wch: 30 }, { wch: 15 },
+            ];
+            worksheet["!cols"] = colWidths;
+
+            XLSX.writeFile(workbook, `leads-export-${new Date().toISOString().split("T")[0]}.xlsx`);
+        } catch (error) {
+            console.error("Export error:", error);
+            alert(error instanceof Error ? error.message : "Failed to export leads");
+        } finally {
+            setExportLoading(false);
         }
     };
 
@@ -305,55 +362,58 @@ export default function LeadsPage() {
 
             {/* Filters */}
             <div className="bg-white rounded-xl border border-gray-200 p-4">
-                {/* Search - Full width on mobile */}
-                <div className="relative mb-3 sm:mb-0">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input
-                        type="text"
-                        placeholder="Search leads..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                    />
-                </div>
-
-                {/* Filters Row */}
-                <div className="flex flex-wrap gap-2">
-                    <select
-                        value={statusFilter}
-                        onChange={(e) => setStatusFilter(e.target.value)}
-                        className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-sm flex-1 min-w-[120px]"
-                    >
-                        <option value="">All Status</option>
-                        <option value="Not Started">Not Started</option>
-                        <option value="In Progress">In Progress</option>
-                        <option value="Qualified">Qualified</option>
-                        <option value="Closed">Closed</option>
-                        <option value="Lost">Lost</option>
-                    </select>
-                    <select
-                        value={sourceFilter}
-                        onChange={(e) => setSourceFilter(e.target.value)}
-                        className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-sm flex-1 min-w-[120px]"
-                    >
-                        <option value="">All Sources</option>
-                        <option value="Website">Website</option>
-                        <option value="Referral">Referral</option>
-                        <option value="Event">Event</option>
-                        <option value="Walk-in">Walk-in</option>
-                        <option value="Facebook">Facebook</option>
-                        <option value="Craigslist">Craigslist</option>
-                        <option value="Kijiji">Kijiji</option>
-                        <option value="Phone">Phone</option>
-                    </select>
-                    <button className="px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 text-sm text-gray-600">
-                        <Filter className="w-4 h-4" />
-                        <span className="hidden sm:inline">More</span>
-                    </button>
-                    <button className="px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 text-sm text-gray-600">
-                        <Download className="w-4 h-4" />
-                        <span className="hidden sm:inline">Export</span>
-                    </button>
+                <div className="flex flex-col sm:flex-row gap-4">
+                    <div className="flex-1 relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input
+                            type="text"
+                            placeholder="Search leads..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        />
+                    </div>
+                    <div className="flex gap-3 flex-wrap">
+                        <select
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                            className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-sm"
+                        >
+                            <option value="">All Status</option>
+                            <option value="Not Started">Not Started</option>
+                            <option value="In Progress">In Progress</option>
+                            <option value="Qualified">Qualified</option>
+                            <option value="Closed">Closed</option>
+                            <option value="Lost">Lost</option>
+                        </select>
+                        <select
+                            value={sourceFilter}
+                            onChange={(e) => setSourceFilter(e.target.value)}
+                            className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-sm"
+                        >
+                            <option value="">All Sources</option>
+                            <option value="Website">Website</option>
+                            <option value="Referral">Referral</option>
+                            <option value="Event">Event</option>
+                            <option value="Walk-in">Walk-in</option>
+                            <option value="Facebook">Facebook</option>
+                            <option value="Craigslist">Craigslist</option>
+                            <option value="Kijiji">Kijiji</option>
+                            <option value="Phone">Phone</option>
+                        </select>
+                        <button
+                            onClick={exportToExcel}
+                            disabled={exportLoading}
+                            className="px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 text-sm text-gray-600 disabled:opacity-50"
+                        >
+                            {exportLoading ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                                <Download className="w-4 h-4" />
+                            )}
+                            <span className="hidden sm:inline">Export</span>
+                        </button>
+                    </div>
                 </div>
             </div>
 

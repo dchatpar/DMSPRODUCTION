@@ -48,8 +48,28 @@ export async function GET(req: NextRequest) {
 
         if (status) query = query.eq("deal_status", status);
         if (q) {
+            // Search on direct columns AND via FK lookups (two-step approach)
+            // Step 1: Find matching customer IDs
+            const { data: matchingCustomers } = await supabase
+                .from("customers")
+                .select("id")
+                .or(`name.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${q}%`);
+
+            const customerIds = matchingCustomers?.map(c => c.id) || [];
+
+            // Step 2: Find matching vehicle IDs (make/model/vin search)
+            const { data: matchingVehicles } = await supabase
+                .from("vehicles")
+                .select("id")
+                .or(`make.ilike.%${q}%,model.ilike.%${q}%,vin.ilike.%${q}%,stock_number.ilike.%${q}%`);
+
+            const vehicleIds = matchingVehicles?.map(v => v.id) || [];
+
+            // Apply search - direct columns OR customer match OR vehicle match
             query = query.or(
-                `vehicle.make.ilike.%${q}%,vehicle.model.ilike.%${q}%,customer.name.ilike.%${q}%,notes.ilike.%${q}%`
+                `notes.ilike.%${q}%,deal_status.ilike.%${q}%,finance_company.ilike.%${q}%` +
+                (customerIds.length > 0 ? `,customer_id.in.(${customerIds.join(',')})` : '') +
+                (vehicleIds.length > 0 ? `,vehicle_id.in.(${vehicleIds.join(',')})` : '')
             );
         }
 

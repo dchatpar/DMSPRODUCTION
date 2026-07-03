@@ -31,6 +31,7 @@ import DealDetailsModal from "@/src/components/DealDetailsModal";
 import DealFormModal from "@/src/components/DealFormModal";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
 import BillOfSaleModal from "@/src/components/BillOfSaleModal";
+import * as XLSX from "xlsx";
 
 interface Vehicle {
     id: string;
@@ -108,6 +109,7 @@ export default function DealsPage() {
     const [statusFilter, setStatusFilter] = useState<string>("");
     const [currentPage, setCurrentPage] = useState(1);
     const [totalItems, setTotalItems] = useState(0);
+    const [exportLoading, setExportLoading] = useState(false);
     const [itemsPerPage] = useState(10);
     const [viewMode, setViewMode] = useState<ViewMode>("table");
 
@@ -164,6 +166,67 @@ export default function DealsPage() {
             setError(err instanceof Error ? err.message : "An error occurred");
         } finally {
             setLoading(false);
+        }
+    };
+
+    const exportToExcel = async () => {
+        setExportLoading(true);
+        try {
+            const token = localStorage.getItem("access_token");
+            if (!token) {
+                throw new Error("Not authenticated. Please login again.");
+            }
+
+            const response = await fetch("/api/deals?limit=10000", {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `Failed to fetch deals (${response.status})`);
+            }
+
+            const data = await response.json();
+            const exportData = data.data || [];
+
+            if (exportData.length === 0) {
+                throw new Error("No deals found to export");
+            }
+
+            const worksheetData = exportData.map((deal: any) => ({
+                "Customer": deal.customer?.name || "Unknown",
+                "Email": deal.customer?.email || "",
+                "Phone": deal.customer?.phone || "",
+                "Vehicle": deal.vehicle ? `${deal.vehicle.year} ${deal.vehicle.make} ${deal.vehicle.model}` : "",
+                "VIN": deal.vehicle?.vin || "",
+                "Sale Price": deal.sale_price || 0,
+                "Down Payment": deal.down_payment || 0,
+                "Finance Term": deal.finance_term || "",
+                "Interest Rate": deal.interest_rate || "",
+                "Finance Company": deal.finance_company || "",
+                "Deal Status": deal.deal_status || "",
+                "Salesperson": deal.salesperson?.full_name || "",
+                "Notes": deal.notes || "",
+                "Deal Date": deal.deal_date ? new Date(deal.deal_date).toLocaleDateString() : "",
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(worksheetData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Deals");
+
+            const colWidths = [
+                { wch: 25 }, { wch: 30 }, { wch: 15 }, { wch: 25 },
+                { wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
+                { wch: 10 }, { wch: 20 }, { wch: 15 }, { wch: 20 }, { wch: 30 }, { wch: 15 },
+            ];
+            worksheet["!cols"] = colWidths;
+
+            XLSX.writeFile(workbook, `deals-export-${new Date().toISOString().split("T")[0]}.xlsx`);
+        } catch (error) {
+            console.error("Export error:", error);
+            alert(error instanceof Error ? error.message : "Failed to export deals");
+        } finally {
+            setExportLoading(false);
         }
     };
 
@@ -404,8 +467,16 @@ export default function DealsPage() {
                             <Filter className="w-4 h-4" />
                             More Filters
                         </button>
-                        <button className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2">
-                            <Download className="w-4 h-4" />
+                        <button
+                            onClick={exportToExcel}
+                            disabled={exportLoading}
+                            className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 disabled:opacity-50"
+                        >
+                            {exportLoading ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                                <Download className="w-4 h-4" />
+                            )}
                             Export
                         </button>
                     </div>
