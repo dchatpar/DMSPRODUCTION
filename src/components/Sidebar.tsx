@@ -219,7 +219,7 @@ export default function Sidebar() {
         <>
             {/* Mobile Header */}
             <div className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white border-b border-gray-200 flex items-center justify-between p-4">
-                <img src="/dms.svg" alt="DMS Logo" className="w-28 h-10" />
+                <img src="/logo.svg" alt="DMS Logo" className="w-28 h-10" />
                 <button
                     onClick={() => setIsMobileOpen(true)}
                     className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -248,7 +248,7 @@ export default function Sidebar() {
                 <div className="flex items-center justify-between p-4 border-b border-gray-200">
                     {!isCollapsed && (
                         <div className="flex items-center gap-2">
-                            <img src="/dms.svg" alt="DMS Logo" className="w-28 h-10" />
+                            <img src="/logo.svg" alt="DMS Logo" className="w-28 h-10" />
                         </div>
                     )}
                     <button
@@ -409,7 +409,7 @@ export default function Sidebar() {
                 <div className="flex items-center justify-between p-4 border-b border-gray-200">
                     {!isCollapsed && (
                         <div className="flex items-center gap-2">
-                            <img src="/dms.svg" alt="DMS Logo" className="w-28 h-10" />
+                            <img src="/logo.svg" alt="DMS Logo" className="w-28 h-10" />
                         </div>
                     )}
                     <button

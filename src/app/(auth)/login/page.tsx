@@ -82,9 +82,9 @@ export default function LoginPage() {
                 {/* Logo/Brand */}
                 <div className="text-center mb-8">
                     <img
-                        src="/dms.svg"
+                        src="/logo.svg"
                         alt="DMS Logo"
-                        className="w-28 h-10 mx-auto"
+                        className="w-32 h-20 mx-auto"
                     />
                     <p className="text-sm text-gray-500 mt-1">
                         Sign in to your account
