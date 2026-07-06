@@ -306,20 +306,21 @@ export default function VendorsPage() {
                             className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                     </div>
-                    <select
-                        value={typeFilter}
-                        onChange={(e) => {
-                            setTypeFilter(e.target.value);
-                            setCurrentPage(1);
-                        }}
-                        className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                    >
-                        <option value="">All Types</option>
-                        {VENDOR_TYPES.map((type) => (
-                            <option key={type} value={type}>{type}</option>
-                        ))}
-                    </select>
-                    <div className="relative">
+                    <div className="flex gap-3 flex-wrap">
+                        <select
+                            value={typeFilter}
+                            onChange={(e) => {
+                                setTypeFilter(e.target.value);
+                                setCurrentPage(1);
+                            }}
+                            className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        >
+                            <option value="">All Types</option>
+                            {VENDOR_TYPES.map((type) => (
+                                <option key={type} value={type}>{type}</option>
+                            ))}
+                        </select>
+                        <div className="relative">
                         <button
                             onClick={() => setShowMoreFilters(!showMoreFilters)}
                             className={`px-4 py-2 border rounded-lg transition-colors flex items-center gap-2 ${
@@ -379,6 +380,7 @@ export default function VendorsPage() {
                                 </div>
                             </div>
                         )}
+                    </div>
                     </div>
                 </div>
             </div>

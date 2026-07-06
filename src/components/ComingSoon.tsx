@@ -8,7 +8,7 @@ export default function ComingSoon() {
             {/* Logo */}
             <div className="mb-6">
                 <img
-                    src="/dms.svg"
+                    src="/logo.svg"
                     alt="DMS Logo"
                     className="w-92 h-20 mx-auto"
                 />
