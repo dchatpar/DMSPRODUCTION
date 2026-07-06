@@ -35,6 +35,8 @@ export async function GET(req: NextRequest) {
         const status = url.searchParams.get("status");
         const vehicle_id = url.searchParams.get("vehicle_id");
         const q = url.searchParams.get("q");
+        const scheduledDateFrom = url.searchParams.get("scheduled_date_from");
+        const scheduledDateTo = url.searchParams.get("scheduled_date_to");
 
         let query = supabase
             .from("test_drives")
@@ -76,6 +78,8 @@ export async function GET(req: NextRequest) {
 
         if (status) query = query.eq("status", status);
         if (vehicle_id) query = query.eq("vehicle_id", vehicle_id);
+        if (scheduledDateFrom) query = query.gte("scheduled_date", scheduledDateFrom);
+        if (scheduledDateTo) query = query.lte("scheduled_date", scheduledDateTo);
         if (q) {
             // Search on direct columns AND via FK lookups (two-step approach)
             // Step 1: Find matching customer IDs

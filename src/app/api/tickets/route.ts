@@ -35,6 +35,8 @@ export async function GET(req: NextRequest) {
         const priority = url.searchParams.get("priority");
         const assigned_to = url.searchParams.get("assigned_to");
         const q = url.searchParams.get("q");
+        const createdAtFrom = url.searchParams.get("created_at_from");
+        const createdAtTo = url.searchParams.get("created_at_to");
 
         let query = supabase
             .from("tickets")
@@ -49,6 +51,8 @@ export async function GET(req: NextRequest) {
         if (status) query = query.eq("status", status);
         if (priority) query = query.eq("priority", priority);
         if (assigned_to) query = query.eq("assigned_to", assigned_to);
+        if (createdAtFrom) query = query.gte("created_at", createdAtFrom);
+        if (createdAtTo) query = query.lte("created_at", createdAtTo);
         if (q) {
             query = query.or(
                 `subject.ilike.%${q}%,description.ilike.%${q}%`

@@ -34,6 +34,8 @@ export async function GET(req: NextRequest) {
         const offset = parseInt(url.searchParams.get("offset") || "0");
         const status = url.searchParams.get("status");
         const q = url.searchParams.get("q");
+        const invoiceDateFrom = url.searchParams.get("invoice_date_from");
+        const invoiceDateTo = url.searchParams.get("invoice_date_to");
 
         let query = supabase
             .from("invoices")
@@ -49,6 +51,8 @@ export async function GET(req: NextRequest) {
             // Search only on invoice columns since PostgREST doesn't support FK refs in .or()
             query = query.or(`invoice_number.ilike.%${q}%,notes.ilike.%${q}%`);
         }
+        if (invoiceDateFrom) query = query.gte("invoice_date", invoiceDateFrom);
+        if (invoiceDateTo) query = query.lte("invoice_date", invoiceDateTo);
 
         const { data, error: dbError, count } = await query;
 

@@ -35,8 +35,8 @@ export async function GET(req: NextRequest) {
         const category = url.searchParams.get("category");
         const status = url.searchParams.get("status");
         const vendor_id = url.searchParams.get("vendor_id");
-        const startDate = url.searchParams.get("start_date");
-        const endDate = url.searchParams.get("end_date");
+        const startDate = url.searchParams.get("expense_date_from");
+        const endDate = url.searchParams.get("expense_date_to");
         const q = url.searchParams.get("q");
 
         let query = supabase

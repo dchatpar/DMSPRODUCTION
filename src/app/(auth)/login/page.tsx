@@ -228,7 +228,7 @@ export default function LoginPage() {
                     </div>
 
                     <p className="text-center text-xs text-gray-400">
-                        © 2026 Adaptus DMS. All rights reserved.
+                        © 2026 Falsh Fender. All rights reserved.
                     </p>
                 </div>
             </div>

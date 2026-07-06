@@ -99,6 +99,12 @@ export default function TestDrivesPage() {
     const [exportLoading, setExportLoading] = useState(false);
     const [itemsPerPage] = useState(10);
 
+    // More Filters
+    const [showMoreFilters, setShowMoreFilters] = useState(false);
+    const [scheduledDateFrom, setScheduledDateFrom] = useState("");
+    const [scheduledDateTo, setScheduledDateTo] = useState("");
+    const [vehicleFilter, setVehicleFilter] = useState("");
+
     // Modal states
     const [showDetailsModal, setShowDetailsModal] = useState(false);
     const [showFormModal, setShowFormModal] = useState(false);
@@ -114,7 +120,7 @@ export default function TestDrivesPage() {
 
     useEffect(() => {
         fetchTestDrives();
-    }, [currentPage, statusFilter, searchTerm]);
+    }, [currentPage, statusFilter, searchTerm, scheduledDateFrom, scheduledDateTo, vehicleFilter]);
 
     const fetchTestDrives = async () => {
         try {
@@ -127,6 +133,9 @@ export default function TestDrivesPage() {
             let url = `/api/test-drives?limit=${itemsPerPage}&offset=${offset}`;
             if (statusFilter) url += `&status=${statusFilter}`;
             if (searchTerm) url += `&q=${encodeURIComponent(searchTerm)}`;
+            if (scheduledDateFrom) url += `&scheduled_date_from=${scheduledDateFrom}`;
+            if (scheduledDateTo) url += `&scheduled_date_to=${scheduledDateTo}`;
+            if (vehicleFilter) url += `&vehicle_id=${vehicleFilter}`;
 
             const response = await fetch(url, {
                 headers: {
@@ -392,10 +401,67 @@ export default function TestDrivesPage() {
                             <option value="Cancelled">Cancelled</option>
                             <option value="No Show">No Show</option>
                         </select>
-                        <button className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2">
-                            <Filter className="w-4 h-4" />
-                            More Filters
-                        </button>
+                        <div className="relative">
+                            <button
+                                onClick={() => setShowMoreFilters(!showMoreFilters)}
+                                className={`px-4 py-2 border rounded-lg transition-colors flex items-center gap-2 ${
+                                    showMoreFilters ? "bg-blue-50 border-blue-200 text-blue-600" : "border-gray-200 hover:bg-gray-50"
+                                }`}
+                            >
+                                <Filter className="w-4 h-4" />
+                                More Filters
+                                {(scheduledDateFrom || scheduledDateTo || vehicleFilter) && (
+                                    <span className="w-2 h-2 bg-blue-500 rounded-full" />
+                                )}
+                            </button>
+                            {showMoreFilters && (
+                                <div className="absolute right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-50 p-4">
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500 mb-1.5">Scheduled Date Range</label>
+                                            <div className="flex flex-col gap-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs text-gray-400 w-8">From</span>
+                                                    <input
+                                                        type="date"
+                                                        value={scheduledDateFrom}
+                                                        onChange={(e) => setScheduledDateFrom(e.target.value)}
+                                                        className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs text-gray-400 w-8">To</span>
+                                                    <input
+                                                        type="date"
+                                                        value={scheduledDateTo}
+                                                        onChange={(e) => setScheduledDateTo(e.target.value)}
+                                                        className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-2 pt-1">
+                                            <button
+                                                onClick={() => {
+                                                    setScheduledDateFrom("");
+                                                    setScheduledDateTo("");
+                                                    setVehicleFilter("");
+                                                }}
+                                                className="flex-1 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
+                                            >
+                                                Clear All
+                                            </button>
+                                            <button
+                                                onClick={() => setShowMoreFilters(false)}
+                                                className="flex-1 px-3 py-1.5 text-xs text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                                            >
+                                                Apply
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                         <button
                             onClick={exportToExcel}
                             disabled={exportLoading}

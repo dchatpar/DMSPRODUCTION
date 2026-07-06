@@ -36,6 +36,8 @@ export async function GET(req: NextRequest) {
         const source = url.searchParams.get("source");
         const assigned_to = url.searchParams.get("assigned_to");
         const q = url.searchParams.get("q");
+        const createdAtFrom = url.searchParams.get("created_at_from");
+        const createdAtTo = url.searchParams.get("created_at_to");
 
         let query = supabase
             .from("leads")
@@ -51,6 +53,8 @@ export async function GET(req: NextRequest) {
         if (status) query = query.eq("status", status);
         if (source) query = query.eq("source", source);
         if (assigned_to) query = query.eq("assigned_to", assigned_to);
+        if (createdAtFrom) query = query.gte("created_at", createdAtFrom);
+        if (createdAtTo) query = query.lte("created_at", createdAtTo);
         if (q) {
             // Search on direct columns AND via FK lookups (two-step approach)
             // Step 1: Find matching customer IDs

@@ -23,6 +23,7 @@ import {
     Download,
     TrendingDown,
     AlertTriangle,
+    Filter,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import ExpenseDetailsModal from "@/src/components/ExpenseDetailsModal";
@@ -107,6 +108,11 @@ export default function ExpensesPage() {
     const [itemsPerPage] = useState(10);
     const [exportLoading, setExportLoading] = useState(false);
 
+    // More Filters
+    const [showMoreFilters, setShowMoreFilters] = useState(false);
+    const [expenseDateFrom, setExpenseDateFrom] = useState("");
+    const [expenseDateTo, setExpenseDateTo] = useState("");
+
     // Modal states
     const [showDetailsModal, setShowDetailsModal] = useState(false);
     const [showFormModal, setShowFormModal] = useState(false);
@@ -122,7 +128,7 @@ export default function ExpensesPage() {
 
     useEffect(() => {
         fetchExpenses();
-    }, [currentPage, categoryFilter, statusFilter, debouncedSearch]);
+    }, [currentPage, categoryFilter, statusFilter, debouncedSearch, expenseDateFrom, expenseDateTo]);
 
     // Debounce search input
     useEffect(() => {
@@ -204,6 +210,8 @@ export default function ExpensesPage() {
             if (categoryFilter) url += `&category=${encodeURIComponent(categoryFilter)}`;
             if (statusFilter) url += `&status=${encodeURIComponent(statusFilter)}`;
             if (debouncedSearch) url += `&q=${encodeURIComponent(debouncedSearch)}`;
+            if (expenseDateFrom) url += `&expense_date_from=${expenseDateFrom}`;
+            if (expenseDateTo) url += `&expense_date_to=${expenseDateTo}`;
 
             const response = await fetch(url, {
                 headers: {
@@ -478,6 +486,67 @@ export default function ExpensesPage() {
                             <option value="Paid">Paid</option>
                             <option value="Cancelled">Cancelled</option>
                         </select>
+                        <div className="relative">
+                            <button
+                                onClick={() => setShowMoreFilters(!showMoreFilters)}
+                                className={`px-4 py-2 border rounded-lg transition-colors flex items-center gap-2 ${
+                                    showMoreFilters ? "bg-blue-50 border-blue-200 text-blue-600" : "border-gray-200 hover:bg-gray-50"
+                                }`}
+                            >
+                                <Filter className="w-4 h-4" />
+                                More Filters
+                                {(expenseDateFrom || expenseDateTo) && (
+                                    <span className="w-2 h-2 bg-blue-500 rounded-full" />
+                                )}
+                            </button>
+                            {showMoreFilters && (
+                                <div className="absolute right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-50 p-4">
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500 mb-1.5">Expense Date Range</label>
+                                            <div className="flex flex-col gap-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs text-gray-400 w-8">From</span>
+                                                    <input
+                                                        type="date"
+                                                        value={expenseDateFrom}
+                                                        onChange={(e) => setExpenseDateFrom(e.target.value)}
+                                                        className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs text-gray-400 w-8">To</span>
+                                                    <input
+                                                        type="date"
+                                                        value={expenseDateTo}
+                                                        onChange={(e) => setExpenseDateTo(e.target.value)}
+                                                        className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-2 pt-1">
+                                            <button
+                                                onClick={() => {
+                                                    setExpenseDateFrom("");
+                                                    setExpenseDateTo("");
+                                                    setShowMoreFilters(false);
+                                                }}
+                                                className="flex-1 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
+                                            >
+                                                Clear All
+                                            </button>
+                                            <button
+                                                onClick={() => setShowMoreFilters(false)}
+                                                className="flex-1 px-3 py-1.5 text-xs text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                                            >
+                                                Apply
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                         <button
                             onClick={exportToExcel}
                             disabled={exportLoading}

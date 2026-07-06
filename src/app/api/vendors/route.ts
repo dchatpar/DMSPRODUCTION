@@ -32,6 +32,8 @@ export async function GET(req: NextRequest) {
         const limit = parseInt(url.searchParams.get("limit") || "100");
         const offset = parseInt(url.searchParams.get("offset") || "0");
         const q = url.searchParams.get("q");
+        const createdAtFrom = url.searchParams.get("created_at_from");
+        const createdAtTo = url.searchParams.get("created_at_to");
 
         let query = supabase
             .from("vendors")
@@ -44,6 +46,8 @@ export async function GET(req: NextRequest) {
                 `vendor_name.ilike.%${q}%,contact_name.ilike.%${q}%,phone.ilike.%${q}%`
             );
         }
+        if (createdAtFrom) query = query.gte("created_at", createdAtFrom);
+        if (createdAtTo) query = query.lte("created_at", createdAtTo);
 
         const { data, error: dbError, count } = await query;
 

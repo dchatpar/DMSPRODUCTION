@@ -85,6 +85,10 @@ export default function LeadsPage() {
     const [statusFilter, setStatusFilter] = useState<string>("");
     const [exportLoading, setExportLoading] = useState(false);
     const [sourceFilter, setSourceFilter] = useState<string>("");
+    // More Filters
+    const [showMoreFilters, setShowMoreFilters] = useState(false);
+    const [createdAtFrom, setCreatedAtFrom] = useState("");
+    const [createdAtTo, setCreatedAtTo] = useState("");
     const [currentPage, setCurrentPage] = useState(1);
     const [totalItems, setTotalItems] = useState(0);
     const [itemsPerPage] = useState(10);
@@ -105,7 +109,7 @@ export default function LeadsPage() {
 
     useEffect(() => {
         fetchLeads();
-    }, [currentPage, statusFilter, sourceFilter, searchTerm]);
+    }, [currentPage, statusFilter, sourceFilter, searchTerm, createdAtFrom, createdAtTo]);
 
     const fetchLeads = async () => {
         try {
@@ -119,6 +123,8 @@ export default function LeadsPage() {
             if (statusFilter) url += `&status=${statusFilter}`;
             if (sourceFilter) url += `&source=${sourceFilter}`;
             if (searchTerm) url += `&q=${encodeURIComponent(searchTerm)}`;
+            if (createdAtFrom) url += `&created_at_from=${createdAtFrom}`;
+            if (createdAtTo) url += `&created_at_to=${createdAtTo}`;
 
             const response = await fetch(url, {
                 headers: {
@@ -401,6 +407,67 @@ export default function LeadsPage() {
                             <option value="Kijiji">Kijiji</option>
                             <option value="Phone">Phone</option>
                         </select>
+                        <div className="relative">
+                            <button
+                                onClick={() => setShowMoreFilters(!showMoreFilters)}
+                                className={`px-4 py-2 border rounded-lg transition-colors flex items-center gap-2 ${
+                                    showMoreFilters ? "bg-blue-50 border-blue-200 text-blue-600" : "border-gray-200 hover:bg-gray-50"
+                                }`}
+                            >
+                                <Filter className="w-4 h-4" />
+                                More Filters
+                                {(createdAtFrom || createdAtTo) && (
+                                    <span className="w-2 h-2 bg-blue-500 rounded-full" />
+                                )}
+                            </button>
+                            {showMoreFilters && (
+                                <div className="absolute right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-50 p-4">
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500 mb-1.5">Created Date Range</label>
+                                            <div className="flex flex-col gap-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs text-gray-400 w-8">From</span>
+                                                    <input
+                                                        type="date"
+                                                        value={createdAtFrom}
+                                                        onChange={(e) => setCreatedAtFrom(e.target.value)}
+                                                        className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs text-gray-400 w-8">To</span>
+                                                    <input
+                                                        type="date"
+                                                        value={createdAtTo}
+                                                        onChange={(e) => setCreatedAtTo(e.target.value)}
+                                                        className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-2 pt-1">
+                                            <button
+                                                onClick={() => {
+                                                    setCreatedAtFrom("");
+                                                    setCreatedAtTo("");
+                                                    setShowMoreFilters(false);
+                                                }}
+                                                className="flex-1 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
+                                            >
+                                                Clear All
+                                            </button>
+                                            <button
+                                                onClick={() => setShowMoreFilters(false)}
+                                                className="flex-1 px-3 py-1.5 text-xs text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                                            >
+                                                Apply
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                         <button
                             onClick={exportToExcel}
                             disabled={exportLoading}

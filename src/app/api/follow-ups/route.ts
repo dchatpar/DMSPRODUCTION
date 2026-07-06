@@ -36,6 +36,8 @@ export async function GET(req: NextRequest) {
         const priority = url.searchParams.get("priority");
         const overdue = url.searchParams.get("overdue");
         const q = url.searchParams.get("q");
+        const followUpDateFrom = url.searchParams.get("follow_up_date_from");
+        const followUpDateTo = url.searchParams.get("follow_up_date_to");
 
         let query = supabase
             .from("follow_ups")
@@ -60,6 +62,8 @@ export async function GET(req: NextRequest) {
                 `title.ilike.%${q}%,notes.ilike.%${q}%,description.ilike.%${q}%`
             );
         }
+        if (followUpDateFrom) query = query.gte("follow_up_date", followUpDateFrom);
+        if (followUpDateTo) query = query.lte("follow_up_date", followUpDateTo);
 
         const { data, error: dbError, count } = await query;
 
