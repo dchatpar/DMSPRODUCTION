@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Adaptus DMS",
-  description: "Adaptus Dealer Management System",
+  title: "Flash Fender",
+  description: "Flash Fender Dealer Management System",
 };
 
 export default function RootLayout({
