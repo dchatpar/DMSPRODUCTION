@@ -48,6 +48,8 @@ export async function GET(req: NextRequest) {
         const offset = parseInt(url.searchParams.get("offset") || "0");
         const q = url.searchParams.get("q");
         const role = url.searchParams.get("role");
+        const startDateFrom = url.searchParams.get("start_date_from");
+        const startDateTo = url.searchParams.get("start_date_to");
 
         let query = supabase
             .from("users")
@@ -57,6 +59,8 @@ export async function GET(req: NextRequest) {
 
         if (role) query = query.eq("role", role);
         if (q) query = query.or(`full_name.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${q}%`);
+        if (startDateFrom) query = query.gte("start_date", startDateFrom);
+        if (startDateTo) query = query.lte("start_date", startDateTo);
 
         const { data, error: dbError, count } = await query;
 

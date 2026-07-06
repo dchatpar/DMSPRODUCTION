@@ -59,6 +59,11 @@ export default function UsersPage() {
     const [totalItems, setTotalItems] = useState(0);
     const [itemsPerPage] = useState(10);
 
+    // Date filters
+    const [startDateFrom, setStartDateFrom] = useState("");
+    const [startDateTo, setStartDateTo] = useState("");
+    const [showMoreFilters, setShowMoreFilters] = useState(false);
+
     // Modal states
     const [showDetailsModal, setShowDetailsModal] = useState(false);
     const [showFormModal, setShowFormModal] = useState(false);
@@ -74,7 +79,7 @@ export default function UsersPage() {
 
     useEffect(() => {
         fetchUsers();
-    }, [currentPage, roleFilter, searchTerm]);
+    }, [currentPage, roleFilter, searchTerm, startDateFrom, startDateTo]);
 
     const fetchUsers = async () => {
         try {
@@ -87,6 +92,8 @@ export default function UsersPage() {
             let url = `/api/users?limit=${itemsPerPage}&offset=${offset}`;
             if (roleFilter) url += `&role=${roleFilter}`;
             if (searchTerm) url += `&q=${encodeURIComponent(searchTerm)}`;
+            if (startDateFrom) url += `&start_date_from=${startDateFrom}`;
+            if (startDateTo) url += `&start_date_to=${startDateTo}`;
 
             const response = await fetch(url, {
                 headers: {
@@ -264,10 +271,66 @@ export default function UsersPage() {
                             <option value="Staff">Staff</option>
                             <option value="Salesperson">Salesperson</option>
                         </select>
-                        <button className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2">
-                            <Filter className="w-4 h-4" />
-                            More Filters
-                        </button>
+                        <div className="relative">
+                            <button
+                                onClick={() => setShowMoreFilters(!showMoreFilters)}
+                                className={`px-4 py-2 border rounded-lg transition-colors flex items-center gap-2 ${
+                                    showMoreFilters ? "bg-blue-50 border-blue-200 text-blue-600" : "border-gray-200 hover:bg-gray-50"
+                                }`}
+                            >
+                                <Filter className="w-4 h-4" />
+                                More Filters
+                                {(startDateFrom || startDateTo) && (
+                                    <span className="w-2 h-2 bg-blue-500 rounded-full" />
+                                )}
+                            </button>
+                            {showMoreFilters && (
+                                <div className="absolute right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-50 p-4 overflow-visible">
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500 mb-1.5">Start Date Range</label>
+                                            <div className="flex flex-col gap-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs text-gray-400 w-8">From</span>
+                                                    <input
+                                                        type="date"
+                                                        value={startDateFrom}
+                                                        onChange={(e) => setStartDateFrom(e.target.value)}
+                                                        className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs text-gray-400 w-8">To</span>
+                                                    <input
+                                                        type="date"
+                                                        value={startDateTo}
+                                                        onChange={(e) => setStartDateTo(e.target.value)}
+                                                        className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-2 pt-1">
+                                            <button
+                                                onClick={() => {
+                                                    setStartDateFrom("");
+                                                    setStartDateTo("");
+                                                }}
+                                                className="flex-1 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
+                                            >
+                                                Clear All
+                                            </button>
+                                            <button
+                                                onClick={() => setShowMoreFilters(false)}
+                                                className="flex-1 px-3 py-1.5 text-xs text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                                            >
+                                                Apply
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                         <button className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2">
                             <Download className="w-4 h-4" />
                             Export
