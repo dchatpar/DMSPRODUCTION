@@ -308,7 +308,7 @@ function ReportContent({ data, activeTab, formatCurrency }: { data: any; activeT
                                 <ResponsiveContainer width="100%" height={300}>
                                     <BarChart data={data.bySource} layout="vertical">
                                         <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
-                                        <XAxis type="number" tickFormatter={(v) => Math.round(v)} />
+                                        <XAxis type="number" tickFormatter={(v) => String(Math.round(v))} />
                                         <YAxis type="category" dataKey="source" width={80} tick={{ fontSize: 12 }} />
                                         <Tooltip formatter={(value: any) => [value, "Leads"]} />
                                         <Bar dataKey="count" fill="#3B82F6" radius={[0, 4, 4, 0]} />
