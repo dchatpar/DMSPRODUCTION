@@ -68,11 +68,11 @@ export async function GET(req: NextRequest) {
 
 async function getSummaryReport(supabase: any, quarterStart: string) {
     const now = new Date();
-    // Total sales this quarter
+    // Total sales this quarter - use Paid Off as completed status
     const { data: salesData } = await supabase
         .from("sales_deals")
         .select("sale_price, created_at")
-        .eq("deal_status", "Closed")
+        .not("deal_status", "in", '("Cancelled","Negotiation")')
         .gte("created_at", quarterStart);
 
     const totalSalesRevenue = salesData?.reduce((sum: number, d: any) => sum + (d.sale_price || 0), 0) || 0;
@@ -160,7 +160,7 @@ async function getSalesReport(supabase: any, dateFilter: any, quarterStart: stri
     const startDate = dateFilter?.start || quarterStart;
     const endDate = dateFilter?.end || new Date().toISOString();
 
-    // Sales by day
+    // Sales by day - use Paid Off as completed status
     const { data: dailySales } = await supabase
         .from("sales_deals")
         .select(`
@@ -169,7 +169,7 @@ async function getSalesReport(supabase: any, dateFilter: any, quarterStart: stri
             vehicle:vehicles(make, model, year),
             customer:customers(name)
         `)
-        .eq("deal_status", "Closed")
+        .not("deal_status", "in", '("Cancelled","Negotiation")')
         .gte("deal_date", startDate.split("T")[0])
         .lte("deal_date", endDate.split("T")[0])
         .order("deal_date", { ascending: true });
@@ -195,7 +195,7 @@ async function getSalesReport(supabase: any, dateFilter: any, quarterStart: stri
             sale_price,
             salesperson:users(full_name)
         `)
-        .eq("deal_status", "Closed")
+        .not("deal_status", "in", '("Cancelled","Negotiation")')
         .gte("created_at", startDate);
 
     const salesBySalesperson: Record<string, { name: string; deals: number; revenue: number }> = {};
@@ -235,75 +235,84 @@ async function getSalesReport(supabase: any, dateFilter: any, quarterStart: stri
 }
 
 async function getInventoryReport(supabase: any) {
-    // Inventory by status
-    const { data: byStatus } = await supabase
-        .from("vehicles")
-        .select("status, count")
-        .throwOnError();
+    try {
+        // Inventory by status
+        const { data: byStatus } = await supabase
+            .from("vehicles")
+            .select("status");
 
-    // Group by status
-    const statusCounts: Record<string, number> = {};
-    byStatus?.forEach((v: any) => {
-        statusCounts[v.status] = (statusCounts[v.status] || 0) + 1;
-    });
+        // Group by status
+        const statusCounts: Record<string, number> = {};
+        byStatus?.forEach((v: any) => {
+            statusCounts[v.status] = (statusCounts[v.status] || 0) + 1;
+        });
 
-    // Inventory by make
-    const { data: byMake } = await supabase
-        .from("vehicles")
-        .select("make, model, purchase_price, retail_price, status");
+        // Inventory by make
+        const { data: byMake } = await supabase
+            .from("vehicles")
+            .select("make, model, purchase_price, retail_price, status");
 
-    const makeCounts: Record<string, { count: number; totalValue: number; avgProfit: number }> = {};
-    byMake?.forEach((v: any) => {
-        if (!makeCounts[v.make]) {
-            makeCounts[v.make] = { count: 0, totalValue: 0, avgProfit: 0 };
+        const makeCounts: Record<string, { count: number; totalValue: number; avgProfit: number }> = {};
+        byMake?.forEach((v: any) => {
+            if (!makeCounts[v.make]) {
+                makeCounts[v.make] = { count: 0, totalValue: 0, avgProfit: 0 };
+            }
+            makeCounts[v.make].count += 1;
+            if (v.status === "Active") {
+                makeCounts[v.make].totalValue += v.retail_price || 0;
+            }
+        });
+
+        // Inventory value
+        const { data: activeVehicles } = await supabase
+            .from("vehicles")
+            .select("purchase_price, retail_price, extra_costs, taxes")
+            .eq("status", "Active");
+
+        const totalInventoryValue = activeVehicles?.reduce((sum: number, v: any) => sum + (v.retail_price || 0), 0) || 0;
+        const totalInventoryCost = activeVehicles?.reduce((sum: number, v: any) => {
+            return sum + (v.purchase_price || 0) + (v.extra_costs || 0) + (v.taxes || 0);
+        }, 0) || 0;
+
+        // Aging inventory - check if column exists first
+        let agingCount = 0;
+        try {
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+            const { data: agingData } = await supabase
+                .from("vehicles")
+                .select("id")
+                .eq("status", "Active")
+                .lt("created_at", thirtyDaysAgo.toISOString());
+
+            agingCount = agingData?.length || 0;
+        } catch (e) {
+            // Ignore aging query errors
         }
-        makeCounts[v.make].count += 1;
-        if (v.status === "Active") {
-            makeCounts[v.make].totalValue += v.retail_price || 0;
-        }
-    });
 
-    // Inventory value
-    const { data: activeVehicles } = await supabase
-        .from("vehicles")
-        .select("purchase_price, retail_price, extra_costs, taxes")
-        .eq("status", "Active");
-
-    const totalInventoryValue = activeVehicles?.reduce((sum: number, v: any) => sum + (v.retail_price || 0), 0) || 0;
-    const totalInventoryCost = activeVehicles?.reduce((sum: number, v: any) => {
-        return sum + (v.purchase_price || 0) + (v.extra_costs || 0) + (v.taxes || 0);
-    }, 0) || 0;
-
-    // Aging inventory
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    const { data: agingData } = await supabase
-        .from("vehicles")
-        .select("created_at, status")
-        .eq("status", "Active")
-        .lt("created_at", thirtyDaysAgo.toISOString());
-
-    const agingCount = agingData?.length || 0;
-
-    return NextResponse.json({
-        reportType: "inventory",
-        data: {
-            summary: {
-                totalVehicles: byMake?.length || 0,
-                activeVehicles: statusCounts["Active"] || 0,
-                totalInventoryValue,
-                totalInventoryCost,
-                potentialProfit: totalInventoryValue - totalInventoryCost,
-                agingCount,
+        return NextResponse.json({
+            reportType: "inventory",
+            data: {
+                summary: {
+                    totalVehicles: byMake?.length || 0,
+                    activeVehicles: statusCounts["Active"] || 0,
+                    totalInventoryValue,
+                    totalInventoryCost,
+                    potentialProfit: totalInventoryValue - totalInventoryCost,
+                    agingCount,
+                },
+                byStatus: statusCounts,
+                byMake: Object.entries(makeCounts).map(([make, data]) => ({
+                    make,
+                    ...data as { count: number; totalValue: number; avgProfit: number }
+                })),
             },
-            byStatus: statusCounts,
-            byMake: Object.entries(makeCounts).map(([make, data]) => ({
-                make,
-                ...data as { count: number; totalValue: number; avgProfit: number }
-            })),
-        },
-    });
+        });
+    } catch (error) {
+        console.error("Inventory report error:", error);
+        return NextResponse.json({ error: "Failed to generate inventory report" }, { status: 500 });
+    }
 }
 
 async function getFinancialReport(supabase: any, dateFilter: any, quarterStart: string) {
@@ -314,7 +323,7 @@ async function getFinancialReport(supabase: any, dateFilter: any, quarterStart: 
     const { data: salesData } = await supabase
         .from("sales_deals")
         .select("sale_price")
-        .eq("deal_status", "Closed")
+        .not("deal_status", "in", '("Cancelled","Negotiation")')
         .gte("deal_date", startDate.split("T")[0])
         .lte("deal_date", endDate.split("T")[0]);
 

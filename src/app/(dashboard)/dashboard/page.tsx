@@ -4,6 +4,19 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/src/lib/supabase-browser";
 import {
+    PieChart,
+    Pie,
+    Cell,
+    BarChart,
+    Bar,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    ResponsiveContainer,
+    Legend,
+} from "recharts";
+import {
     Car,
     Users,
     User,
@@ -17,14 +30,11 @@ import {
     Mail,
     MoreVertical,
     Loader2,
-    Package,
-    CheckCircle,
     AlertCircle,
-    Plus,
-    Download,
-    Phone,
-    MapPin,
+    Package,
 } from "lucide-react";
+
+const COLORS = ["#3B82F6", "#8B5CF6", "#EC4899", "#F59E0B", "#10B981", "#6366F1", "#EF4444", "#14B8A6"];
 
 interface DashboardStats {
     totalVehicles: number;
@@ -78,20 +88,24 @@ interface DashboardData {
         invoices: number;
         activeVehicles: number;
     };
-    kpis: {
-        completionRate: number;
-        revenueGrowth: number;
-        activeUsers: number;
-        avgResponseHours: number;
-    };
     recentSales: RecentSale[];
     recentLeads: RecentLead[];
+}
+
+interface ChartData {
+    name: string;
+    value: number;
+    fill?: string;
 }
 
 export default function DashboardPage() {
     const [data, setData] = useState<DashboardData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [leadsSourceData, setLeadsSourceData] = useState<ChartData[]>([]);
+    const [inventoryData, setInventoryData] = useState<ChartData[]>([]);
+    const [salesStatusData, setSalesStatusData] = useState<ChartData[]>([]);
+    const [expensesData, setExpensesData] = useState<ChartData[]>([]);
 
     const router = useRouter();
 
@@ -106,24 +120,83 @@ export default function DashboardPage() {
                     return;
                 }
 
-                const res = await fetch("/api/dashboard", {
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                    },
-                });
+                const [dashboardRes, leadsRes, vehiclesRes, dealsRes, expensesRes] = await Promise.all([
+                    fetch("/api/dashboard", { headers: { Authorization: `Bearer ${token}` } }),
+                    fetch("/api/leads?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
+                    fetch("/api/vehicles?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
+                    fetch("/api/deals?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
+                    fetch("/api/expenses?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
+                ]);
 
-                if (res.status === 401) {
+                if (dashboardRes.status === 401) {
                     await supabaseBrowser.auth.signOut();
                     router.push("/login");
                     return;
                 }
 
-                if (!res.ok) {
-                    throw new Error("Failed to fetch dashboard data");
+                if (!dashboardRes.ok) throw new Error("Failed to fetch dashboard data");
+
+                const json = await dashboardRes.json();
+                setData(json);
+
+                // Process leads data for source chart
+                if (leadsRes.ok) {
+                    const leadsJson = await leadsRes.json();
+                    const sourceCounts: Record<string, number> = {};
+                    leadsJson.data?.forEach((l: any) => {
+                        if (l.source) {
+                            sourceCounts[l.source] = (sourceCounts[l.source] || 0) + 1;
+                        }
+                    });
+                    const sorted = Object.entries(sourceCounts)
+                        .map(([name, value]) => ({ name, value }))
+                        .sort((a, b) => b.value - a.value)
+                        .slice(0, 6);
+                    setLeadsSourceData(sorted);
                 }
 
-                const json = await res.json();
-                setData(json);
+                // Process vehicles data for inventory chart
+                if (vehiclesRes.ok) {
+                    const vehiclesJson = await vehiclesRes.json();
+                    const statusCounts: Record<string, number> = {};
+                    vehiclesJson.data?.forEach((v: any) => {
+                        const status = v.status || "Unknown";
+                        statusCounts[status] = (statusCounts[status] || 0) + 1;
+                    });
+                    const chartData = Object.entries(statusCounts)
+                        .map(([name, value]) => ({ name, value }))
+                        .filter(item => item.value > 0);
+                    setInventoryData(chartData);
+                }
+
+                // Process deals data for sales status chart
+                if (dealsRes.ok) {
+                    const dealsJson = await dealsRes.json();
+                    const statusCounts: Record<string, number> = {};
+                    dealsJson.data?.forEach((d: any) => {
+                        const status = d.deal_status || "Unknown";
+                        statusCounts[status] = (statusCounts[status] || 0) + 1;
+                    });
+                    const chartData = Object.entries(statusCounts)
+                        .map(([name, value]) => ({ name, value }))
+                        .filter(item => item.value > 0);
+                    setSalesStatusData(chartData);
+                }
+
+                // Process expenses data for category chart
+                if (expensesRes.ok) {
+                    const expensesJson = await expensesRes.json();
+                    const categoryCounts: Record<string, number> = {};
+                    expensesJson.data?.forEach((e: any) => {
+                        const category = e.category || "Unknown";
+                        categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+                    });
+                    const chartData = Object.entries(categoryCounts)
+                        .map(([name, value]) => ({ name, value }))
+                        .sort((a, b) => b.value - a.value)
+                        .slice(0, 6);
+                    setExpensesData(chartData);
+                }
             } catch (err) {
                 setError(err instanceof Error ? err.message : "An error occurred");
             } finally {
@@ -133,87 +206,6 @@ export default function DashboardPage() {
 
         fetchDashboard();
     }, [router]);
-
-    // Handle Export Report
-    const handleExportReport = async () => {
-        try {
-            const token = localStorage.getItem("access_token");
-            if (!token) {
-                router.push("/login");
-                return;
-            }
-
-            // Fetch all data for export
-            const [vehiclesRes, customersRes, leadsRes, dealsRes, invoicesRes] = await Promise.all([
-                fetch("/api/vehicles?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
-                fetch("/api/customers?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
-                fetch("/api/leads?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
-                fetch("/api/deals?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
-                fetch("/api/invoices?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
-            ]);
-
-            const [vehicles, customers, leads, deals, invoices] = await Promise.all([
-                vehiclesRes.json(),
-                customersRes.json(),
-                leadsRes.json(),
-                dealsRes.json(),
-                invoicesRes.json(),
-            ]);
-
-            // Convert to CSV
-            const csvRows: string[] = [];
-
-            // Vehicles sheet
-            csvRows.push("=== VEHICLES ===");
-            csvRows.push("VIN,Stock#,Year,Make,Model,Condition,Status,Purchase Price,Retail Price");
-            vehicles.data?.forEach((v: any) => {
-                csvRows.push(`${v.vin},${v.stock_number || ""},${v.year},${v.make},${v.model},${v.condition},${v.status},${v.purchase_price},${v.retail_price}`);
-            });
-
-            csvRows.push("");
-            csvRows.push("=== CUSTOMERS ===");
-            csvRows.push("Name,Email,Phone,Address,City,Province,Status");
-            customers.data?.forEach((c: any) => {
-                csvRows.push(`${c.name},${c.email || ""},${c.phone || ""},${c.address || ""},${c.city || ""},${c.province || ""},${c.status}`);
-            });
-
-            csvRows.push("");
-            csvRows.push("=== LEADS ===");
-            csvRows.push("Customer,Source,Status,Notes,Created Date");
-            leads.data?.forEach((l: any) => {
-                csvRows.push(`${l.customer?.name || ""},${l.source},${l.status},${l.notes || ""},${l.lead_creation_date}`);
-            });
-
-            csvRows.push("");
-            csvRows.push("=== DEALS ===");
-            csvRows.push("Vehicle,Customer,Salesperson,Status,Sale Price,Down Payment,Deal Date");
-            deals.data?.forEach((d: any) => {
-                csvRows.push(`${d.vehicle?.year} ${d.vehicle?.make} ${d.vehicle?.model},${d.customer?.name},${d.salesperson?.full_name},${d.deal_status},${d.sale_price},${d.down_payment},${d.deal_date}`);
-            });
-
-            csvRows.push("");
-            csvRows.push("=== INVOICES ===");
-            csvRows.push("Invoice#,Customer,Amount,Tax,Total,Status,Invoice Date,Due Date");
-            invoices.data?.forEach((i: any) => {
-                csvRows.push(`${i.invoice_number},${i.customer?.name},${i.payment_amount},${i.tax_amount},${i.total},${i.status},${i.invoice_date},${i.due_date}`);
-            });
-
-            // Download CSV
-            const csvContent = csvRows.join("\n");
-            const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement("a");
-            link.href = url;
-            link.download = `dms-export-${new Date().toISOString().split("T")[0]}.csv`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-        } catch (err) {
-            console.error("Export error:", err);
-            alert("Failed to export data. Please try again.");
-        }
-    };
 
     if (loading) {
         return (
@@ -244,13 +236,10 @@ export default function DashboardPage() {
         );
     }
 
-    if (!data) {
-        return null;
-    }
+    if (!data) return null;
 
-    const { stats, changes, kpis, recentSales, recentLeads } = data;
+    const { stats, changes, recentSales, recentLeads } = data;
 
-    // Stats cards configuration
     const statCards = [
         {
             title: "Total Vehicles",
@@ -266,7 +255,7 @@ export default function DashboardPage() {
             icon: Users,
             color: "green",
             change: changes.customers,
-            subtitle: "New this month",
+            subtitle: "In system",
         },
         {
             title: "Total Leads",
@@ -311,6 +300,12 @@ export default function DashboardPage() {
             "Pending": "bg-orange-100 text-orange-800",
             "New": "bg-purple-100 text-purple-800",
             "Completed": "bg-emerald-100 text-emerald-800",
+            "Active": "bg-blue-100 text-blue-800",
+            "Sold": "bg-green-100 text-green-800",
+            "Finance": "bg-purple-100 text-purple-800",
+            "Down Payment": "bg-amber-100 text-amber-800",
+            "Paid Off": "bg-emerald-100 text-emerald-800",
+            "Cancelled": "bg-gray-100 text-gray-800",
         };
         return colors[status] || "bg-gray-100 text-gray-800";
     };
@@ -334,30 +329,22 @@ export default function DashboardPage() {
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
                     <p className="text-sm text-slate-600 mt-1">
-                        Welcome back! Here's what's happening with your dealership today.
+                        Welcome back! Here&apos;s your dealership overview.
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
                     <button
-                        onClick={handleExportReport}
+                        onClick={() => router.push("/reports")}
                         className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 flex items-center gap-2 transition-colors"
                     >
-                        <Download className="w-4 h-4" />
-                        Export Report
+                        <FileText className="w-4 h-4" />
+                        View Reports
                     </button>
-                    {/* <button
-                        disabled
-                        className="px-4 py-2 text-sm font-medium text-slate-400 bg-white border border-slate-200 rounded-lg cursor-not-allowed flex items-center gap-2"
-                        title="Deals module coming soon"
-                    >
-                        <Plus className="w-4 h-4" />
-                        New Deal
-                    </button> */}
                 </div>
             </div>
 
             {/* Stats Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
                 {statCards.map((stat, index) => {
                     const Icon = stat.icon;
                     const isTrendUp = stat.change >= 0;
@@ -379,10 +366,7 @@ export default function DashboardPage() {
                                     ) : (
                                         <ArrowDownRight className="w-3.5 h-3.5 text-red-600" />
                                     )}
-                                    <span
-                                        className={`text-xs font-medium ${isTrendUp ? "text-green-600" : "text-red-600"
-                                            }`}
-                                    >
+                                    <span className={`text-xs font-medium ${isTrendUp ? "text-green-600" : "text-red-600"}`}>
                                         {changeText}
                                     </span>
                                 </div>
@@ -399,6 +383,191 @@ export default function DashboardPage() {
                 })}
             </div>
 
+            {/* Charts Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6">
+                {/* Leads by Source */}
+                <div className="bg-white rounded-xl border border-slate-200/60 p-4">
+                    <div className="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 className="font-semibold text-slate-900">Leads by Source</h3>
+                            <p className="text-xs text-slate-500">Top channels</p>
+                        </div>
+                    </div>
+                    {leadsSourceData.length > 0 ? (
+                        <>
+                            <div className="h-[200px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={leadsSourceData} layout="vertical">
+                                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+                                        <XAxis type="number" tick={{ fontSize: 11 }} />
+                                        <YAxis type="category" dataKey="name" width={70} tick={{ fontSize: 10 }} />
+                                        <Tooltip />
+                                        <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                                            {leadsSourceData.map((_, idx) => (
+                                                <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
+                                            ))}
+                                        </Bar>
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                            <div className="mt-3 space-y-1">
+                                {leadsSourceData.slice(0, 4).map((item, idx) => (
+                                    <div key={item.name} className="flex items-center justify-between text-xs">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
+                                            <span className="text-slate-600">{item.name}</span>
+                                        </div>
+                                        <span className="font-medium text-slate-900">{item.value}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </>
+                    ) : (
+                        <div className="flex items-center justify-center h-[200px] text-slate-400 text-sm">
+                            No leads data
+                        </div>
+                    )}
+                </div>
+
+                {/* Inventory Status */}
+                <div className="bg-white rounded-xl border border-slate-200/60 p-4">
+                    <div className="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 className="font-semibold text-slate-900">Inventory Status</h3>
+                            <p className="text-xs text-slate-500">Vehicle breakdown</p>
+                        </div>
+                    </div>
+                    {inventoryData.length > 0 ? (
+                        <>
+                            <div className="h-[200px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie
+                                            data={inventoryData}
+                                            cx="50%"
+                                            cy="50%"
+                                            innerRadius={50}
+                                            outerRadius={80}
+                                            paddingAngle={2}
+                                            dataKey="value"
+                                        >
+                                            {inventoryData.map((_, idx) => (
+                                                <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
+                                            ))}
+                                        </Pie>
+                                        <Tooltip />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </div>
+                            <div className="mt-2 space-y-1">
+                                {inventoryData.map((item, idx) => (
+                                    <div key={item.name} className="flex items-center justify-between text-xs">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
+                                            <span className="text-slate-600">{item.name}</span>
+                                        </div>
+                                        <span className="font-medium text-slate-900">{item.value}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </>
+                    ) : (
+                        <div className="flex items-center justify-center h-[200px] text-slate-400 text-sm">
+                            No inventory data
+                        </div>
+                    )}
+                </div>
+
+                {/* Sales by Status */}
+                <div className="bg-white rounded-xl border border-slate-200/60 p-4">
+                    <div className="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 className="font-semibold text-slate-900">Deal Status</h3>
+                            <p className="text-xs text-slate-500">Pipeline overview</p>
+                        </div>
+                    </div>
+                    {salesStatusData.length > 0 ? (
+                        <>
+                            <div className="h-[200px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie
+                                            data={salesStatusData}
+                                            cx="50%"
+                                            cy="50%"
+                                            innerRadius={50}
+                                            outerRadius={80}
+                                            paddingAngle={2}
+                                            dataKey="value"
+                                        >
+                                            {salesStatusData.map((_, idx) => (
+                                                <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
+                                            ))}
+                                        </Pie>
+                                        <Tooltip />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </div>
+                            <div className="mt-2 space-y-1">
+                                {salesStatusData.map((item, idx) => (
+                                    <div key={item.name} className="flex items-center justify-between text-xs">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
+                                            <span className="text-slate-600">{item.name}</span>
+                                        </div>
+                                        <span className="font-medium text-slate-900">{item.value}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </>
+                    ) : (
+                        <div className="flex items-center justify-center h-[200px] text-slate-400 text-sm">
+                            No deals data
+                        </div>
+                    )}
+                </div>
+
+                {/* Expenses by Category */}
+                <div className="bg-white rounded-xl border border-slate-200/60 p-4">
+                    <div className="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 className="font-semibold text-slate-900">Expenses</h3>
+                            <p className="text-xs text-slate-500">By category</p>
+                        </div>
+                    </div>
+                    {expensesData.length > 0 ? (
+                        <>
+                            <div className="h-[200px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={expensesData}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                        <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                                        <YAxis tick={{ fontSize: 10 }} />
+                                        <Tooltip />
+                                        <Bar dataKey="value" fill="#EF4444" radius={[4, 4, 0, 0]} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                            <div className="mt-2 space-y-1">
+                                {expensesData.slice(0, 4).map((item, idx) => (
+                                    <div key={item.name} className="flex items-center justify-between text-xs">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
+                                            <span className="text-slate-600 truncate max-w-[100px]">{item.name}</span>
+                                        </div>
+                                        <span className="font-medium text-slate-900">{item.value}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </>
+                    ) : (
+                        <div className="flex items-center justify-center h-[200px] text-slate-400 text-sm">
+                            No expenses data
+                        </div>
+                    )}
+                </div>
+            </div>
+
             {/* Recent Activity Section */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Recent Sales */}
@@ -406,7 +575,7 @@ export default function DashboardPage() {
                     <div className="p-4 border-b border-slate-200/60 flex items-center justify-between">
                         <div>
                             <h3 className="font-semibold text-slate-900">Recent Sales</h3>
-                            <p className="text-xs text-slate-600">Latest deals closed</p>
+                            <p className="text-xs text-slate-600">Latest deals</p>
                         </div>
                         <button
                             onClick={() => router.push("/deals")}
@@ -416,7 +585,7 @@ export default function DashboardPage() {
                             <ArrowUpRight className="w-3 h-3" />
                         </button>
                     </div>
-                    <div className="divide-y divide-slate-200/60">
+                    <div className="divide-y divide-slate-200/60 max-h-[400px] overflow-y-auto">
                         {recentSales.length === 0 ? (
                             <div className="p-8 text-center text-slate-500">
                                 <DollarSign className="w-12 h-12 mx-auto mb-3 text-slate-300" />
@@ -465,7 +634,7 @@ export default function DashboardPage() {
                     <div className="p-4 border-b border-slate-200/60 flex items-center justify-between">
                         <div>
                             <h3 className="font-semibold text-slate-900">Recent Leads</h3>
-                            <p className="text-xs text-slate-600">New inquiries & prospects</p>
+                            <p className="text-xs text-slate-600">New inquiries</p>
                         </div>
                         <button
                             onClick={() => router.push("/leads")}
@@ -475,7 +644,7 @@ export default function DashboardPage() {
                             <ArrowUpRight className="w-3 h-3" />
                         </button>
                     </div>
-                    <div className="divide-y divide-slate-200/60">
+                    <div className="divide-y divide-slate-200/60 max-h-[400px] overflow-y-auto">
                         {recentLeads.length === 0 ? (
                             <div className="p-8 text-center text-slate-500">
                                 <User className="w-12 h-12 mx-auto mb-3 text-slate-300" />
@@ -521,98 +690,6 @@ export default function DashboardPage() {
                                 </div>
                             ))
                         )}
-                    </div>
-                </div>
-            </div>
-
-            {/* Quick Actions */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <button
-                    onClick={() => router.push("/inventory")}
-                    className="p-4 bg-white rounded-xl border border-slate-200/60 hover:shadow-md transition-all text-left group"
-                >
-                    <div className="p-2 rounded-lg bg-blue-50 w-fit mb-2 group-hover:bg-blue-100 transition-colors">
-                        <Car className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <p className="text-sm font-medium text-slate-900">Add Vehicle</p>
-                    <p className="text-xs text-slate-600">List new inventory</p>
-                </button>
-                <button
-                    onClick={() => router.push("/customers")}
-                    className="p-4 bg-white rounded-xl border border-slate-200/60 hover:shadow-md transition-all text-left group"
-                >
-                    <div className="p-2 rounded-lg bg-green-50 w-fit mb-2 group-hover:bg-green-100 transition-colors">
-                        <Users className="w-5 h-5 text-green-600" />
-                    </div>
-                    <p className="text-sm font-medium text-slate-900">Add Customer</p>
-                    <p className="text-xs text-slate-600">New client profile</p>
-                </button>
-                <button
-                    onClick={() => router.push("/leads")}
-                    className="p-4 bg-white rounded-xl border border-slate-200/60 hover:shadow-md transition-all text-left group"
-                >
-                    <div className="p-2 rounded-lg bg-purple-50 w-fit mb-2 group-hover:bg-purple-100 transition-colors">
-                        <User className="w-5 h-5 text-purple-600" />
-                    </div>
-                    <p className="text-sm font-medium text-slate-900">Add Lead</p>
-                    <p className="text-xs text-slate-600">New prospect</p>
-                </button>
-                <button
-                    onClick={() => router.push("/invoices")}
-                    className="p-4 bg-white rounded-xl border border-slate-200/60 hover:shadow-md transition-all text-left group"
-                >
-                    <div className="p-2 rounded-lg bg-orange-50 w-fit mb-2 group-hover:bg-orange-100 transition-colors">
-                        <FileText className="w-5 h-5 text-orange-600" />
-                    </div>
-                    <p className="text-sm font-medium text-slate-900">Create Invoice</p>
-                    <p className="text-xs text-slate-600">Generate bill</p>
-                </button>
-            </div>
-
-            {/* Quick Stats Footer */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100/50 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-white/60 rounded-lg">
-                            <CheckCircle className="w-5 h-5 text-blue-600" />
-                        </div>
-                        <div>
-                            <p className="text-xs text-blue-700 font-medium">Completion Rate</p>
-                            <p className="text-lg font-bold text-blue-900">{kpis.completionRate}%</p>
-                        </div>
-                    </div>
-                </div>
-                <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-100/50 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-white/60 rounded-lg">
-                            <TrendingUp className="w-5 h-5 text-green-600" />
-                        </div>
-                        <div>
-                            <p className="text-xs text-green-700 font-medium">Revenue Growth</p>
-                            <p className="text-lg font-bold text-green-900">{kpis.revenueGrowth >= 0 ? '+' : ''}{kpis.revenueGrowth}%</p>
-                        </div>
-                    </div>
-                </div>
-                <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl border border-purple-100/50 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-white/60 rounded-lg">
-                            <Users className="w-5 h-5 text-purple-600" />
-                        </div>
-                        <div>
-                            <p className="text-xs text-purple-700 font-medium">Active Users</p>
-                            <p className="text-lg font-bold text-purple-900">{kpis.activeUsers}</p>
-                        </div>
-                    </div>
-                </div>
-                <div className="bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl border border-orange-100/50 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-white/60 rounded-lg">
-                            <Clock className="w-5 h-5 text-orange-600" />
-                        </div>
-                        <div>
-                            <p className="text-xs text-orange-700 font-medium">Avg. Response</p>
-                            <p className="text-lg font-bold text-orange-900">{kpis.avgResponseHours}h</p>
-                        </div>
                     </div>
                 </div>
             </div>
