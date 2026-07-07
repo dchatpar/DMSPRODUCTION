@@ -670,7 +670,7 @@ export default function DashboardPage() {
                                                 </span>
                                                 <span className="flex items-center gap-1">
                                                     <Users className="w-3 h-3" />
-                                                    {lead.assigned_user.full_name}
+                                                    {lead.assigned_user?.full_name}
                                                 </span>
                                                 <span className="flex items-center gap-1">
                                                     <Clock className="w-3 h-3" />
