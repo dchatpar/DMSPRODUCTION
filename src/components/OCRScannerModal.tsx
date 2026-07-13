@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import {
     X,
     Camera,
@@ -57,6 +57,56 @@ export default function OCRScannerModal({
     const videoRef = useRef<HTMLVideoElement>(null);
     const [cameraActive, setCameraActive] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
+
+    const startCamera = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "environment" },
+                audio: false
+            });
+            if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+                videoRef.current.style.display = 'block';
+                videoRef.current.style.width = '100%';
+                videoRef.current.style.height = '320px';
+                videoRef.current.style.objectFit = 'cover';
+                videoRef.current.style.backgroundColor = 'black';
+                await videoRef.current.play();
+                setCameraActive(true);
+            }
+        } catch (err) {
+            setError("Unable to access camera. Please use upload method instead.");
+        }
+    };
+
+    const stopCamera = () => {
+        if (videoRef.current?.srcObject) {
+            const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
+            tracks.forEach(track => track.stop());
+            setCameraActive(false);
+        }
+    };
+
+    const capturePhoto = () => {
+        if (videoRef.current) {
+            const canvas = document.createElement("canvas");
+            canvas.width = videoRef.current.videoWidth;
+            canvas.height = videoRef.current.videoHeight;
+            const ctx = canvas.getContext("2d");
+            ctx?.drawImage(videoRef.current, 0, 0);
+            const imageData = canvas.toDataURL("image/jpeg");
+            setImagePreview(imageData);
+            stopCamera();
+
+            // Convert data URL to file for processing
+            fetch(imageData)
+                .then(res => res.blob())
+                .then(blob => {
+                    const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
+                    processImage(file);
+                });
+        }
+    };
 
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -179,88 +229,6 @@ export default function OCRScannerModal({
             return `${year}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
         }
         return dateStr;
-    };
-
-    const startCamera = async () => {
-        console.log("Start camera clicked");
-        setError(null);
-
-        try {
-            // Check if mediaDevices is supported
-            if (!navigator.mediaDevices) {
-                setError("Camera not supported in this browser. Please use upload method.");
-                return;
-            }
-
-            console.log("Requesting camera access...");
-
-            // Simple constraints - just get any camera
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "environment" },
-                audio: false
-            });
-
-            console.log("Camera access granted, stream:", stream);
-
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-                videoRef.current.muted = true;
-                videoRef.current.playsInline = true;
-                videoRef.current.autoplay = true;
-
-                // Wait for video to be ready
-                videoRef.current.onloadedmetadata = () => {
-                    console.log("Video metadata loaded");
-                    videoRef.current?.play();
-                    setCameraActive(true);
-                    console.log("Camera is now active");
-                };
-            }
-        } catch (err: any) {
-            console.error("Camera error:", err);
-            if (err.name === "NotAllowedError" || err.name === "PermissionDenied") {
-                setError("Camera permission denied. Please allow camera access in browser settings.");
-            } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
-                setError("No camera found on this device.");
-            } else if (err.name === "NotReadableError") {
-                setError("Camera is in use by another app.");
-            } else {
-                setError("Camera error: " + err.message);
-            }
-        }
-    };
-
-    const stopCamera = () => {
-        if (videoRef.current?.srcObject) {
-            const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
-            tracks.forEach((track) => track.stop());
-            setCameraActive(false);
-        }
-    };
-
-    const capturePhoto = () => {
-        if (videoRef.current && videoRef.current.videoWidth > 0) {
-            const canvas = document.createElement("canvas");
-            canvas.width = videoRef.current.videoWidth;
-            canvas.height = videoRef.current.videoHeight;
-            const ctx = canvas.getContext("2d");
-            if (ctx) {
-                ctx.drawImage(videoRef.current, 0, 0);
-                const imageData = canvas.toDataURL("image/jpeg", 0.9);
-                setImagePreview(imageData);
-                stopCamera();
-
-                // Convert data URL to file for processing
-                fetch(imageData)
-                    .then((res) => res.blob())
-                    .then((blob) => {
-                        const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
-                        processImage(file);
-                    });
-            }
-        } else {
-            setError("Camera not ready. Please try again.");
-        }
     };
 
     const handleUseData = () => {
@@ -426,38 +394,46 @@ export default function OCRScannerModal({
                                         )}
                                     </div>
                                 ) : (
-                                    <div className="relative border-2 border-dashed border-gray-300 rounded-xl overflow-hidden bg-black">
-                                        {cameraActive ? (
-                                            <>
-                                                <video
-                                                    ref={videoRef}
-                                                    className="w-full h-80 object-cover"
-                                                    playsInline
-                                                    muted
-                                                    autoPlay
-                                                />
-                                                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-3">
-                                                    <button
-                                                        onClick={stopCamera}
-                                                        className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
-                                                    >
-                                                        Cancel
-                                                    </button>
-                                                    <button
-                                                        onClick={capturePhoto}
-                                                        className="px-6 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors flex items-center gap-2 font-medium"
-                                                    >
-                                                        <Camera className="w-5 h-5" />
-                                                        Take Photo
-                                                    </button>
-                                                </div>
-                                            </>
-                                        ) : (
-                                            <div className="h-64 flex flex-col items-center justify-center bg-gray-900">
-                                                <Loader2 className="w-12 h-12 text-emerald-500 animate-spin mb-3" />
-                                                <p className="text-sm text-gray-300 mb-2">
-                                                    Starting camera...
+                                    <div className="relative border-2 border-dashed border-gray-300 rounded-xl overflow-hidden bg-gray-900" style={{ minHeight: '320px' }}>
+                                        {/* Video element - always present but hidden until camera starts */}
+                                        <video
+                                            ref={videoRef}
+                                            autoPlay
+                                            playsInline
+                                            muted
+                                            className={`${cameraActive ? 'block' : 'hidden'} w-full h-80 object-cover bg-black`}
+                                        />
+                                        {/* Overlay when camera not active */}
+                                        {!cameraActive && (
+                                            <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                                <Camera className="w-12 h-12 text-gray-400 mb-3" />
+                                                <p className="text-sm text-gray-300 mb-3">
+                                                    Click to start camera
                                                 </p>
+                                                <button
+                                                    onClick={startCamera}
+                                                    className="px-6 py-3 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors font-medium"
+                                                >
+                                                    Start Camera
+                                                </button>
+                                            </div>
+                                        )}
+                                        {/* Buttons when camera is active */}
+                                        {cameraActive && (
+                                            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-3">
+                                                <button
+                                                    onClick={stopCamera}
+                                                    className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                                                >
+                                                    Cancel
+                                                </button>
+                                                <button
+                                                    onClick={capturePhoto}
+                                                    className="px-6 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors flex items-center gap-2 font-medium"
+                                                >
+                                                    <Camera className="w-5 h-5" />
+                                                    Take Photo
+                                                </button>
                                             </div>
                                         )}
                                     </div>
