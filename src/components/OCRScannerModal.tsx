@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
     X,
     Camera,
@@ -454,20 +454,15 @@ export default function OCRScannerModal({
                                             </>
                                         ) : (
                                             <div className="h-64 flex flex-col items-center justify-center bg-gray-900">
-                                                <Camera className="w-12 h-12 text-gray-400 mb-3" />
-                                                <p className="text-sm text-gray-300 mb-3">
-                                                    Tap below to start camera
+                                                <Loader2 className="w-12 h-12 text-emerald-500 animate-spin mb-3" />
+                                                <p className="text-sm text-gray-300 mb-2">
+                                                    Starting camera...
                                                 </p>
-                                                <button
-                                                    onClick={startCamera}
-                                                    className="px-6 py-3 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors font-medium"
-                                                >
-                                                    Start Camera
-                                                </button>
                                             </div>
                                         )}
                                     </div>
                                 )}
+
 
                                 {/* Image Preview */}
                                 {imagePreview && !scannedData && (
