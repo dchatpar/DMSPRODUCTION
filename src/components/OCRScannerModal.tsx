@@ -182,17 +182,51 @@ export default function OCRScannerModal({
     };
 
     const startCamera = async () => {
+        console.log("Start camera clicked");
+        setError(null);
+
         try {
+            // Check if mediaDevices is supported
+            if (!navigator.mediaDevices) {
+                setError("Camera not supported in this browser. Please use upload method.");
+                return;
+            }
+
+            console.log("Requesting camera access...");
+
+            // Simple constraints - just get any camera
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: "environment" },
+                audio: false
             });
+
+            console.log("Camera access granted, stream:", stream);
+
             if (videoRef.current) {
                 videoRef.current.srcObject = stream;
-                videoRef.current.play();
-                setCameraActive(true);
+                videoRef.current.muted = true;
+                videoRef.current.playsInline = true;
+                videoRef.current.autoplay = true;
+
+                // Wait for video to be ready
+                videoRef.current.onloadedmetadata = () => {
+                    console.log("Video metadata loaded");
+                    videoRef.current?.play();
+                    setCameraActive(true);
+                    console.log("Camera is now active");
+                };
             }
-        } catch (err) {
-            setError("Unable to access camera. Please use upload method instead.");
+        } catch (err: any) {
+            console.error("Camera error:", err);
+            if (err.name === "NotAllowedError" || err.name === "PermissionDenied") {
+                setError("Camera permission denied. Please allow camera access in browser settings.");
+            } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
+                setError("No camera found on this device.");
+            } else if (err.name === "NotReadableError") {
+                setError("Camera is in use by another app.");
+            } else {
+                setError("Camera error: " + err.message);
+            }
         }
     };
 
@@ -205,23 +239,27 @@ export default function OCRScannerModal({
     };
 
     const capturePhoto = () => {
-        if (videoRef.current) {
+        if (videoRef.current && videoRef.current.videoWidth > 0) {
             const canvas = document.createElement("canvas");
             canvas.width = videoRef.current.videoWidth;
             canvas.height = videoRef.current.videoHeight;
             const ctx = canvas.getContext("2d");
-            ctx?.drawImage(videoRef.current, 0, 0);
-            const imageData = canvas.toDataURL("image/jpeg");
-            setImagePreview(imageData);
-            stopCamera();
+            if (ctx) {
+                ctx.drawImage(videoRef.current, 0, 0);
+                const imageData = canvas.toDataURL("image/jpeg", 0.9);
+                setImagePreview(imageData);
+                stopCamera();
 
-            // Convert data URL to file for processing
-            fetch(imageData)
-                .then((res) => res.blob())
-                .then((blob) => {
-                    const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
-                    processImage(file);
-                });
+                // Convert data URL to file for processing
+                fetch(imageData)
+                    .then((res) => res.blob())
+                    .then((blob) => {
+                        const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
+                        processImage(file);
+                    });
+            }
+        } else {
+            setError("Camera not ready. Please try again.");
         }
     };
 
@@ -388,14 +426,15 @@ export default function OCRScannerModal({
                                         )}
                                     </div>
                                 ) : (
-                                    <div className="relative border-2 border-dashed border-gray-300 rounded-xl overflow-hidden">
+                                    <div className="relative border-2 border-dashed border-gray-300 rounded-xl overflow-hidden bg-black">
                                         {cameraActive ? (
                                             <>
                                                 <video
                                                     ref={videoRef}
-                                                    className="w-full h-64 object-cover"
+                                                    className="w-full h-80 object-cover"
                                                     playsInline
                                                     muted
+                                                    autoPlay
                                                 />
                                                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-3">
                                                     <button
@@ -406,22 +445,22 @@ export default function OCRScannerModal({
                                                     </button>
                                                     <button
                                                         onClick={capturePhoto}
-                                                        className="px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors flex items-center gap-2"
+                                                        className="px-6 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors flex items-center gap-2 font-medium"
                                                     >
-                                                        <Camera className="w-4 h-4" />
-                                                        Capture
+                                                        <Camera className="w-5 h-5" />
+                                                        Take Photo
                                                     </button>
                                                 </div>
                                             </>
                                         ) : (
-                                            <div className="h-64 flex flex-col items-center justify-center">
+                                            <div className="h-64 flex flex-col items-center justify-center bg-gray-900">
                                                 <Camera className="w-12 h-12 text-gray-400 mb-3" />
-                                                <p className="text-sm text-gray-600 mb-3">
-                                                    Camera not active
+                                                <p className="text-sm text-gray-300 mb-3">
+                                                    Tap below to start camera
                                                 </p>
                                                 <button
                                                     onClick={startCamera}
-                                                    className="px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors"
+                                                    className="px-6 py-3 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors font-medium"
                                                 >
                                                     Start Camera
                                                 </button>
