@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS vehicles (
     images TEXT,
     description TEXT,
     features TEXT[],
+    carfax_report_url TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -1202,6 +1203,141 @@ WHERE NOT EXISTS (SELECT 1 FROM task_automation_rules WHERE name = 'Deal pending
 INSERT INTO task_automation_rules (name, description, trigger_type, trigger_config, action_type, action_config)
 SELECT 'Vehicle inspection', 'Create inspection task when vehicle enters inventory', 'vehicle_added', '{}', 'create_task', '{"title": "Complete vehicle inspection", "priority": "Medium", "due_date_hours": 72}'
 WHERE NOT EXISTS (SELECT 1 FROM task_automation_rules WHERE name = 'Vehicle inspection');
+
+-- ============================================================================
+-- OCR Scanned Documents table
+CREATE TABLE IF NOT EXISTS ocr_documents (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+    document_type TEXT NOT NULL CHECK (document_type IN ('drivers_license', 'government_id', 'passport', 'other')),
+    document_number TEXT,
+    first_name TEXT,
+    last_name TEXT,
+    date_of_birth DATE,
+    expiry_date DATE,
+    address TEXT,
+    city TEXT,
+    province TEXT,
+    postal_code TEXT,
+    issue_date DATE,
+    country TEXT DEFAULT 'Canada',
+    raw_ocr_text TEXT,
+    confidence_score NUMERIC(5,2),
+    image_url TEXT,
+    is_verified BOOLEAN DEFAULT false,
+    verified_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    verified_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================================
+-- VIN Lookup History table
+CREATE TABLE IF NOT EXISTS vin_lookup_history (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    vin TEXT NOT NULL,
+    year INTEGER,
+    make TEXT,
+    model TEXT,
+    trim TEXT,
+    engine TEXT,
+    body_style TEXT,
+    fuel_type TEXT,
+    transmission TEXT,
+    drivetrain TEXT,
+    exterior_color TEXT,
+    interior_color TEXT,
+    cached_at TIMESTAMPTZ DEFAULT NOW(),
+    source TEXT DEFAULT 'NHTSA',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Carfax Reports table
+CREATE TABLE IF NOT EXISTS carfax_reports (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    vehicle_id UUID REFERENCES vehicles(id) ON DELETE CASCADE,
+    vin TEXT NOT NULL,
+    report_url TEXT,
+    report_data JSONB,
+    ownership_count INTEGER,
+    accident_count INTEGER,
+    service_records BOOLEAN DEFAULT false,
+    title_status TEXT,
+    last_updated TIMESTAMPTZ,
+    purchased_at TIMESTAMPTZ DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================================
+-- FINANCE CALCULATOR TABLES
+-- ============================================================================
+
+-- Finance Calculator History table
+CREATE TABLE IF NOT EXISTS finance_calculations (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    vehicle_id UUID REFERENCES vehicles(id) ON DELETE SET NULL,
+    customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+    sale_price NUMERIC(12,2) NOT NULL,
+    down_payment NUMERIC(12,2) DEFAULT 0,
+    trade_in_value NUMERIC(12,2) DEFAULT 0,
+    interest_rate NUMERIC(5,2) NOT NULL,
+    term_months INTEGER NOT NULL,
+    payment_type TEXT DEFAULT 'monthly' CHECK (payment_type IN ('monthly', 'biweekly', 'weekly')),
+    payment_amount NUMERIC(12,2) NOT NULL,
+    total_interest NUMERIC(12,2) DEFAULT 0,
+    total_cost NUMERIC(12,2) DEFAULT 0,
+    tax_amount NUMERIC(12,2) DEFAULT 0,
+    admin_fee NUMERIC(12,2) DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================================
+-- INDEXES FOR NEW TABLES
+-- ============================================================================
+
+CREATE INDEX IF NOT EXISTS idx_ocr_documents_customer_id ON ocr_documents(customer_id);
+CREATE INDEX IF NOT EXISTS idx_ocr_documents_document_type ON ocr_documents(document_type);
+CREATE INDEX IF NOT EXISTS idx_vin_lookup_history_vin ON vin_lookup_history(vin);
+CREATE INDEX IF NOT EXISTS idx_carfax_reports_vehicle_id ON carfax_reports(vehicle_id);
+CREATE INDEX IF NOT EXISTS idx_carfax_reports_vin ON carfax_reports(vin);
+CREATE INDEX IF NOT EXISTS idx_finance_calculations_vehicle_id ON finance_calculations(vehicle_id);
+CREATE INDEX IF NOT EXISTS idx_finance_calculations_customer_id ON finance_calculations(customer_id);
+
+-- ============================================================================
+-- TRIGGERS FOR NEW TABLES
+-- ============================================================================
+
+DROP TRIGGER IF EXISTS update_ocr_documents_updated_at ON ocr_documents;
+CREATE TRIGGER update_ocr_documents_updated_at BEFORE UPDATE ON ocr_documents FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_carfax_reports_updated_at ON carfax_reports;
+CREATE TRIGGER update_carfax_reports_updated_at BEFORE UPDATE ON carfax_reports FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================================================
+-- RLS POLICIES FOR NEW TABLES
+-- ============================================================================
+
+ALTER TABLE ocr_documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE vin_lookup_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE carfax_reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE finance_calculations ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'ocr_documents_all_policy' AND polrelid = 'ocr_documents'::regclass) THEN
+        CREATE POLICY ocr_documents_all_policy ON ocr_documents FOR ALL USING (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'vin_lookup_history_all_policy' AND polrelid = 'vin_lookup_history'::regclass) THEN
+        CREATE POLICY vin_lookup_history_all_policy ON vin_lookup_history FOR ALL USING (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'carfax_reports_all_policy' AND polrelid = 'carfax_reports'::regclass) THEN
+        CREATE POLICY carfax_reports_all_policy ON carfax_reports FOR ALL USING (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'finance_calculations_all_policy' AND polrelid = 'finance_calculations'::regclass) THEN
+        CREATE POLICY finance_calculations_all_policy ON finance_calculations FOR ALL USING (true);
+    END IF;
+END $$;
 
 -- ============================================================================
 -- SCHEMA COMPLETE

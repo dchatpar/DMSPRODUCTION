@@ -109,23 +109,6 @@ export async function PUT(
             );
         }
 
-        // Check for duplicate stock_number if being updated
-        if (payload.stock_number) {
-            const { data: existing, error: checkError } = await supabase
-                .from("vehicles")
-                .select("id, stock_number")
-                .eq("stock_number", payload.stock_number)
-                .neq("id", id)
-                .single();
-
-            if (existing) {
-                return NextResponse.json(
-                    { error: `Stock number "${payload.stock_number}" is already used by another vehicle` },
-                    { status: 400 }
-                );
-            }
-        }
-
         const { data, error: dbError } = await supabase
             .from("vehicles")
             .update(payload)
@@ -142,7 +125,7 @@ export async function PUT(
             }
             if (dbError.code === "23505") {
                 return NextResponse.json(
-                    { error: "A vehicle with this stock number or VIN already exists" },
+                    { error: "A vehicle with this VIN already exists" },
                     { status: 400 }
                 );
             }
@@ -192,23 +175,6 @@ export async function PATCH(
         const { id } = await params;
         const payload = await req.json();
 
-        // Check for duplicate stock_number if being updated
-        if (payload.stock_number) {
-            const { data: existing } = await supabase
-                .from("vehicles")
-                .select("id, stock_number")
-                .eq("stock_number", payload.stock_number)
-                .neq("id", id)
-                .single();
-
-            if (existing) {
-                return NextResponse.json(
-                    { error: `Stock number "${payload.stock_number}" is already used by another vehicle` },
-                    { status: 400 }
-                );
-            }
-        }
-
         const { data, error: dbError } = await supabase
             .from("vehicles")
             .update(payload)
@@ -225,7 +191,7 @@ export async function PATCH(
             }
             if (dbError.code === "23505") {
                 return NextResponse.json(
-                    { error: "A vehicle with this stock number or VIN already exists" },
+                    { error: "A vehicle with this VIN already exists" },
                     { status: 400 }
                 );
             }

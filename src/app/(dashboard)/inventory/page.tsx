@@ -32,6 +32,7 @@ import {
     TrendingDown,
     Users,
     FileText,
+    ExternalLink,
 } from "lucide-react";
 import VehicleDetailsModal from "@/src/components/VehicleDetailsModal";
 import VehicleFormModal from "@/src/components/VehicleFormModal";
@@ -54,6 +55,7 @@ interface Vehicle {
     extra_costs: number;
     taxes: number;
     image_gallery: string[];
+    carfax_report_url?: string;
     created_at: string;
     updated_at: string;
 }
@@ -401,6 +403,9 @@ export default function InventoryPage() {
                                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     Active
                                 </th>
+                                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    CARFAX
+                                </th>
                                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     Actions
                                 </th>
@@ -409,14 +414,14 @@ export default function InventoryPage() {
                         <tbody className="divide-y divide-gray-200">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={12} className="px-4 py-12 text-center">
+                                    <td colSpan={13} className="px-4 py-12 text-center">
                                         <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
                                         <p className="mt-2 text-sm text-gray-500">Loading vehicles...</p>
                                     </td>
                                 </tr>
                             ) : error ? (
                                 <tr>
-                                    <td colSpan={12} className="px-4 py-12 text-center">
+                                    <td colSpan={13} className="px-4 py-12 text-center">
                                         <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
                                         <p className="mt-2 text-sm text-red-600">{error}</p>
                                         <button
@@ -429,7 +434,7 @@ export default function InventoryPage() {
                                 </tr>
                             ) : vehicles.length === 0 ? (
                                 <tr>
-                                    <td colSpan={12} className="px-4 py-12 text-center">
+                                    <td colSpan={13} className="px-4 py-12 text-center">
                                         <Car className="w-12 h-12 text-gray-300 mx-auto" />
                                         <p className="mt-2 text-sm text-gray-500">No vehicles found</p>
                                         <button
@@ -511,6 +516,21 @@ export default function InventoryPage() {
                                                     {vehicle.status === "Active" ? "Yes" : "No"}
                                                 </span>
                                             </td>
+                                            <td className="px-4 py-3 text-center">
+                                                {vehicle.carfax_report_url ? (
+                                                    <a
+                                                        href={vehicle.carfax_report_url}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="inline-flex items-center justify-center p-1.5 bg-red-100 hover:bg-red-200 rounded-lg transition-colors"
+                                                        title="View CARFAX Report"
+                                                    >
+                                                        <FileText className="w-4 h-4 text-red-600" />
+                                                    </a>
+                                                ) : (
+                                                    <span className="text-gray-300">—</span>
+                                                )}
+                                            </td>
                                             <td className="px-4 py-3 text-right">
                                                 <div className="flex items-center justify-end gap-1">
                                                     <button
@@ -534,9 +554,7 @@ export default function InventoryPage() {
                                                     >
                                                         <Trash2 className="w-4 h-4 text-red-500" />
                                                     </button>
-                                                    <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
-                                                        <MoreVertical className="w-4 h-4 text-gray-400" />
-                                                    </button>
+
                                                 </div>
                                             </td>
                                         </tr>

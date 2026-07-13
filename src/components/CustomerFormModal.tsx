@@ -14,7 +14,9 @@ import {
     UserPlus,
     Users,
     MessageSquare,
+    Scan,
 } from "lucide-react";
+import OCRScannerModal from "./OCRScannerModal";
 
 interface Customer {
     id: string;
@@ -45,6 +47,7 @@ export default function CustomerFormModal({
 }: CustomerFormModalProps) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [showOCR, setShowOCR] = useState(false);
     const [formData, setFormData] = useState({
         name: "",
         email: "",
@@ -172,9 +175,19 @@ export default function CustomerFormModal({
                         <form onSubmit={handleSubmit} className="space-y-5">
                             {/* Name */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                                    Full Name *
-                                </label>
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <label className="block text-sm font-medium text-gray-700">
+                                        Full Name *
+                                    </label>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowOCR(true)}
+                                        className="text-xs text-emerald-600 hover:text-emerald-700 flex items-center gap-1 px-2 py-1 rounded-md hover:bg-emerald-50 transition-colors"
+                                    >
+                                        <Scan className="w-3 h-3" />
+                                        Scan ID
+                                    </button>
+                                </div>
                                 <div className="relative">
                                     <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                     <input
@@ -335,6 +348,37 @@ export default function CustomerFormModal({
                     </div>
                 </div>
             </div>
+
+            {/* OCR Scanner Modal */}
+            {showOCR && (
+                <OCRScannerModal
+                    onClose={() => setShowOCR(false)}
+                    onScanComplete={(data) => {
+                        console.log("OCR Data received:", data);
+                        if (data.first_name || data.last_name) {
+                            const fullName = `${data.first_name || ""} ${data.last_name || ""}`.trim();
+                            console.log("Setting name to:", fullName);
+                            setFormData((prev) => ({
+                                ...prev,
+                                name: fullName || prev.name,
+                                address: data.address || prev.address,
+                                city: data.city || prev.city,
+                                province: data.province || prev.province,
+                                postal_code: data.postal_code || prev.postal_code,
+                            }));
+                        }
+                        setShowOCR(false);
+                    }}
+                    onCustomerCreated={(data) => {
+                        if (data.first_name || data.last_name) {
+                            setFormData((prev) => ({
+                                ...prev,
+                                name: `${data.first_name || ""} ${data.last_name || ""}`.trim(),
+                            }));
+                        }
+                    }}
+                />
+            )}
         </div>
     );
 }

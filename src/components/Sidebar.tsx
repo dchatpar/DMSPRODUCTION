@@ -28,6 +28,11 @@ import {
     ReceiptIcon,
     Loader2,
     Store,
+    Wrench,
+    Scan,
+    Calculator,
+    Phone as PhoneIcon,
+    FileSignature,
 } from "lucide-react";
 
 interface UserData {
@@ -82,6 +87,12 @@ const navigationSections = [
             { name: "Users & Roles", href: "/users", icon: UserCog },
             { name: "Tasks", href: "/tasks", icon: ReceiptIcon },
             { name: "Tickets", href: "/tickets", icon: FlaskConical },
+        ],
+    },
+    {
+        title: "TOOLS",
+        items: [
+            { name: "Dealership Tools", href: "/tools", icon: Wrench },
         ],
     },
     {

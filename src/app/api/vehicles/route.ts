@@ -99,25 +99,9 @@ export async function POST(req: NextRequest) {
         const required = ["vin", "year", "make", "model", "purchase_price", "retail_price", "condition"];
 
         for (const field of required) {
-            if (!payload[field]) {
+            if (payload[field] === undefined || payload[field] === null || payload[field] === "") {
                 return NextResponse.json(
                     { error: `Missing required field: ${field}` },
-                    { status: 400 }
-                );
-            }
-        }
-
-        // Check for duplicate stock_number if provided
-        if (payload.stock_number) {
-            const { data: existing } = await supabase
-                .from("vehicles")
-                .select("id, stock_number")
-                .eq("stock_number", payload.stock_number)
-                .single();
-
-            if (existing) {
-                return NextResponse.json(
-                    { error: `Stock number "${payload.stock_number}" is already used by another vehicle` },
                     { status: 400 }
                 );
             }
@@ -132,7 +116,7 @@ export async function POST(req: NextRequest) {
         if (dbError) {
             if (dbError.code === "23505") {
                 return NextResponse.json(
-                    { error: "A vehicle with this stock number or VIN already exists" },
+                    { error: "A vehicle with this VIN already exists" },
                     { status: 400 }
                 );
             }

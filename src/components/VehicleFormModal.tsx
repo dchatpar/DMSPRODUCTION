@@ -13,6 +13,10 @@ import {
     ChevronDown,
     Upload,
     CloudUpload,
+    Search,
+    FileText,
+    ExternalLink,
+    Trash2,
 } from "lucide-react";
 import {
     vehicleMakes,
@@ -20,6 +24,7 @@ import {
     yearRange,
 } from "@/src/data/vehicle-makes-models";
 import { supabaseBrowser } from "@/src/lib/supabase-browser";
+import VINLookupModal from "./VINLookupModal";
 
 interface Vehicle {
     id: string;
@@ -37,6 +42,14 @@ interface Vehicle {
     extra_costs: number;
     taxes: number;
     image_gallery: string[];
+    carfax_report_url?: string;
+    engine?: string;
+    body_style?: string;
+    fuel_type?: string;
+    transmission?: string;
+    drivetrain?: string;
+    exterior_color?: string;
+    interior_color?: string;
     created_at: string;
     updated_at: string;
 }
@@ -46,6 +59,20 @@ interface VehicleFormModalProps {
     vehicle?: Vehicle | null;
     onClose: () => void;
     onSuccess: () => void;
+    pendingVinSpecs?: {
+        vin: string;
+        year?: number;
+        make?: string;
+        model?: string;
+        trim?: string;
+        engine?: string;
+        body_style?: string;
+        fuel_type?: string;
+        transmission?: string;
+        drivetrain?: string;
+        exterior_color?: string;
+        interior_color?: string;
+    } | null;
 }
 
 export default function VehicleFormModal({
@@ -53,9 +80,11 @@ export default function VehicleFormModal({
     vehicle,
     onClose,
     onSuccess,
+    pendingVinSpecs,
 }: VehicleFormModalProps) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [showVINLookup, setShowVINLookup] = useState(false);
     const [formData, setFormData] = useState({
         vin: "",
         year: new Date().getFullYear(),
@@ -71,6 +100,14 @@ export default function VehicleFormModal({
         extra_costs: 0,
         taxes: 0,
         image_gallery: [] as string[],
+        carfax_report_url: "",
+        engine: "",
+        body_style: "",
+        fuel_type: "",
+        transmission: "",
+        drivetrain: "",
+        exterior_color: "",
+        interior_color: "",
     });
     const [availableModels, setAvailableModels] = useState<string[]>([]);
     const [showMakeDropdown, setShowMakeDropdown] = useState(false);
@@ -78,6 +115,7 @@ export default function VehicleFormModal({
     const [newImageUrl, setNewImageUrl] = useState("");
     const [uploadingImage, setUploadingImage] = useState(false);
     const [imageInputKey, setImageInputKey] = useState(0);
+    const [uploadingCarfax, setUploadingCarfax] = useState(false);
 
     useEffect(() => {
         if (mode === "edit" && vehicle) {
@@ -96,11 +134,40 @@ export default function VehicleFormModal({
                 extra_costs: vehicle.extra_costs,
                 taxes: vehicle.taxes,
                 image_gallery: vehicle.image_gallery || [],
+                carfax_report_url: vehicle.carfax_report_url || "",
+                engine: vehicle.engine || "",
+                body_style: vehicle.body_style || "",
+                fuel_type: vehicle.fuel_type || "",
+                transmission: vehicle.transmission || "",
+                drivetrain: vehicle.drivetrain || "",
+                exterior_color: vehicle.exterior_color || "",
+                interior_color: vehicle.interior_color || "",
             });
             // Set available models for the existing vehicle's make
             setAvailableModels(getModelsForMake(vehicle.make));
+        } else if (mode === "add" && pendingVinSpecs) {
+            // Pre-fill from VIN lookup
+            setFormData((prev) => ({
+                ...prev,
+                vin: pendingVinSpecs.vin || prev.vin,
+                year: pendingVinSpecs.year || prev.year,
+                make: pendingVinSpecs.make || prev.make,
+                model: pendingVinSpecs.model || prev.model,
+                trim: pendingVinSpecs.trim || prev.trim,
+                engine: pendingVinSpecs.engine || prev.engine,
+                body_style: pendingVinSpecs.body_style || prev.body_style,
+                fuel_type: pendingVinSpecs.fuel_type || prev.fuel_type,
+                transmission: pendingVinSpecs.transmission || prev.transmission,
+                drivetrain: pendingVinSpecs.drivetrain || prev.drivetrain,
+                exterior_color: pendingVinSpecs.exterior_color || prev.exterior_color,
+                interior_color: pendingVinSpecs.interior_color || prev.interior_color,
+            }));
+            // Set available models for the VIN's make
+            if (pendingVinSpecs.make) {
+                setAvailableModels(getModelsForMake(pendingVinSpecs.make));
+            }
         }
-    }, [mode, vehicle]);
+    }, [mode, vehicle, pendingVinSpecs]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value, type } = e.target;
@@ -174,6 +241,72 @@ export default function VehicleFormModal({
         setFormData((prev) => ({
             ...prev,
             image_gallery: prev.image_gallery.filter((_, i) => i !== index),
+        }));
+    };
+
+    const handleCarfaxUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        // Validate file type - only PDF
+        if (file.type !== "application/pdf") {
+            setError("Please upload a PDF file only");
+            setTimeout(() => setError(null), 3000);
+            return;
+        }
+
+        // Validate file size (10MB max)
+        if (file.size > 10 * 1024 * 1024) {
+            setError("File size must be less than 10MB");
+            setTimeout(() => setError(null), 3000);
+            return;
+        }
+
+        setUploadingCarfax(true);
+        setError(null);
+
+        try {
+            const token = localStorage.getItem("access_token");
+            if (!token) throw new Error("Not authenticated");
+
+            // Create form data for file upload
+            const formDataUpload = new FormData();
+            formDataUpload.append("file", file);
+            formDataUpload.append("vin", formData.vin);
+
+            // Upload to API
+            const response = await fetch("/api/carfax/upload", {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+                body: formDataUpload,
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || "Failed to upload CARFAX report");
+            }
+
+            const { url } = await response.json();
+
+            setFormData((prev) => ({
+                ...prev,
+                carfax_report_url: url,
+            }));
+        } catch (err) {
+            console.error("CARFAX upload error:", err);
+            setError(err instanceof Error ? err.message : "Failed to upload CARFAX report");
+            setTimeout(() => setError(null), 3000);
+        } finally {
+            setUploadingCarfax(false);
+        }
+    };
+
+    const handleRemoveCarfax = () => {
+        setFormData((prev) => ({
+            ...prev,
+            carfax_report_url: "",
         }));
     };
 
@@ -258,10 +391,18 @@ export default function VehicleFormModal({
             const method = mode === "add" ? "POST" : "PATCH";
 
             // Ensure image_gallery is an array
-            const payload = {
-                ...formData,
-                image_gallery: formData.image_gallery || [],
-            };
+            // In add mode, exclude body_style entirely to avoid ugly values from VIN lookup
+            // In edit mode, exclude VIN since it should never change, and keep body_style if it exists
+            let payload;
+            if (mode === "add") {
+                const { body_style, ...rest } = formData;
+                payload = { ...rest, image_gallery: formData.image_gallery || [] };
+            } else {
+                // Edit mode: exclude VIN and body_style from update
+                const { vin, body_style, ...rest } = formData;
+                payload = { ...rest, image_gallery: formData.image_gallery || [] };
+                console.log("🔧 Edit mode - VIN excluded, payload:", payload);
+            }
 
             console.log("🚀 Submitting payload:", payload);
 
@@ -330,9 +471,19 @@ export default function VehicleFormModal({
                             {/* Basic Information */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                                        VIN *
-                                    </label>
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <label className="block text-sm font-medium text-gray-700">
+                                            VIN *
+                                        </label>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowVINLookup(true)}
+                                            className="text-xs text-violet-600 hover:text-violet-700 flex items-center gap-1 px-2 py-1 rounded-md hover:bg-violet-50 transition-colors"
+                                        >
+                                            <Search className="w-3 h-3" />
+                                            Lookup VIN
+                                        </button>
+                                    </div>
                                     <input
                                         type="text"
                                         name="vin"
@@ -704,6 +855,77 @@ export default function VehicleFormModal({
                                 )}
                             </div>
 
+                            {/* CARFAX Report Section */}
+                            <div className="space-y-3">
+                                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-2">
+                                    <FileText className="w-4 h-4" />
+                                    CARFAX Report
+                                </h3>
+
+                                {formData.carfax_report_url ? (
+                                    <div className="flex items-center justify-between p-4 bg-green-50 border border-green-200 rounded-xl">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 bg-green-100 rounded-lg">
+                                                <FileText className="w-5 h-5 text-green-600" />
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-medium text-green-700">CARFAX Report Uploaded</p>
+                                                <a
+                                                    href={formData.carfax_report_url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-xs text-green-600 hover:text-green-700 flex items-center gap-1"
+                                                >
+                                                    <ExternalLink className="w-3 h-3" />
+                                                    View PDF
+                                                </a>
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleRemoveCarfax}
+                                            className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-red-300 transition-colors">
+                                        <input
+                                            type="file"
+                                            accept="application/pdf"
+                                            onChange={handleCarfaxUpload}
+                                            className="hidden"
+                                            id="carfax-upload"
+                                            disabled={uploadingCarfax}
+                                        />
+                                        <label
+                                            htmlFor="carfax-upload"
+                                            className={`cursor-pointer flex flex-col items-center gap-2 ${uploadingCarfax ? 'opacity-50' : ''}`}
+                                        >
+                                            {uploadingCarfax ? (
+                                                <>
+                                                    <Loader2 className="w-8 h-8 text-red-500 animate-spin" />
+                                                    <span className="text-sm text-gray-500">Uploading...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <div className="p-3 bg-red-50 rounded-full">
+                                                        <FileText className="w-6 h-6 text-red-500" />
+                                                    </div>
+                                                    <span className="text-sm text-gray-600 font-medium">
+                                                        Upload CARFAX Report (PDF)
+                                                    </span>
+                                                    <span className="text-xs text-gray-400">
+                                                        First, get CARFAX report from carfax.com, download as PDF, then upload here
+                                                    </span>
+                                                </>
+                                            )}
+                                        </label>
+                                    </div>
+                                )}
+                            </div>
+
                             {/* Actions */}
                             <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-gray-200">
                                 <button
@@ -735,6 +957,32 @@ export default function VehicleFormModal({
                     </div>
                 </div>
             </div>
+
+            {/* VIN Lookup Modal */}
+            {showVINLookup && (
+                <VINLookupModal
+                    onClose={() => setShowVINLookup(false)}
+                    existingVin={formData.vin}
+                    onVinFound={(specs) => {
+                        setFormData((prev) => ({
+                            ...prev,
+                            vin: specs.vin || prev.vin,
+                            year: specs.year || prev.year,
+                            make: specs.make || prev.make,
+                            model: specs.model || prev.model,
+                            trim: specs.trim || prev.trim,
+                            engine: specs.engine || prev.engine,
+                            body_style: specs.body_style || prev.body_style,
+                            fuel_type: specs.fuel_type || prev.fuel_type,
+                            transmission: specs.transmission || prev.transmission,
+                            drivetrain: specs.drivetrain || prev.drivetrain,
+                            exterior_color: specs.exterior_color || prev.exterior_color,
+                            interior_color: specs.interior_color || prev.interior_color,
+                        }));
+                        setAvailableModels(specs.make ? getModelsForMake(specs.make) : []);
+                    }}
+                />
+            )}
         </div>
     );
 }
