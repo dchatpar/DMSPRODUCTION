@@ -61,6 +61,8 @@ interface ExpenseDetailsModalProps {
     onClose: () => void;
     onEdit: () => void;
     onDelete: () => void;
+    userRole?: string;
+    userPermissions?: string[];
 }
 
 export default function ExpenseDetailsModal({
@@ -68,7 +70,11 @@ export default function ExpenseDetailsModal({
     onClose,
     onEdit,
     onDelete,
+    userRole,
+    userPermissions = [],
 }: ExpenseDetailsModalProps) {
+    const canEdit = userRole === "Admin" || userPermissions.includes("expenses:write");
+    const canDelete = userRole === "Admin" || userPermissions.includes("expenses:delete");
     const isOverdue =
         expense.status === "Pending" &&
         expense.due_date &&
@@ -143,20 +149,24 @@ export default function ExpenseDetailsModal({
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
-                            <button
-                                onClick={onEdit}
-                                className="p-2 hover:bg-blue-50 rounded-lg transition-colors"
-                                title="Edit"
-                            >
-                                <Edit className="w-5 h-5 text-blue-600" />
-                            </button>
-                            <button
-                                onClick={onDelete}
-                                className="p-2 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Delete"
-                            >
-                                <Trash2 className="w-5 h-5 text-red-500" />
-                            </button>
+                            {canEdit && (
+                                <button
+                                    onClick={onEdit}
+                                    className="p-2 hover:bg-blue-50 rounded-lg transition-colors"
+                                    title="Edit"
+                                >
+                                    <Edit className="w-5 h-5 text-blue-600" />
+                                </button>
+                            )}
+                            {canDelete && (
+                                <button
+                                    onClick={onDelete}
+                                    className="p-2 hover:bg-red-50 rounded-lg transition-colors"
+                                    title="Delete"
+                                >
+                                    <Trash2 className="w-5 h-5 text-red-500" />
+                                </button>
+                            )}
                             <button
                                 onClick={onClose}
                                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"

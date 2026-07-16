@@ -51,7 +51,7 @@ export async function GET(
 
         const { data, error: dbError } = await supabase
             .from("users")
-            .select("id,avatar,full_name,role,email,phone,start_date,created_at,updated_at")
+            .select("id,avatar,full_name,role,email,phone,start_date,created_at,updated_at,user_permissions")
             .eq("id", id)
             .single();
 
@@ -123,7 +123,7 @@ export async function PATCH(
         const payload = await req.json();
 
         // Allowed fields for update
-        const allowedFields = ["full_name", "role", "phone", "avatar", "start_date"];
+        const allowedFields = ["full_name", "role", "phone", "avatar", "start_date", "user_permissions"];
         const updateFields = Object.keys(payload).filter(key => allowedFields.includes(key));
 
         if (updateFields.length === 0) {

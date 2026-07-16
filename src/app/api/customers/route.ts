@@ -2,7 +2,7 @@
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
 
-// GET all customers
+// GET all customers (filtered by dealership)
 export async function GET(req: NextRequest) {
     try {
         let supabase;
@@ -29,6 +29,20 @@ export async function GET(req: NextRequest) {
             );
         }
 
+        // Get user's dealership
+        const { data: profile } = await supabase
+            .from("users")
+            .select("dealership_id")
+            .eq("id", user.id)
+            .single();
+
+        if (!profile?.dealership_id) {
+            return NextResponse.json(
+                { error: "Unauthorized - No dealership context" },
+                { status: 403 }
+            );
+        }
+
         const url = new URL(req.url);
         const limit = parseInt(url.searchParams.get("limit") || "50");
         const offset = parseInt(url.searchParams.get("offset") || "0");
@@ -41,6 +55,7 @@ export async function GET(req: NextRequest) {
             const { data, error: dbError } = await supabase
                 .from("customers")
                 .select("status")
+                .eq("dealership_id", profile.dealership_id)
                 .not("status", "is", null);
 
             if (dbError) throw dbError;
@@ -53,6 +68,7 @@ export async function GET(req: NextRequest) {
         let query = supabase
             .from("customers")
             .select("*", { count: "exact" })
+            .eq("dealership_id", profile.dealership_id)  // Filter by dealership
             .order("created_at", { ascending: false })
             .range(offset, offset + limit - 1);
 
@@ -78,7 +94,7 @@ export async function GET(req: NextRequest) {
     }
 }
 
-// POST create customer
+// POST create customer (within user's dealership)
 export async function POST(req: NextRequest) {
     try {
         let supabase;
@@ -102,6 +118,20 @@ export async function POST(req: NextRequest) {
             return NextResponse.json(
                 { error: "Invalid or expired token" },
                 { status: 401 }
+            );
+        }
+
+        // Get user's dealership
+        const { data: profile } = await supabase
+            .from("users")
+            .select("dealership_id")
+            .eq("id", user.id)
+            .single();
+
+        if (!profile?.dealership_id) {
+            return NextResponse.json(
+                { error: "Unauthorized - No dealership context" },
+                { status: 403 }
             );
         }
 
@@ -129,9 +159,10 @@ export async function POST(req: NextRequest) {
             }
         }
 
+        // Add dealership_id to the customer
         const { data, error: dbError } = await supabase
             .from("customers")
-            .insert(payload)
+            .insert({ ...payload, dealership_id: profile.dealership_id })
             .select()
             .single();
 

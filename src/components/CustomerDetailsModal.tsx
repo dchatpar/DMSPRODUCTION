@@ -36,13 +36,18 @@ interface CustomerDetailsModalProps {
     customer: Customer;
     onClose: () => void;
     onEdit: () => void;
+    userRole?: string;
+    userPermissions?: string[];
 }
 
 export default function CustomerDetailsModal({
     customer,
     onClose,
     onEdit,
+    userRole,
+    userPermissions = [],
 }: CustomerDetailsModalProps) {
+    const canEdit = userRole === "Admin" || userPermissions.includes("customers:write");
     const getStatusColor = (status: string) => {
         const colors: Record<string, string> = {
             Active: "bg-green-100 text-green-800",
@@ -225,13 +230,15 @@ export default function CustomerDetailsModal({
                             >
                                 Close
                             </button>
-                            <button
-                                onClick={onEdit}
-                                className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
-                            >
-                                <Edit className="w-4 h-4" />
-                                Edit Customer
-                            </button>
+                            {canEdit && (
+                                <button
+                                    onClick={onEdit}
+                                    className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                                >
+                                    <Edit className="w-4 h-4" />
+                                    Edit Customer
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>

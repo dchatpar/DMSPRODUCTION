@@ -29,13 +29,18 @@ interface UserDetailsModalProps {
     user: User;
     onClose: () => void;
     onEdit: () => void;
+    userRole?: string;
+    userPermissions?: string[];
 }
 
 export default function UserDetailsModal({
     user,
     onClose,
     onEdit,
+    userRole,
+    userPermissions = [],
 }: UserDetailsModalProps) {
+    const canEdit = userRole === "Admin" || userPermissions.includes("users:write");
     const getRoleColor = (role: string) => {
         const colors: Record<string, string> = {
             Admin: "bg-purple-100 text-purple-800",
@@ -199,13 +204,15 @@ export default function UserDetailsModal({
                             >
                                 Close
                             </button>
-                            <button
-                                onClick={onEdit}
-                                className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
-                            >
-                                <Edit className="w-4 h-4" />
-                                Edit User
-                            </button>
+                            {canEdit && (
+                                <button
+                                    onClick={onEdit}
+                                    className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                                >
+                                    <Edit className="w-4 h-4" />
+                                    Edit User
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>

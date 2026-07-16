@@ -16,6 +16,9 @@ import {
     Eye,
     EyeOff,
     Key,
+    Check,
+    ChevronDown,
+    ChevronRight,
 } from "lucide-react";
 
 interface User {
@@ -28,24 +31,81 @@ interface User {
     start_date: string;
     created_at: string;
     updated_at: string;
+    user_permissions?: string[];
 }
 
 interface UserFormModalProps {
     mode: "add" | "edit";
     user?: User | null;
+    targetDealershipId?: string;
     onClose: () => void;
     onSuccess: () => void;
 }
 
+// Available permissions grouped by category
+const PERMISSIONS = {
+    vehicles: {
+        label: "Vehicles",
+        permissions: [
+            { key: "vehicles:read", label: "View Vehicles" },
+            { key: "vehicles:write", label: "Add/Edit Vehicles" },
+            { key: "vehicles:delete", label: "Delete Vehicles" },
+        ]
+    },
+    customers: {
+        label: "Customers",
+        permissions: [
+            { key: "customers:read", label: "View Customers" },
+            { key: "customers:write", label: "Add/Edit Customers" },
+            { key: "customers:delete", label: "Delete Customers" },
+        ]
+    },
+    leads: {
+        label: "Leads",
+        permissions: [
+            { key: "leads:read", label: "View Leads" },
+            { key: "leads:write", label: "Add/Edit Leads" },
+            { key: "leads:delete", label: "Delete Leads" },
+        ]
+    },
+    deals: {
+        label: "Deals",
+        permissions: [
+            { key: "deals:read", label: "View Deals" },
+            { key: "deals:write", label: "Add/Edit Deals" },
+            { key: "deals:delete", label: "Delete Deals" },
+        ]
+    },
+    invoices: {
+        label: "Invoices",
+        permissions: [
+            { key: "invoices:read", label: "View Invoices" },
+            { key: "invoices:write", label: "Create/Edit Invoices" },
+            { key: "invoices:delete", label: "Delete Invoices" },
+        ]
+    },
+    reports: {
+        label: "Reports",
+        permissions: [
+            { key: "reports:read", label: "View Reports" },
+            { key: "reports:export", label: "Export Reports" },
+        ]
+    },
+};
+
 export default function UserFormModal({
     mode,
     user,
+    targetDealershipId,
     onClose,
     onSuccess,
 }: UserFormModalProps) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [showPassword, setShowPassword] = useState(false);
+    const [showPermissions, setShowPermissions] = useState(false);
+    const [expandedCategories, setExpandedCategories] = useState<string[]>(["vehicles", "customers", "leads", "deals"]);
+    const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
     const [formData, setFormData] = useState({
         full_name: "",
         email: "",
@@ -67,6 +127,7 @@ export default function UserFormModal({
                 password: "",
                 avatar: user.avatar || "",
             });
+            setSelectedPermissions(user.user_permissions || []);
         }
     }, [mode, user]);
 
@@ -76,6 +137,32 @@ export default function UserFormModal({
             ...prev,
             [name]: value,
         }));
+    };
+
+    const togglePermission = (permissionKey: string) => {
+        setSelectedPermissions(prev =>
+            prev.includes(permissionKey)
+                ? prev.filter(p => p !== permissionKey)
+                : [...prev, permissionKey]
+        );
+    };
+
+    const toggleCategory = (category: string) => {
+        setExpandedCategories(prev =>
+            prev.includes(category)
+                ? prev.filter(c => c !== category)
+                : [...prev, category]
+        );
+    };
+
+    const selectAllInCategory = (category: string) => {
+        const categoryPerms = PERMISSIONS[category as keyof typeof PERMISSIONS]?.permissions.map(p => p.key) || [];
+        const allSelected = categoryPerms.every(p => selectedPermissions.includes(p));
+        if (allSelected) {
+            setSelectedPermissions(prev => prev.filter(p => !categoryPerms.includes(p)));
+        } else {
+            setSelectedPermissions(prev => [...new Set([...prev, ...categoryPerms])]);
+        }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -97,6 +184,8 @@ export default function UserFormModal({
                     start_date: formData.start_date,
                     password: formData.password || undefined,
                     avatar: formData.avatar || null,
+                    target_dealership_id: targetDealershipId || undefined,
+                    user_permissions: selectedPermissions,
                 }
                 : {
                     full_name: formData.full_name,
@@ -104,6 +193,7 @@ export default function UserFormModal({
                     role: formData.role,
                     start_date: formData.start_date,
                     avatar: formData.avatar || null,
+                    user_permissions: selectedPermissions,
                 };
 
             const response = await fetch(url, {
@@ -160,7 +250,7 @@ export default function UserFormModal({
                                     {mode === "add" ? "Add New User" : "Edit User"}
                                 </h2>
                                 <p className="text-xs text-gray-500">
-                                    {mode === "add" ? "Add a new team member" : "Update user information"}
+                                    {mode === "add" ? "Add a new team member" : "Update user information and permissions"}
                                 </p>
                             </div>
                         </div>
@@ -334,6 +424,92 @@ export default function UserFormModal({
                                     className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                     placeholder="https://example.com/avatar.jpg"
                                 />
+                            </div>
+
+                            {/* Individual Permissions Section */}
+                            <div className="border border-gray-200 rounded-xl overflow-hidden">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPermissions(!showPermissions)}
+                                    className="w-full px-4 py-3 bg-gray-50 flex items-center justify-between hover:bg-gray-100 transition-colors"
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <Shield className="w-4 h-4 text-blue-600" />
+                                        <span className="text-sm font-medium text-gray-900">Individual Permissions</span>
+                                        <span className="text-xs text-gray-500">({selectedPermissions.length} selected)</span>
+                                    </div>
+                                    {showPermissions ? (
+                                        <ChevronDown className="w-4 h-4 text-gray-400" />
+                                    ) : (
+                                        <ChevronRight className="w-4 h-4 text-gray-400" />
+                                    )}
+                                </button>
+
+                                {showPermissions && (
+                                    <div className="p-4 space-y-3">
+                                        <p className="text-xs text-gray-500 mb-3">
+                                            Grant specific permissions beyond the role. Role permissions are applied automatically.
+                                        </p>
+
+                                        {Object.entries(PERMISSIONS).map(([categoryKey, category]) => {
+                                            const categoryPerms = category.permissions.map(p => p.key);
+                                            const allSelected = categoryPerms.every(p => selectedPermissions.includes(p));
+
+                                            return (
+                                                <div key={categoryKey} className="border border-gray-100 rounded-lg overflow-hidden">
+                                                    <div className="bg-gray-50 px-3 py-2 flex items-center justify-between">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => toggleCategory(categoryKey)}
+                                                            className="flex items-center gap-2 text-sm font-medium text-gray-700"
+                                                        >
+                                                            {expandedCategories.includes(categoryKey) ? (
+                                                                <ChevronDown className="w-4 h-4" />
+                                                            ) : (
+                                                                <ChevronRight className="w-4 h-4" />
+                                                            )}
+                                                            {category.label}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => selectAllInCategory(categoryKey)}
+                                                            className="text-xs text-blue-600 hover:text-blue-700"
+                                                        >
+                                                            {allSelected ? "Deselect All" : "Select All"}
+                                                        </button>
+                                                    </div>
+                                                    {expandedCategories.includes(categoryKey) && (
+                                                        <div className="p-3 space-y-2">
+                                                            {category.permissions.map(permission => (
+                                                                <label
+                                                                    key={permission.key}
+                                                                    className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer"
+                                                                >
+                                                                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${
+                                                                        selectedPermissions.includes(permission.key)
+                                                                            ? "bg-blue-600 border-blue-600"
+                                                                            : "border-gray-300"
+                                                                    }`}>
+                                                                        {selectedPermissions.includes(permission.key) && (
+                                                                            <Check className="w-3 h-3 text-white" />
+                                                                        )}
+                                                                    </div>
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={selectedPermissions.includes(permission.key)}
+                                                                        onChange={() => togglePermission(permission.key)}
+                                                                        className="sr-only"
+                                                                    />
+                                                                    <span className="text-sm text-gray-700">{permission.label}</span>
+                                                                </label>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
 
                             {/* Actions */}

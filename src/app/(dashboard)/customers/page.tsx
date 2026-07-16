@@ -65,6 +65,8 @@ export default function CustomersPage() {
     const [totalItems, setTotalItems] = useState(0);
     const [itemsPerPage] = useState(10);
     const [exportLoading, setExportLoading] = useState(false);
+    const [userPermissions, setUserPermissions] = useState<string[]>([]);
+    const [userRole, setUserRole] = useState<string>("");
 
     // Modal states
     const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -82,7 +84,24 @@ export default function CustomersPage() {
     useEffect(() => {
         fetchCustomers();
         fetchStatusOptions();
+        fetchUserPermissions();
     }, [currentPage, statusFilter, searchTerm]);
+
+    const fetchUserPermissions = async () => {
+        try {
+            const token = localStorage.getItem("access_token");
+            const response = await fetch("/api/me", {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setUserPermissions(data.data.user_permissions || []);
+                setUserRole(data.data.role || "");
+            }
+        } catch (error) {
+            console.error("Error fetching user permissions:", error);
+        }
+    };
 
     const fetchStatusOptions = async () => {
         try {
@@ -152,6 +171,18 @@ export default function CustomersPage() {
         } finally {
             setExportLoading(false);
         }
+    };
+
+    // Check if user has write permission for a resource
+    const canWrite = (resource: string): boolean => {
+        if (userRole === "Admin") return true;
+        return userPermissions.includes(`${resource}:write`);
+    };
+
+    // Check if user has delete permission for a resource
+    const canDelete = (resource: string): boolean => {
+        if (userRole === "Admin") return true;
+        return userPermissions.includes(`${resource}:delete`);
     };
 
     const fetchCustomers = async () => {
@@ -312,13 +343,15 @@ export default function CustomersPage() {
                         <RefreshCw className="w-4 h-4" />
                         Refresh
                     </button>
-                    <button
-                        onClick={handleAdd}
-                        className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2"
-                    >
-                        <UserPlus className="w-4 h-4" />
-                        Add Customer
-                    </button>
+                    {(userRole === "Admin" || canWrite("customers")) && (
+                        <button
+                            onClick={handleAdd}
+                            className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2"
+                        >
+                            <UserPlus className="w-4 h-4" />
+                            Add Customer
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -417,12 +450,14 @@ export default function CustomersPage() {
                                     <td colSpan={7} className="px-4 py-12 text-center">
                                         <Users className="w-12 h-12 text-gray-300 mx-auto" />
                                         <p className="mt-2 text-sm text-gray-500">No customers found</p>
-                                        <button
-                                            onClick={handleAdd}
-                                            className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                                        >
-                                            Add Your First Customer
-                                        </button>
+                                        {(userRole === "Admin" || canWrite("customers")) && (
+                                            <button
+                                                onClick={handleAdd}
+                                                className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                            >
+                                                Add Your First Customer
+                                            </button>
+                                        )}
                                     </td>
                                 </tr>
                             ) : (
@@ -499,20 +534,24 @@ export default function CustomersPage() {
                                                 >
                                                     <Eye className="w-4 h-4 text-blue-500" />
                                                 </button>
-                                                <button
-                                                    onClick={() => handleEdit(customer)}
-                                                    className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
-                                                    title="Edit"
-                                                >
-                                                    <Edit className="w-4 h-4 text-amber-500" />
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDelete(customer)}
-                                                    className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
-                                                    title="Delete"
-                                                >
-                                                    <Trash2 className="w-4 h-4 text-red-500" />
-                                                </button>
+                                                {(userRole === "Admin" || canWrite("customers")) && (
+                                                    <button
+                                                        onClick={() => handleEdit(customer)}
+                                                        className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                                        title="Edit"
+                                                    >
+                                                        <Edit className="w-4 h-4 text-amber-500" />
+                                                    </button>
+                                                )}
+                                                {(userRole === "Admin" || canDelete("customers")) && (
+                                                    <button
+                                                        onClick={() => handleDelete(customer)}
+                                                        className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                                        title="Delete"
+                                                    >
+                                                        <Trash2 className="w-4 h-4 text-red-500" />
+                                                    </button>
+                                                )}
                                                 <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
                                                     <MoreVertical className="w-4 h-4 text-gray-400" />
                                                 </button>
@@ -547,12 +586,14 @@ export default function CustomersPage() {
                         <div className="px-4 py-12 text-center">
                             <Users className="w-12 h-12 text-gray-300 mx-auto" />
                             <p className="mt-2 text-sm text-gray-500">No customers found</p>
-                            <button
-                                onClick={handleAdd}
-                                className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                            >
-                                Add Your First Customer
-                            </button>
+                            {(userRole === "Admin" || canWrite("customers")) && (
+                                <button
+                                    onClick={handleAdd}
+                                    className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                >
+                                    Add Your First Customer
+                                </button>
+                            )}
                         </div>
                     ) : (
                         customers.map((customer) => (
@@ -588,12 +629,14 @@ export default function CustomersPage() {
                                         >
                                             <Edit className="w-4 h-4 text-amber-500" />
                                         </button>
-                                        <button
-                                            onClick={() => handleDelete(customer)}
-                                            className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
-                                        >
-                                            <Trash2 className="w-4 h-4 text-red-500" />
-                                        </button>
+                                        {(userRole === "Admin" || canDelete("customers")) && (
+                                            <button
+                                                onClick={() => handleDelete(customer)}
+                                                className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                            >
+                                                <Trash2 className="w-4 h-4 text-red-500" />
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 mb-2">
@@ -666,6 +709,8 @@ export default function CustomersPage() {
                         setShowDetailsModal(false);
                         handleEdit(selectedCustomer);
                     }}
+                    userRole={userRole}
+                    userPermissions={userPermissions}
                 />
             )}
 

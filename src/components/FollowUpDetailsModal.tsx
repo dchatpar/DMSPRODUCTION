@@ -76,6 +76,8 @@ interface FollowUpDetailsModalProps {
     onClose: () => void;
     onEdit: () => void;
     onDelete: () => void;
+    userRole?: string;
+    userPermissions?: string[];
 }
 
 export default function FollowUpDetailsModal({
@@ -83,7 +85,11 @@ export default function FollowUpDetailsModal({
     onClose,
     onEdit,
     onDelete,
+    userRole,
+    userPermissions = [],
 }: FollowUpDetailsModalProps) {
+    const canEdit = userRole === "Admin" || userPermissions.includes("follow_ups:write");
+    const canDelete = userRole === "Admin" || userPermissions.includes("follow_ups:delete");
     const isOverdue =
         followUp.status === "Pending" &&
         new Date(followUp.follow_up_date) < new Date();
@@ -147,20 +153,24 @@ export default function FollowUpDetailsModal({
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
-                            <button
-                                onClick={onEdit}
-                                className="p-2 hover:bg-blue-50 rounded-lg transition-colors"
-                                title="Edit"
-                            >
-                                <Edit className="w-5 h-5 text-blue-600" />
-                            </button>
-                            <button
-                                onClick={onDelete}
-                                className="p-2 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Delete"
-                            >
-                                <Trash2 className="w-5 h-5 text-red-500" />
-                            </button>
+                            {canEdit && (
+                                <button
+                                    onClick={onEdit}
+                                    className="p-2 hover:bg-blue-50 rounded-lg transition-colors"
+                                    title="Edit"
+                                >
+                                    <Edit className="w-5 h-5 text-blue-600" />
+                                </button>
+                            )}
+                            {canDelete && (
+                                <button
+                                    onClick={onDelete}
+                                    className="p-2 hover:bg-red-50 rounded-lg transition-colors"
+                                    title="Delete"
+                                >
+                                    <Trash2 className="w-5 h-5 text-red-500" />
+                                </button>
+                            )}
                             <button
                                 onClick={onClose}
                                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"

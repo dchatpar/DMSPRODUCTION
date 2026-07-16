@@ -3,7 +3,7 @@ import { createTokenClient } from "@/src/lib/server-token";
 import { supabaseAdmin } from "@/src/lib/supabase-admin";
 import { NextRequest, NextResponse } from "next/server";
 
-// GET all users
+// GET all users (filtered by dealership OR all for platform admin)
 export async function GET(req: NextRequest) {
     try {
         let supabase;
@@ -29,14 +29,18 @@ export async function GET(req: NextRequest) {
             );
         }
 
-        // Check if user is admin
+        // Get current user profile with dealership_id and is_platform_admin
         const { data: currentUser } = await supabase
             .from("users")
-            .select("role")
+            .select("role, dealership_id, is_platform_admin")
             .eq("id", user.id)
             .single();
 
-        if (currentUser?.role !== "Admin") {
+        // Check if platform admin OR dealership admin
+        const isPlatformAdmin = currentUser?.is_platform_admin === true;
+        const isDealershipAdmin = currentUser?.role === "Admin";
+
+        if (!isPlatformAdmin && !isDealershipAdmin) {
             return NextResponse.json(
                 { error: "Unauthorized - Admin access required" },
                 { status: 403 }
@@ -50,12 +54,27 @@ export async function GET(req: NextRequest) {
         const role = url.searchParams.get("role");
         const startDateFrom = url.searchParams.get("start_date_from");
         const startDateTo = url.searchParams.get("start_date_to");
+        const dealershipId = url.searchParams.get("dealership_id");
 
         let query = supabase
             .from("users")
-            .select("id,avatar,full_name,role,email,phone,start_date,created_at,updated_at", { count: "exact" })
+            .select(`
+                id, avatar, full_name, role, email, phone,
+                start_date, is_active, dealership_id, created_at, updated_at,
+                is_platform_admin, user_permissions
+            `, { count: "exact" })
             .order("created_at", { ascending: false })
             .range(offset, offset + limit - 1);
+
+        // Platform admin sees all users OR users filtered by dealership
+        if (!isPlatformAdmin && currentUser?.dealership_id) {
+            query = query.eq("dealership_id", currentUser.dealership_id);
+        }
+
+        // Filter by specific dealership (platform admin only)
+        if (isPlatformAdmin && dealershipId) {
+            query = query.eq("dealership_id", dealershipId);
+        }
 
         if (role) query = query.eq("role", role);
         if (q) query = query.or(`full_name.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${q}%`);
@@ -66,8 +85,33 @@ export async function GET(req: NextRequest) {
 
         if (dbError) throw dbError;
 
+        // If platform admin, fetch dealership names for display
+        let usersWithDealerships = data || [];
+        if (isPlatformAdmin && usersWithDealerships.length > 0) {
+            const dealershipIds = [...new Set(usersWithDealerships
+                .filter((u: any) => u.dealership_id)
+                .map((u: any) => u.dealership_id))];
+
+            if (dealershipIds.length > 0) {
+                const { data: dealerships } = await supabase
+                    .from("dealerships")
+                    .select("id, name")
+                    .in("id", dealershipIds);
+
+                const dealershipMap: Record<string, string> = {};
+                dealerships?.forEach((d: any) => {
+                    dealershipMap[d.id] = d.name;
+                });
+
+                usersWithDealerships = usersWithDealerships.map((u: any) => ({
+                    ...u,
+                    dealership_name: u.dealership_id ? (dealershipMap[u.dealership_id] || "Unknown") : null
+                }));
+            }
+        }
+
         return NextResponse.json({
-            data: data || [],
+            data: usersWithDealerships,
             count: count || 0,
             limit,
             offset,
@@ -107,14 +151,17 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Check if user is admin
+        // Get current user profile
         const { data: currentUser } = await supabase
             .from("users")
-            .select("role")
+            .select("role, dealership_id, is_platform_admin")
             .eq("id", user.id)
             .single();
 
-        if (currentUser?.role !== "Admin") {
+        const isPlatformAdmin = currentUser?.is_platform_admin === true;
+        const isDealershipAdmin = currentUser?.role === "Admin";
+
+        if (!isPlatformAdmin && !isDealershipAdmin) {
             return NextResponse.json(
                 { error: "Unauthorized - Admin access required" },
                 { status: 403 }
@@ -122,7 +169,7 @@ export async function POST(req: NextRequest) {
         }
 
         const payload = await req.json();
-        const { full_name, role, email, phone, start_date, password, avatar } = payload;
+        const { full_name, role, email, phone, start_date, password, avatar, target_dealership_id } = payload;
 
         // Validate required fields
         const required = ["full_name", "role", "email", "start_date"];
@@ -140,6 +187,19 @@ export async function POST(req: NextRequest) {
             return NextResponse.json(
                 { error: "Invalid role. Must be Admin, Staff, Manager, or Salesperson" },
                 { status: 400 }
+            );
+        }
+
+        // Determine which dealership to assign user to
+        let assignedDealershipId = currentUser?.dealership_id;
+        if (isPlatformAdmin && target_dealership_id) {
+            assignedDealershipId = target_dealership_id;
+        }
+
+        if (!assignedDealershipId && !isPlatformAdmin) {
+            return NextResponse.json(
+                { error: "Unauthorized - No dealership context" },
+                { status: 403 }
             );
         }
 
@@ -161,7 +221,7 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Create user profile - FIXED: Added password_hash with placeholder
+        // Create user profile
         const { data: profile, error: profileError } = await supabase
             .from("users")
             .insert({
@@ -172,7 +232,10 @@ export async function POST(req: NextRequest) {
                 phone: phone || null,
                 start_date,
                 avatar: avatar || null,
-                password_hash: "managed_by_supabase_auth", // This is the FIX
+                dealership_id: assignedDealershipId,
+                is_platform_admin: false,
+                is_active: true,
+                user_permissions: payload.user_permissions || [],
             })
             .select()
             .single();

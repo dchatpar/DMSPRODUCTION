@@ -61,6 +61,8 @@ interface TaskDetailsModalProps {
     onDelete: () => void;
     onStatusChange: (task: Task, newStatus: string) => void;
     onRefresh: () => void;
+    userRole?: string;
+    userPermissions?: string[];
 }
 
 const STATUS_OPTIONS = ["Pending", "In Progress", "Completed", "Cancelled", "On Hold"];
@@ -80,13 +82,15 @@ const PRIORITY_COLORS: Record<string, string> = {
     Urgent: "bg-red-100 text-red-700",
 };
 
-export default function TaskDetailsModal({ task, users = [], onClose, onEdit, onDelete, onStatusChange, onRefresh }: TaskDetailsModalProps) {
+export default function TaskDetailsModal({ task, users = [], onClose, onEdit, onDelete, onStatusChange, onRefresh, userRole, userPermissions = [] }: TaskDetailsModalProps) {
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [newNote, setNewNote] = useState("");
     const [addingNote, setAddingNote] = useState(false);
     const [activeTab, setActiveTab] = useState<"details" | "notes" | "activity">("details");
 
+    const canEdit = userRole === "Admin" || userPermissions.includes("tasks:write");
+    const canDelete = userRole === "Admin" || userPermissions.includes("tasks:delete");
     const isOverdue = task.due_date && task.status !== "Completed" && task.status !== "Cancelled" && new Date(task.due_date) < new Date();
 
     const formatDate = (date: string | null) => {
@@ -407,18 +411,22 @@ export default function TaskDetailsModal({ task, users = [], onClose, onEdit, on
 
                 {/* Footer */}
                 <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-100 bg-gray-50">
-                    <button
-                        onClick={() => setShowDeleteConfirm(true)}
-                        className="px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2"
-                    >
-                        <Trash2 className="w-4 h-4" /> Delete
-                    </button>
-                    <button
-                        onClick={onEdit}
-                        className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg flex items-center gap-2"
-                    >
-                        <Edit className="w-4 h-4" /> Edit Task
-                    </button>
+                    {canDelete && (
+                        <button
+                            onClick={() => setShowDeleteConfirm(true)}
+                            className="px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2"
+                        >
+                            <Trash2 className="w-4 h-4" /> Delete
+                        </button>
+                    )}
+                    {canEdit && (
+                        <button
+                            onClick={onEdit}
+                            className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg flex items-center gap-2"
+                        >
+                            <Edit className="w-4 h-4" /> Edit Task
+                        </button>
+                    )}
                 </div>
             </div>
 

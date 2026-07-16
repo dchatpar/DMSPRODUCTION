@@ -41,6 +41,8 @@ interface TicketDetailsModalProps {
     onEdit: () => void;
     onDelete: () => void;
     onStatusChange: (ticket: Ticket, newStatus: string) => void;
+    userRole?: string;
+    userPermissions?: string[];
 }
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -65,9 +67,13 @@ export default function TicketDetailsModal({
     onEdit,
     onDelete,
     onStatusChange,
+    userRole,
+    userPermissions = [],
 }: TicketDetailsModalProps) {
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [deleting, setDeleting] = useState(false);
+    const canEdit = userRole === "Admin" || userPermissions.includes("tickets:write");
+    const canDelete = userRole === "Admin" || userPermissions.includes("tickets:delete");
 
     const formatDate = (date: string | null) => {
         if (!date) return "Not set";
@@ -240,20 +246,24 @@ export default function TicketDetailsModal({
 
                 {/* Footer */}
                 <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-100 bg-gray-50">
-                    <button
-                        onClick={() => setShowDeleteConfirm(true)}
-                        className="px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2"
-                    >
-                        <Trash2 className="w-4 h-4" />
-                        Delete
-                    </button>
-                    <button
-                        onClick={onEdit}
-                        className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2"
-                    >
-                        <Edit className="w-4 h-4" />
-                        Edit Ticket
-                    </button>
+                    {canDelete && (
+                        <button
+                            onClick={() => setShowDeleteConfirm(true)}
+                            className="px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2"
+                        >
+                            <Trash2 className="w-4 h-4" />
+                            Delete
+                        </button>
+                    )}
+                    {canEdit && (
+                        <button
+                            onClick={onEdit}
+                            className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2"
+                        >
+                            <Edit className="w-4 h-4" />
+                            Edit Ticket
+                        </button>
+                    )}
                 </div>
             </div>
 

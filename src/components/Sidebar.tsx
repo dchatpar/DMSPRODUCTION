@@ -41,8 +41,30 @@ interface UserData {
     role: string;
     phone: string;
     avatar: string | null;
+    is_platform_admin: boolean;
+    dealership_id: string | null;
+    dealership_name?: string;
+    user_permissions?: string[];
 }
 
+// Platform admin navigation sections
+const platformAdminSections = [
+    {
+        title: "PLATFORM",
+        items: [
+            { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+            { name: "All Dealerships", href: "/dealerships", icon: Store },
+        ],
+    },
+    {
+        title: "SETTINGS",
+        items: [
+            { name: "Platform Settings", href: "/settings/platform", icon: Settings },
+        ],
+    },
+];
+
+// Regular dealership navigation sections
 const navigationSections = [
     {
         title: "OVERVIEW",
@@ -85,6 +107,7 @@ const navigationSections = [
         title: "MANAGEMENT",
         items: [
             { name: "Users & Roles", href: "/users", icon: UserCog },
+            { name: "Roles & Permissions", href: "/roles", icon: Shield },
             { name: "Tasks", href: "/tasks", icon: ReceiptIcon },
             { name: "Tickets", href: "/tickets", icon: FlaskConical },
         ],
@@ -226,6 +249,48 @@ export default function Sidebar() {
     const displayName = userData?.full_name || "User";
     const displayEmail = userData?.email || "";
 
+    // Determine which navigation sections to show
+    const activeSections = userData?.is_platform_admin ? platformAdminSections : navigationSections;
+    const allSections = ["PLATFORM", "MANAGEMENT", "OVERVIEW", "SALES", "INVENTORY", "CUSTOMERS", "FINANCIAL", "TOOLS", "SETTINGS"];
+
+    // Map sidebar pages to their required read permissions
+    const pagePermMap: Record<string, string> = {
+        "/dashboard": "dashboard:read",
+        "/leads": "leads:read",
+        "/test-drives": "test_drives:read",
+        "/deals": "deals:read",
+        "/follow-ups": "follow_ups:read",
+        "/inventory": "vehicles:read",
+        "/customers": "customers:read",
+        "/invoices": "invoices:read",
+        "/expenses": "expenses:read",
+        "/vendors": "vendors:read",
+        "/reports": "reports:read",
+        "/users": "users:read",
+        "/roles": "roles:read",
+        "/tasks": "tasks:read",
+        "/tickets": "tickets:read",
+        "/tools": "tools:read",
+        "/profile": "profile:read",
+    };
+
+    // Check if user has permission to see a nav item
+    const hasPermission = (href: string): boolean => {
+        // Admin and platform admin see everything
+        if (userData?.role === "Admin" || userData?.is_platform_admin) return true;
+
+        // Check if user has the required permission for this page
+        const permKey = pagePermMap[href];
+        if (!permKey) return true; // If not in map, show it
+        return userData?.user_permissions?.includes(permKey) ?? false;
+    };
+
+    // Filter navigation items based on permissions
+    const filteredSections = activeSections.map(section => ({
+        ...section,
+        items: section.items.filter(item => hasPermission(item.href))
+    })).filter(section => section.items.length > 0);
+
     return (
         <>
             {/* Mobile Header */}
@@ -272,7 +337,7 @@ export default function Sidebar() {
 
                 {/* Navigation */}
                 <nav className="flex-1 overflow-y-auto p-3 space-y-4">
-                    {navigationSections.map((section) => {
+                    {filteredSections.map((section) => {
                         const isExpanded = expandedSections.includes(section.title);
 
                         return (
@@ -369,17 +434,27 @@ export default function Sidebar() {
                                 <p className="text-sm font-medium text-gray-900 truncate">
                                     {loading ? "Loading..." : displayName}
                                 </p>
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
                                     <p className="text-xs text-gray-500 truncate">
                                         {loading ? "..." : displayEmail}
                                     </p>
-                                    {userData?.role && (
+                                    {userData?.is_platform_admin && (
+                                        <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-amber-100 text-amber-700">
+                                            Platform Admin
+                                        </span>
+                                    )}
+                                    {userData?.role && !userData?.is_platform_admin && (
                                         <span
                                             className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${getRoleColor(
                                                 userData.role
                                             )}`}
                                         >
                                             {userData.role}
+                                        </span>
+                                    )}
+                                    {userData?.dealership_name && !userData?.is_platform_admin && (
+                                        <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-gray-100 text-gray-600">
+                                            {userData.dealership_name}
                                         </span>
                                     )}
                                 </div>
@@ -437,7 +512,7 @@ export default function Sidebar() {
 
                 {/* Navigation */}
                 <nav className="flex-1 overflow-y-auto p-3 space-y-4">
-                    {navigationSections.map((section) => {
+                    {filteredSections.map((section) => {
                         const isExpanded = expandedSections.includes(section.title);
 
                         return (
@@ -534,17 +609,27 @@ export default function Sidebar() {
                                 <p className="text-sm font-medium text-gray-900 truncate">
                                     {loading ? "Loading..." : displayName}
                                 </p>
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
                                     <p className="text-xs text-gray-500 truncate">
                                         {loading ? "..." : displayEmail}
                                     </p>
-                                    {userData?.role && (
+                                    {userData?.is_platform_admin && (
+                                        <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-amber-100 text-amber-700">
+                                            Platform Admin
+                                        </span>
+                                    )}
+                                    {userData?.role && !userData?.is_platform_admin && (
                                         <span
                                             className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${getRoleColor(
                                                 userData.role
                                             )}`}
                                         >
                                             {userData.role}
+                                        </span>
+                                    )}
+                                    {userData?.dealership_name && !userData?.is_platform_admin && (
+                                        <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-gray-100 text-gray-600">
+                                            {userData.dealership_name}
                                         </span>
                                     )}
                                 </div>

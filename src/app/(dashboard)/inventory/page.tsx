@@ -77,6 +77,8 @@ export default function InventoryPage() {
     const [totalItems, setTotalItems] = useState(0);
     const [exportLoading, setExportLoading] = useState(false);
     const [itemsPerPage] = useState(10);
+    const [userPermissions, setUserPermissions] = useState<string[]>([]);
+    const [userRole, setUserRole] = useState<string>("");
 
     // Modal states
     const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -93,7 +95,36 @@ export default function InventoryPage() {
 
     useEffect(() => {
         fetchVehicles();
+        fetchUserPermissions();
     }, [currentPage, statusFilter, searchTerm]);
+
+    const fetchUserPermissions = async () => {
+        try {
+            const token = localStorage.getItem("access_token");
+            const response = await fetch("/api/me", {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setUserPermissions(data.data.user_permissions || []);
+                setUserRole(data.data.role || "");
+            }
+        } catch (error) {
+            console.error("Error fetching user permissions:", error);
+        }
+    };
+
+    // Check if user has write permission for a resource
+    const canWrite = (resource: string): boolean => {
+        if (userRole === "Admin") return true;
+        return userPermissions.includes(`${resource}:write`);
+    };
+
+    // Check if user has delete permission for a resource
+    const canDelete = (resource: string): boolean => {
+        if (userRole === "Admin") return true;
+        return userPermissions.includes(`${resource}:delete`);
+    };
 
     const fetchVehicles = async () => {
         try {
@@ -309,13 +340,15 @@ export default function InventoryPage() {
                         <RefreshCw className="w-4 h-4" />
                         Refresh
                     </button>
-                    <button
-                        onClick={handleAdd}
-                        className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2"
-                    >
-                        <Plus className="w-4 h-4" />
-                        Add Vehicle
-                    </button>
+                    {(userRole === "Admin" || canWrite("vehicles")) && (
+                        <button
+                            onClick={handleAdd}
+                            className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2"
+                        >
+                            <Plus className="w-4 h-4" />
+                            Add Vehicle
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -437,12 +470,14 @@ export default function InventoryPage() {
                                     <td colSpan={13} className="px-4 py-12 text-center">
                                         <Car className="w-12 h-12 text-gray-300 mx-auto" />
                                         <p className="mt-2 text-sm text-gray-500">No vehicles found</p>
-                                        <button
-                                            onClick={handleAdd}
-                                            className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                                        >
-                                            Add Your First Vehicle
-                                        </button>
+                                        {(userRole === "Admin" || canWrite("vehicles")) && (
+                                            <button
+                                                onClick={handleAdd}
+                                                className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                            >
+                                                Add Your First Vehicle
+                                            </button>
+                                        )}
                                     </td>
                                 </tr>
                             ) : (
@@ -540,20 +575,24 @@ export default function InventoryPage() {
                                                     >
                                                         <Eye className="w-4 h-4 text-blue-500" />
                                                     </button>
-                                                    <button
-                                                        onClick={() => handleEdit(vehicle)}
-                                                        className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
-                                                        title="Edit"
-                                                    >
-                                                        <Edit className="w-4 h-4 text-amber-500" />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleDelete(vehicle)}
-                                                        className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
-                                                        title="Delete"
-                                                    >
-                                                        <Trash2 className="w-4 h-4 text-red-500" />
-                                                    </button>
+                                                    {(userRole === "Admin" || canWrite("vehicles")) && (
+                                                        <button
+                                                            onClick={() => handleEdit(vehicle)}
+                                                            className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                                            title="Edit"
+                                                        >
+                                                            <Edit className="w-4 h-4 text-amber-500" />
+                                                        </button>
+                                                    )}
+                                                    {(userRole === "Admin" || canDelete("vehicles")) && (
+                                                        <button
+                                                            onClick={() => handleDelete(vehicle)}
+                                                            className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                                            title="Delete"
+                                                        >
+                                                            <Trash2 className="w-4 h-4 text-red-500" />
+                                                        </button>
+                                                    )}
 
                                                 </div>
                                             </td>
@@ -587,12 +626,14 @@ export default function InventoryPage() {
                         <div className="px-4 py-12 text-center">
                             <Car className="w-12 h-12 text-gray-300 mx-auto" />
                             <p className="mt-2 text-sm text-gray-500">No vehicles found</p>
-                            <button
-                                onClick={handleAdd}
-                                className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                            >
-                                Add Your First Vehicle
-                            </button>
+                            {(userRole === "Admin" || canWrite("vehicles")) && (
+                                <button
+                                    onClick={handleAdd}
+                                    className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                >
+                                    Add Your First Vehicle
+                                </button>
+                            )}
                         </div>
                     ) : (
                         vehicles.map((vehicle) => {
@@ -634,12 +675,14 @@ export default function InventoryPage() {
                                             >
                                                 <Edit className="w-4 h-4 text-amber-500" />
                                             </button>
-                                            <button
-                                                onClick={() => handleDelete(vehicle)}
-                                                className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
-                                            >
-                                                <Trash2 className="w-4 h-4 text-red-500" />
-                                            </button>
+                                            {(userRole === "Admin" || canDelete("vehicles")) && (
+                                                <button
+                                                    onClick={() => handleDelete(vehicle)}
+                                                    className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                                >
+                                                    <Trash2 className="w-4 h-4 text-red-500" />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                     <div className="flex flex-wrap gap-2 mb-2">
@@ -713,6 +756,8 @@ export default function InventoryPage() {
                         setShowDetailsModal(false);
                         handleEdit(selectedVehicle);
                     }}
+                    userRole={userRole}
+                    userPermissions={userPermissions}
                 />
             )}
 

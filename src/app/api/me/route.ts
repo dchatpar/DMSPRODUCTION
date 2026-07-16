@@ -30,10 +30,20 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Fetch user profile with all needed fields
+    // Fetch user profile with all needed fields including dealership info
     const { data: profile, error: profileError } = await supabase
       .from("users")
-      .select("full_name, email, role, phone, avatar")
+      .select(`
+        full_name,
+        email,
+        role,
+        phone,
+        avatar,
+        is_platform_admin,
+        dealership_id,
+        is_active,
+        user_permissions
+      `)
       .eq("id", user.id)
       .single();
 
@@ -47,13 +57,28 @@ export async function GET(req: NextRequest) {
             role: "user",
             phone: null,
             avatar: null,
+            is_platform_admin: false,
+            dealership_id: null,
+            is_active: true,
+            user_permissions: [],
           }
         },
         { status: 200 }
       );
     }
 
-    // Return full profile data
+    // If user has a dealership_id, fetch the dealership name
+    let dealership_name = null;
+    if (profile.dealership_id) {
+      const { data: dealership } = await supabase
+        .from("dealerships")
+        .select("name")
+        .eq("id", profile.dealership_id)
+        .single();
+      dealership_name = dealership?.name || null;
+    }
+
+    // Return full profile data with platform admin and dealership info
     return NextResponse.json(
       {
         data: {
@@ -62,6 +87,11 @@ export async function GET(req: NextRequest) {
           role: profile.role,
           phone: profile.phone,
           avatar: profile.avatar,
+          is_platform_admin: profile.is_platform_admin || false,
+          dealership_id: profile.dealership_id,
+          dealership_name: dealership_name,
+          is_active: profile.is_active,
+          user_permissions: profile.user_permissions || [],
         }
       },
       { status: 200 }

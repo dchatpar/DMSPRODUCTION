@@ -35,13 +35,18 @@ interface VendorDetailsModalProps {
     vendor: Vendor;
     onClose: () => void;
     onEdit: () => void;
+    userRole?: string;
+    userPermissions?: string[];
 }
 
 export default function VendorDetailsModal({
     vendor,
     onClose,
     onEdit,
+    userRole,
+    userPermissions = [],
 }: VendorDetailsModalProps) {
+    const canEdit = userRole === "Admin" || userPermissions.includes("vendors:write");
     const formatDate = (date: string) => {
         return new Date(date).toLocaleDateString("en-US", {
             year: "numeric",
@@ -98,13 +103,15 @@ export default function VendorDetailsModal({
                                     {vendor.vendor_type || "General"}
                                 </span>
                             </div>
-                            <button
-                                onClick={onEdit}
-                                className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2"
-                            >
-                                <Edit className="w-4 h-4" />
-                                Edit
-                            </button>
+                            {canEdit && (
+                                <button
+                                    onClick={onEdit}
+                                    className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2"
+                                >
+                                    <Edit className="w-4 h-4" />
+                                    Edit
+                                </button>
+                            )}
                         </div>
 
                         {/* Details Grid */}

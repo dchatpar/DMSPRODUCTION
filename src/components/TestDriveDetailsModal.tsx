@@ -73,13 +73,18 @@ interface TestDriveDetailsModalProps {
     testDrive: TestDrive;
     onClose: () => void;
     onEdit: () => void;
+    userRole?: string;
+    userPermissions?: string[];
 }
 
 export default function TestDriveDetailsModal({
     testDrive,
     onClose,
     onEdit,
+    userRole,
+    userPermissions = [],
 }: TestDriveDetailsModalProps) {
+    const canEdit = userRole === "Admin" || userPermissions.includes("test_drives:write");
     const getStatusColor = (status: string) => {
         const colors: Record<string, string> = {
             Scheduled: "bg-blue-100 text-blue-800",
@@ -374,13 +379,15 @@ export default function TestDriveDetailsModal({
                             >
                                 Close
                             </button>
-                            <button
-                                onClick={onEdit}
-                                className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
-                            >
-                                <Edit className="w-4 h-4" />
-                                Edit Test Drive
-                            </button>
+                            {canEdit && (
+                                <button
+                                    onClick={onEdit}
+                                    className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                                >
+                                    <Edit className="w-4 h-4" />
+                                    Edit Test Drive
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>

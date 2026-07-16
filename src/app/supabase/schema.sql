@@ -8,10 +8,27 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ============================================================================
--- CORE TABLES
+-- MULTI-TENANT DEALERSHIP TABLES
 -- ============================================================================
 
--- Users table
+-- Dealerships table (tenant/workspace container)
+CREATE TABLE IF NOT EXISTS dealerships (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    name TEXT NOT NULL,
+    slug TEXT UNIQUE,
+    subdomain TEXT UNIQUE,
+    business_name TEXT,
+    business_address TEXT,
+    business_phone TEXT,
+    business_email TEXT,
+    logo_url TEXT,
+    status TEXT DEFAULT 'Active' CHECK (status IN ('Active', 'Suspended', 'Trial', 'Cancelled')),
+    settings JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Users table (updated with dealership_id and platform admin)
 CREATE TABLE IF NOT EXISTS users (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
@@ -19,12 +36,85 @@ CREATE TABLE IF NOT EXISTS users (
     phone TEXT,
     avatar TEXT,
     role TEXT DEFAULT 'Staff' CHECK (role IN ('Admin', 'Manager', 'Staff', 'Salesperson')),
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
+    is_platform_admin BOOLEAN DEFAULT false, -- Platform super admin (AdaptUs)
+    is_active BOOLEAN DEFAULT true,
     start_date DATE,
+    last_login TIMESTAMPTZ,
+    user_permissions JSONB DEFAULT '[]', -- Individual permissions for this user
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Vehicles table
+-- Roles table (per dealership, defines role types)
+CREATE TABLE IF NOT EXISTS roles (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE CASCADE,
+    name TEXT NOT NULL CHECK (name IN ('Admin', 'Manager', 'Salesperson', 'Staff')),
+    description TEXT,
+    is_system BOOLEAN DEFAULT false, -- true for built-in roles
+    permissions JSONB DEFAULT '[]', -- Array of permission strings
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(dealership_id, name)
+);
+
+-- User roles table (user <-> role mapping)
+CREATE TABLE IF NOT EXISTS user_roles (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    role_id UUID REFERENCES roles(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(user_id, role_id)
+);
+
+-- Subscriptions table
+CREATE TABLE IF NOT EXISTS subscriptions (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE CASCADE UNIQUE,
+    plan_name TEXT DEFAULT 'Basic',
+    plan_price NUMERIC(10,2) DEFAULT 0,
+    billing_cycle TEXT DEFAULT 'monthly' CHECK (billing_cycle IN ('monthly', 'yearly')),
+    status TEXT DEFAULT 'Trial' CHECK (status IN ('Trial', 'Active', 'PastDue', 'Cancelled', 'Suspended')),
+    features JSONB DEFAULT '[]',
+    limits JSONB DEFAULT '{"users": 5, "vehicles": 50, "storage_gb": 10}',
+    trial_ends_at TIMESTAMPTZ,
+    current_period_start TIMESTAMPTZ,
+    current_period_end TIMESTAMPTZ,
+    cancelled_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Billing information table
+CREATE TABLE IF NOT EXISTS billing_information (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE CASCADE UNIQUE,
+    stripe_customer_id TEXT,
+    stripe_subscription_id TEXT,
+    payment_method_type TEXT,
+    payment_method_last4 TEXT,
+    payment_method_brand TEXT,
+    billing_name TEXT,
+    billing_email TEXT,
+    billing_phone TEXT,
+    billing_address_line1 TEXT,
+    billing_address_line2 TEXT,
+    billing_city TEXT,
+    billing_province TEXT,
+    billing_postal_code TEXT,
+    billing_country TEXT DEFAULT 'Canada',
+    tax_exempt BOOLEAN DEFAULT false,
+    tax_id TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================================
+-- CORE TABLES (UPDATED WITH DEALERSHIP_ID)
+-- ============================================================================
+
+-- Vehicles table (updated)
 CREATE TABLE IF NOT EXISTS vehicles (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     vin TEXT UNIQUE NOT NULL,
@@ -52,6 +142,40 @@ CREATE TABLE IF NOT EXISTS vehicles (
     description TEXT,
     features TEXT[],
     carfax_report_url TEXT,
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Vehicles table (updated with dealership_id)
+CREATE TABLE IF NOT EXISTS vehicles (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    vin TEXT UNIQUE NOT NULL,
+    stock_number TEXT,
+    year INTEGER NOT NULL,
+    make TEXT NOT NULL,
+    model TEXT NOT NULL,
+    trim TEXT,
+    odometer INTEGER DEFAULT 0,
+    condition TEXT DEFAULT 'Used' CHECK (condition IN ('New', 'Used', 'Certified')),
+    status TEXT DEFAULT 'Active' CHECK (status IN ('Active', 'Sold', 'Pending', 'Traded')),
+    exterior_color TEXT,
+    interior_color TEXT,
+    fuel_type TEXT,
+    transmission TEXT,
+    drivetrain TEXT,
+    engine TEXT,
+    body_style TEXT,
+    purchase_price NUMERIC(12,2) DEFAULT 0,
+    retail_price NUMERIC(12,2) DEFAULT 0,
+    extra_costs NUMERIC(12,2) DEFAULT 0,
+    taxes NUMERIC(12,2) DEFAULT 0,
+    image_gallery TEXT[],
+    images TEXT,
+    description TEXT,
+    features TEXT[],
+    carfax_report_url TEXT,
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -69,6 +193,7 @@ CREATE TABLE IF NOT EXISTS customers (
     status TEXT DEFAULT 'Active' CHECK (status IN ('Active', 'Inactive')),
     source TEXT,
     notes TEXT,
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -92,6 +217,7 @@ CREATE TABLE IF NOT EXISTS sales_deals (
     extended_service BOOLEAN DEFAULT false,
     admin_fee NUMERIC(12,2) DEFAULT 0,
     total_price NUMERIC(12,2),
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -109,6 +235,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     total NUMERIC(12,2) DEFAULT 0,
     status TEXT DEFAULT 'Pending' CHECK (status IN ('Pending', 'Paid', 'Overdue', 'Cancelled')),
     notes TEXT,
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -124,6 +251,7 @@ CREATE TABLE IF NOT EXISTS leads (
     notes TEXT,
     lead_creation_date TIMESTAMPTZ DEFAULT NOW(),
     last_engagement TIMESTAMPTZ DEFAULT NOW(),
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -138,6 +266,7 @@ CREATE TABLE IF NOT EXISTS test_drives (
     status TEXT DEFAULT 'Scheduled' CHECK (status IN ('Scheduled', 'Completed', 'Cancelled', 'No Show')),
     notes TEXT,
     outcome TEXT,
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -157,6 +286,7 @@ CREATE TABLE IF NOT EXISTS vendors (
     postal_code TEXT,
     contact_name TEXT,
     contact_email TEXT,
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
     contact_phone TEXT,
     notes TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -231,6 +361,7 @@ CREATE TABLE IF NOT EXISTS expenses (
     source_id UUID,
     paid_at TIMESTAMPTZ,
     approved_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -251,6 +382,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     completed_at TIMESTAMPTZ,
     source_type TEXT,
     source_id UUID,
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -339,6 +471,7 @@ CREATE TABLE IF NOT EXISTS tickets (
     resolved_by UUID REFERENCES users(id) ON DELETE SET NULL,
     source_type TEXT,
     source_id UUID,
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -396,6 +529,7 @@ CREATE TABLE IF NOT EXISTS follow_ups (
     source_id UUID,
     completed_at TIMESTAMPTZ,
     completed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -458,6 +592,7 @@ CREATE TABLE IF NOT EXISTS bill_of_sale (
     lender_name TEXT,
     lender_address TEXT,
     status TEXT DEFAULT 'Draft' CHECK (status IN ('Draft', 'Signed', 'Completed', 'Cancelled')),
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -475,6 +610,7 @@ CREATE TABLE IF NOT EXISTS social_media_posts (
     published_date TIMESTAMPTZ,
     status TEXT DEFAULT 'Draft' CHECK (status IN ('Draft', 'Scheduled', 'Published', 'Failed')),
     notes TEXT,
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -486,6 +622,7 @@ CREATE TABLE IF NOT EXISTS facebook_business_account (
     page_name TEXT,
     access_token TEXT,
     is_active BOOLEAN DEFAULT true,
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -506,6 +643,7 @@ CREATE TABLE IF NOT EXISTS purchase_from_public (
     title_received BOOLEAN DEFAULT false,
     title_number TEXT,
     notes TEXT,
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -524,6 +662,7 @@ CREATE TABLE IF NOT EXISTS financial_transactions (
     reference_type TEXT,
     transaction_date DATE DEFAULT CURRENT_DATE,
     recorded_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -578,6 +717,36 @@ CREATE INDEX IF NOT EXISTS idx_deals_status ON sales_deals(deal_status);
 CREATE INDEX IF NOT EXISTS idx_test_drives_vehicle_id ON test_drives(vehicle_id);
 CREATE INDEX IF NOT EXISTS idx_test_drives_customer_id ON test_drives(customer_id);
 CREATE INDEX IF NOT EXISTS idx_test_drives_scheduled_date ON test_drives(scheduled_date);
+
+-- ============================================================================
+-- DEALERSHIP INDEXES (Multi-tenant performance optimization)
+-- ============================================================================
+
+CREATE INDEX IF NOT EXISTS idx_dealerships_slug ON dealerships(slug);
+CREATE INDEX IF NOT EXISTS idx_dealerships_subdomain ON dealerships(subdomain);
+CREATE INDEX IF NOT EXISTS idx_dealerships_status ON dealerships(status);
+
+CREATE INDEX IF NOT EXISTS idx_users_dealership_id ON users(dealership_id);
+CREATE INDEX IF NOT EXISTS idx_roles_dealership_id ON roles(dealership_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_dealership_id ON subscriptions(dealership_id);
+CREATE INDEX IF NOT EXISTS idx_billing_information_dealership_id ON billing_information(dealership_id);
+
+CREATE INDEX IF NOT EXISTS idx_vehicles_dealership_id ON vehicles(dealership_id);
+CREATE INDEX IF NOT EXISTS idx_customers_dealership_id ON customers(dealership_id);
+CREATE INDEX IF NOT EXISTS idx_sales_deals_dealership_id ON sales_deals(dealership_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_dealership_id ON invoices(dealership_id);
+CREATE INDEX IF NOT EXISTS idx_leads_dealership_id ON leads(dealership_id);
+CREATE INDEX IF NOT EXISTS idx_test_drives_dealership_id ON test_drives(dealership_id);
+CREATE INDEX IF NOT EXISTS idx_vendors_dealership_id ON vendors(dealership_id);
+CREATE INDEX IF NOT EXISTS idx_expenses_dealership_id ON expenses(dealership_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_dealership_id ON tasks(dealership_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_dealership_id ON tickets(dealership_id);
+CREATE INDEX IF NOT EXISTS idx_follow_ups_dealership_id ON follow_ups(dealership_id);
+CREATE INDEX IF NOT EXISTS idx_bill_of_sale_dealership_id ON bill_of_sale(dealership_id);
+CREATE INDEX IF NOT EXISTS idx_social_media_posts_dealership_id ON social_media_posts(dealership_id);
+CREATE INDEX IF NOT EXISTS idx_facebook_business_account_dealership_id ON facebook_business_account(dealership_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_from_public_dealership_id ON purchase_from_public(dealership_id);
+CREATE INDEX IF NOT EXISTS idx_financial_transactions_dealership_id ON financial_transactions(dealership_id);
 
 -- ============================================================================
 -- TRIGGER FUNCTIONS
@@ -738,449 +907,365 @@ ALTER TABLE facebook_business_account ENABLE ROW LEVEL SECURITY;
 ALTER TABLE purchase_from_public ENABLE ROW LEVEL SECURITY;
 ALTER TABLE financial_transactions ENABLE ROW LEVEL SECURITY;
 
--- RLS Policies - Only create if not exists (using DO blocks)
+-- ============================================================================
+-- MULTI-TENANT RLS POLICIES
+-- ============================================================================
+-- These policies enforce dealership-level data isolation
+-- Users can only access data that belongs to their dealership
+-- ============================================================================
+
+-- Helper function to get current user's dealership_id from their profile
+CREATE OR REPLACE FUNCTION get_user_dealership_id()
+RETURNS UUID AS $$
+BEGIN
+    RETURN (
+        SELECT dealership_id
+        FROM users
+        WHERE id = auth.uid()
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+
+-- Helper function to check if current user is platform admin
+CREATE OR REPLACE FUNCTION is_platform_admin()
+RETURNS BOOLEAN AS $$
+BEGIN
+    RETURN (
+        SELECT is_platform_admin
+        FROM users
+        WHERE id = auth.uid()
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+
+-- Dealerships table - platform admins can manage all, dealership users see their own
 DO $$
 BEGIN
-    -- Users policies
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'dealerships_all_policy' AND polrelid = 'dealerships'::regclass) THEN
+        CREATE POLICY dealerships_all_policy ON dealerships FOR ALL USING (is_platform_admin() = true) WITH CHECK (is_platform_admin() = true);
+    END IF;
+END $$;
+
+-- Users policies - filtered by dealership_id, platform admins see all
+DO $$
+BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'users_select_policy' AND polrelid = 'users'::regclass) THEN
-        CREATE POLICY users_select_policy ON users FOR SELECT USING (true);
+        CREATE POLICY users_select_policy ON users FOR SELECT USING (is_platform_admin() = true OR dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'users_insert_policy' AND polrelid = 'users'::regclass) THEN
-        CREATE POLICY users_insert_policy ON users FOR INSERT WITH CHECK (true);
+        CREATE POLICY users_insert_policy ON users FOR INSERT WITH CHECK (is_platform_admin() = true OR dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'users_update_policy' AND polrelid = 'users'::regclass) THEN
-        CREATE POLICY users_update_policy ON users FOR UPDATE USING (true);
+        CREATE POLICY users_update_policy ON users FOR UPDATE USING (is_platform_admin() = true OR dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'users_delete_policy' AND polrelid = 'users'::regclass) THEN
-        CREATE POLICY users_delete_policy ON users FOR DELETE USING (true);
+        CREATE POLICY users_delete_policy ON users FOR DELETE USING (is_platform_admin() = true OR dealership_id = get_user_dealership_id());
     END IF;
 END $$;
 
+-- Roles policies - filtered by dealership_id
 DO $$
 BEGIN
-    -- Vehicles policies
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'roles_select_policy' AND polrelid = 'roles'::regclass) THEN
+        CREATE POLICY roles_select_policy ON roles FOR SELECT USING (dealership_id = get_user_dealership_id());
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'roles_insert_policy' AND polrelid = 'roles'::regclass) THEN
+        CREATE POLICY roles_insert_policy ON roles FOR INSERT WITH CHECK (dealership_id = get_user_dealership_id());
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'roles_update_policy' AND polrelid = 'roles'::regclass) THEN
+        CREATE POLICY roles_update_policy ON roles FOR UPDATE USING (dealership_id = get_user_dealership_id());
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'roles_delete_policy' AND polrelid = 'roles'::regclass) THEN
+        CREATE POLICY roles_delete_policy ON roles FOR DELETE USING (dealership_id = get_user_dealership_id());
+    END IF;
+END $$;
+
+-- Subscriptions policies - filtered by dealership_id
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'subscriptions_select_policy' AND polrelid = 'subscriptions'::regclass) THEN
+        CREATE POLICY subscriptions_select_policy ON subscriptions FOR SELECT USING (dealership_id = get_user_dealership_id());
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'subscriptions_insert_policy' AND polrelid = 'subscriptions'::regclass) THEN
+        CREATE POLICY subscriptions_insert_policy ON subscriptions FOR INSERT WITH CHECK (dealership_id = get_user_dealership_id());
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'subscriptions_update_policy' AND polrelid = 'subscriptions'::regclass) THEN
+        CREATE POLICY subscriptions_update_policy ON subscriptions FOR UPDATE USING (dealership_id = get_user_dealership_id());
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'subscriptions_delete_policy' AND polrelid = 'subscriptions'::regclass) THEN
+        CREATE POLICY subscriptions_delete_policy ON subscriptions FOR DELETE USING (dealership_id = get_user_dealership_id());
+    END IF;
+END $$;
+
+-- Billing information policies - filtered by dealership_id
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'billing_information_select_policy' AND polrelid = 'billing_information'::regclass) THEN
+        CREATE POLICY billing_information_select_policy ON billing_information FOR SELECT USING (dealership_id = get_user_dealership_id());
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'billing_information_insert_policy' AND polrelid = 'billing_information'::regclass) THEN
+        CREATE POLICY billing_information_insert_policy ON billing_information FOR INSERT WITH CHECK (dealership_id = get_user_dealership_id());
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'billing_information_update_policy' AND polrelid = 'billing_information'::regclass) THEN
+        CREATE POLICY billing_information_update_policy ON billing_information FOR UPDATE USING (dealership_id = get_user_dealership_id());
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'billing_information_delete_policy' AND polrelid = 'billing_information'::regclass) THEN
+        CREATE POLICY billing_information_delete_policy ON billing_information FOR DELETE USING (dealership_id = get_user_dealership_id());
+    END IF;
+END $$;
+
+-- Vehicles policies - filtered by dealership_id
+DO $$
+BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'vehicles_select_policy' AND polrelid = 'vehicles'::regclass) THEN
-        CREATE POLICY vehicles_select_policy ON vehicles FOR SELECT USING (true);
+        CREATE POLICY vehicles_select_policy ON vehicles FOR SELECT USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'vehicles_insert_policy' AND polrelid = 'vehicles'::regclass) THEN
-        CREATE POLICY vehicles_insert_policy ON vehicles FOR INSERT WITH CHECK (true);
+        CREATE POLICY vehicles_insert_policy ON vehicles FOR INSERT WITH CHECK (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'vehicles_update_policy' AND polrelid = 'vehicles'::regclass) THEN
-        CREATE POLICY vehicles_update_policy ON vehicles FOR UPDATE USING (true);
+        CREATE POLICY vehicles_update_policy ON vehicles FOR UPDATE USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'vehicles_delete_policy' AND polrelid = 'vehicles'::regclass) THEN
-        CREATE POLICY vehicles_delete_policy ON vehicles FOR DELETE USING (true);
+        CREATE POLICY vehicles_delete_policy ON vehicles FOR DELETE USING (dealership_id = get_user_dealership_id());
     END IF;
 END $$;
 
+-- Customers policies - filtered by dealership_id
 DO $$
 BEGIN
-    -- Customers policies
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'customers_select_policy' AND polrelid = 'customers'::regclass) THEN
-        CREATE POLICY customers_select_policy ON customers FOR SELECT USING (true);
+        CREATE POLICY customers_select_policy ON customers FOR SELECT USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'customers_insert_policy' AND polrelid = 'customers'::regclass) THEN
-        CREATE POLICY customers_insert_policy ON customers FOR INSERT WITH CHECK (true);
+        CREATE POLICY customers_insert_policy ON customers FOR INSERT WITH CHECK (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'customers_update_policy' AND polrelid = 'customers'::regclass) THEN
-        CREATE POLICY customers_update_policy ON customers FOR UPDATE USING (true);
+        CREATE POLICY customers_update_policy ON customers FOR UPDATE USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'customers_delete_policy' AND polrelid = 'customers'::regclass) THEN
-        CREATE POLICY customers_delete_policy ON customers FOR DELETE USING (true);
+        CREATE POLICY customers_delete_policy ON customers FOR DELETE USING (dealership_id = get_user_dealership_id());
     END IF;
 END $$;
 
+-- Sales Deals policies - filtered by dealership_id
 DO $$
 BEGIN
-    -- Sales Deals policies
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'sales_deals_select_policy' AND polrelid = 'sales_deals'::regclass) THEN
-        CREATE POLICY sales_deals_select_policy ON sales_deals FOR SELECT USING (true);
+        CREATE POLICY sales_deals_select_policy ON sales_deals FOR SELECT USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'sales_deals_insert_policy' AND polrelid = 'sales_deals'::regclass) THEN
-        CREATE POLICY sales_deals_insert_policy ON sales_deals FOR INSERT WITH CHECK (true);
+        CREATE POLICY sales_deals_insert_policy ON sales_deals FOR INSERT WITH CHECK (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'sales_deals_update_policy' AND polrelid = 'sales_deals'::regclass) THEN
-        CREATE POLICY sales_deals_update_policy ON sales_deals FOR UPDATE USING (true);
+        CREATE POLICY sales_deals_update_policy ON sales_deals FOR UPDATE USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'sales_deals_delete_policy' AND polrelid = 'sales_deals'::regclass) THEN
-        CREATE POLICY sales_deals_delete_policy ON sales_deals FOR DELETE USING (true);
+        CREATE POLICY sales_deals_delete_policy ON sales_deals FOR DELETE USING (dealership_id = get_user_dealership_id());
     END IF;
 END $$;
 
+-- Invoices policies - filtered by dealership_id
 DO $$
 BEGIN
-    -- Invoices policies
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'invoices_select_policy' AND polrelid = 'invoices'::regclass) THEN
-        CREATE POLICY invoices_select_policy ON invoices FOR SELECT USING (true);
+        CREATE POLICY invoices_select_policy ON invoices FOR SELECT USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'invoices_insert_policy' AND polrelid = 'invoices'::regclass) THEN
-        CREATE POLICY invoices_insert_policy ON invoices FOR INSERT WITH CHECK (true);
+        CREATE POLICY invoices_insert_policy ON invoices FOR INSERT WITH CHECK (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'invoices_update_policy' AND polrelid = 'invoices'::regclass) THEN
-        CREATE POLICY invoices_update_policy ON invoices FOR UPDATE USING (true);
+        CREATE POLICY invoices_update_policy ON invoices FOR UPDATE USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'invoices_delete_policy' AND polrelid = 'invoices'::regclass) THEN
-        CREATE POLICY invoices_delete_policy ON invoices FOR DELETE USING (true);
+        CREATE POLICY invoices_delete_policy ON invoices FOR DELETE USING (dealership_id = get_user_dealership_id());
     END IF;
 END $$;
 
+-- Leads policies - filtered by dealership_id
 DO $$
 BEGIN
-    -- Leads policies
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'leads_select_policy' AND polrelid = 'leads'::regclass) THEN
-        CREATE POLICY leads_select_policy ON leads FOR SELECT USING (true);
+        CREATE POLICY leads_select_policy ON leads FOR SELECT USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'leads_insert_policy' AND polrelid = 'leads'::regclass) THEN
-        CREATE POLICY leads_insert_policy ON leads FOR INSERT WITH CHECK (true);
+        CREATE POLICY leads_insert_policy ON leads FOR INSERT WITH CHECK (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'leads_update_policy' AND polrelid = 'leads'::regclass) THEN
-        CREATE POLICY leads_update_policy ON leads FOR UPDATE USING (true);
+        CREATE POLICY leads_update_policy ON leads FOR UPDATE USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'leads_delete_policy' AND polrelid = 'leads'::regclass) THEN
-        CREATE POLICY leads_delete_policy ON leads FOR DELETE USING (true);
+        CREATE POLICY leads_delete_policy ON leads FOR DELETE USING (dealership_id = get_user_dealership_id());
     END IF;
 END $$;
 
+-- Test Drives policies - filtered by dealership_id
 DO $$
 BEGIN
-    -- Test Drives policies
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'test_drives_select_policy' AND polrelid = 'test_drives'::regclass) THEN
-        CREATE POLICY test_drives_select_policy ON test_drives FOR SELECT USING (true);
+        CREATE POLICY test_drives_select_policy ON test_drives FOR SELECT USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'test_drives_insert_policy' AND polrelid = 'test_drives'::regclass) THEN
-        CREATE POLICY test_drives_insert_policy ON test_drives FOR INSERT WITH CHECK (true);
+        CREATE POLICY test_drives_insert_policy ON test_drives FOR INSERT WITH CHECK (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'test_drives_update_policy' AND polrelid = 'test_drives'::regclass) THEN
-        CREATE POLICY test_drives_update_policy ON test_drives FOR UPDATE USING (true);
+        CREATE POLICY test_drives_update_policy ON test_drives FOR UPDATE USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'test_drives_delete_policy' AND polrelid = 'test_drives'::regclass) THEN
-        CREATE POLICY test_drives_delete_policy ON test_drives FOR DELETE USING (true);
+        CREATE POLICY test_drives_delete_policy ON test_drives FOR DELETE USING (dealership_id = get_user_dealership_id());
     END IF;
 END $$;
 
+-- Vendors policies - filtered by dealership_id
 DO $$
 BEGIN
-    -- Vendors policies
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'vendors_select_policy' AND polrelid = 'vendors'::regclass) THEN
-        CREATE POLICY vendors_select_policy ON vendors FOR SELECT USING (true);
+        CREATE POLICY vendors_select_policy ON vendors FOR SELECT USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'vendors_insert_policy' AND polrelid = 'vendors'::regclass) THEN
-        CREATE POLICY vendors_insert_policy ON vendors FOR INSERT WITH CHECK (true);
+        CREATE POLICY vendors_insert_policy ON vendors FOR INSERT WITH CHECK (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'vendors_update_policy' AND polrelid = 'vendors'::regclass) THEN
-        CREATE POLICY vendors_update_policy ON vendors FOR UPDATE USING (true);
+        CREATE POLICY vendors_update_policy ON vendors FOR UPDATE USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'vendors_delete_policy' AND polrelid = 'vendors'::regclass) THEN
-        CREATE POLICY vendors_delete_policy ON vendors FOR DELETE USING (true);
+        CREATE POLICY vendors_delete_policy ON vendors FOR DELETE USING (dealership_id = get_user_dealership_id());
     END IF;
 END $$;
 
+-- Expenses policies - filtered by dealership_id
 DO $$
 BEGIN
-    -- Expenses policies
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'expenses_select_policy' AND polrelid = 'expenses'::regclass) THEN
-        CREATE POLICY expenses_select_policy ON expenses FOR SELECT USING (true);
+        CREATE POLICY expenses_select_policy ON expenses FOR SELECT USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'expenses_insert_policy' AND polrelid = 'expenses'::regclass) THEN
-        CREATE POLICY expenses_insert_policy ON expenses FOR INSERT WITH CHECK (true);
+        CREATE POLICY expenses_insert_policy ON expenses FOR INSERT WITH CHECK (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'expenses_update_policy' AND polrelid = 'expenses'::regclass) THEN
-        CREATE POLICY expenses_update_policy ON expenses FOR UPDATE USING (true);
+        CREATE POLICY expenses_update_policy ON expenses FOR UPDATE USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'expenses_delete_policy' AND polrelid = 'expenses'::regclass) THEN
-        CREATE POLICY expenses_delete_policy ON expenses FOR DELETE USING (true);
+        CREATE POLICY expenses_delete_policy ON expenses FOR DELETE USING (dealership_id = get_user_dealership_id());
     END IF;
 END $$;
 
+-- Tasks policies - filtered by dealership_id
 DO $$
 BEGIN
-    -- Tasks policies
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'tasks_select_policy' AND polrelid = 'tasks'::regclass) THEN
-        CREATE POLICY tasks_select_policy ON tasks FOR SELECT USING (true);
+        CREATE POLICY tasks_select_policy ON tasks FOR SELECT USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'tasks_insert_policy' AND polrelid = 'tasks'::regclass) THEN
-        CREATE POLICY tasks_insert_policy ON tasks FOR INSERT WITH CHECK (true);
+        CREATE POLICY tasks_insert_policy ON tasks FOR INSERT WITH CHECK (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'tasks_update_policy' AND polrelid = 'tasks'::regclass) THEN
-        CREATE POLICY tasks_update_policy ON tasks FOR UPDATE USING (true);
+        CREATE POLICY tasks_update_policy ON tasks FOR UPDATE USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'tasks_delete_policy' AND polrelid = 'tasks'::regclass) THEN
-        CREATE POLICY tasks_delete_policy ON tasks FOR DELETE USING (true);
+        CREATE POLICY tasks_delete_policy ON tasks FOR DELETE USING (dealership_id = get_user_dealership_id());
     END IF;
 END $$;
 
+-- Tickets policies - filtered by dealership_id
 DO $$
 BEGIN
-    -- Task Notes policies
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'task_notes_select_policy' AND polrelid = 'task_notes'::regclass) THEN
-        CREATE POLICY task_notes_select_policy ON task_notes FOR SELECT USING (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'task_notes_insert_policy' AND polrelid = 'task_notes'::regclass) THEN
-        CREATE POLICY task_notes_insert_policy ON task_notes FOR INSERT WITH CHECK (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'task_notes_update_policy' AND polrelid = 'task_notes'::regclass) THEN
-        CREATE POLICY task_notes_update_policy ON task_notes FOR UPDATE USING (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'task_notes_delete_policy' AND polrelid = 'task_notes'::regclass) THEN
-        CREATE POLICY task_notes_delete_policy ON task_notes FOR DELETE USING (true);
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    -- Task Reminders policies
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'task_reminders_select_policy' AND polrelid = 'task_reminders'::regclass) THEN
-        CREATE POLICY task_reminders_select_policy ON task_reminders FOR SELECT USING (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'task_reminders_insert_policy' AND polrelid = 'task_reminders'::regclass) THEN
-        CREATE POLICY task_reminders_insert_policy ON task_reminders FOR INSERT WITH CHECK (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'task_reminders_update_policy' AND polrelid = 'task_reminders'::regclass) THEN
-        CREATE POLICY task_reminders_update_policy ON task_reminders FOR UPDATE USING (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'task_reminders_delete_policy' AND polrelid = 'task_reminders'::regclass) THEN
-        CREATE POLICY task_reminders_delete_policy ON task_reminders FOR DELETE USING (true);
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    -- Task Links policies
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'task_links_select_policy' AND polrelid = 'task_links'::regclass) THEN
-        CREATE POLICY task_links_select_policy ON task_links FOR SELECT USING (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'task_links_insert_policy' AND polrelid = 'task_links'::regclass) THEN
-        CREATE POLICY task_links_insert_policy ON task_links FOR INSERT WITH CHECK (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'task_links_delete_policy' AND polrelid = 'task_links'::regclass) THEN
-        CREATE POLICY task_links_delete_policy ON task_links FOR DELETE USING (true);
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    -- Task Activity policies
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'task_activity_select_policy' AND polrelid = 'task_activity'::regclass) THEN
-        CREATE POLICY task_activity_select_policy ON task_activity FOR SELECT USING (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'task_activity_insert_policy' AND polrelid = 'task_activity'::regclass) THEN
-        CREATE POLICY task_activity_insert_policy ON task_activity FOR INSERT WITH CHECK (true);
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    -- Task Automation Rules policies
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'task_automation_rules_all_policy' AND polrelid = 'task_automation_rules'::regclass) THEN
-        CREATE POLICY task_automation_rules_all_policy ON task_automation_rules FOR ALL USING (true);
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    -- Task Attachments policies
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'task_attachments_select_policy' AND polrelid = 'task_attachments'::regclass) THEN
-        CREATE POLICY task_attachments_select_policy ON task_attachments FOR SELECT USING (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'task_attachments_insert_policy' AND polrelid = 'task_attachments'::regclass) THEN
-        CREATE POLICY task_attachments_insert_policy ON task_attachments FOR INSERT WITH CHECK (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'task_attachments_delete_policy' AND polrelid = 'task_attachments'::regclass) THEN
-        CREATE POLICY task_attachments_delete_policy ON task_attachments FOR DELETE USING (true);
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    -- Tickets policies
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'tickets_select_policy' AND polrelid = 'tickets'::regclass) THEN
-        CREATE POLICY tickets_select_policy ON tickets FOR SELECT USING (true);
+        CREATE POLICY tickets_select_policy ON tickets FOR SELECT USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'tickets_insert_policy' AND polrelid = 'tickets'::regclass) THEN
-        CREATE POLICY tickets_insert_policy ON tickets FOR INSERT WITH CHECK (true);
+        CREATE POLICY tickets_insert_policy ON tickets FOR INSERT WITH CHECK (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'tickets_update_policy' AND polrelid = 'tickets'::regclass) THEN
-        CREATE POLICY tickets_update_policy ON tickets FOR UPDATE USING (true);
+        CREATE POLICY tickets_update_policy ON tickets FOR UPDATE USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'tickets_delete_policy' AND polrelid = 'tickets'::regclass) THEN
-        CREATE POLICY tickets_delete_policy ON tickets FOR DELETE USING (true);
+        CREATE POLICY tickets_delete_policy ON tickets FOR DELETE USING (dealership_id = get_user_dealership_id());
     END IF;
 END $$;
 
+-- Follow-ups policies - filtered by dealership_id
 DO $$
 BEGIN
-    -- Ticket Comments policies
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'ticket_comments_select_policy' AND polrelid = 'ticket_comments'::regclass) THEN
-        CREATE POLICY ticket_comments_select_policy ON ticket_comments FOR SELECT USING (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'ticket_comments_insert_policy' AND polrelid = 'ticket_comments'::regclass) THEN
-        CREATE POLICY ticket_comments_insert_policy ON ticket_comments FOR INSERT WITH CHECK (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'ticket_comments_update_policy' AND polrelid = 'ticket_comments'::regclass) THEN
-        CREATE POLICY ticket_comments_update_policy ON ticket_comments FOR UPDATE USING (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'ticket_comments_delete_policy' AND polrelid = 'ticket_comments'::regclass) THEN
-        CREATE POLICY ticket_comments_delete_policy ON ticket_comments FOR DELETE USING (true);
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    -- Ticket Attachments policies
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'ticket_attachments_select_policy' AND polrelid = 'ticket_attachments'::regclass) THEN
-        CREATE POLICY ticket_attachments_select_policy ON ticket_attachments FOR SELECT USING (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'ticket_attachments_insert_policy' AND polrelid = 'ticket_attachments'::regclass) THEN
-        CREATE POLICY ticket_attachments_insert_policy ON ticket_attachments FOR INSERT WITH CHECK (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'ticket_attachments_delete_policy' AND polrelid = 'ticket_attachments'::regclass) THEN
-        CREATE POLICY ticket_attachments_delete_policy ON ticket_attachments FOR DELETE USING (true);
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    -- Ticket Activity policies
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'ticket_activity_select_policy' AND polrelid = 'ticket_activity'::regclass) THEN
-        CREATE POLICY ticket_activity_select_policy ON ticket_activity FOR SELECT USING (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'ticket_activity_insert_policy' AND polrelid = 'ticket_activity'::regclass) THEN
-        CREATE POLICY ticket_activity_insert_policy ON ticket_activity FOR INSERT WITH CHECK (true);
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    -- Follow-ups policies
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'follow_ups_select_policy' AND polrelid = 'follow_ups'::regclass) THEN
-        CREATE POLICY follow_ups_select_policy ON follow_ups FOR SELECT USING (true);
+        CREATE POLICY follow_ups_select_policy ON follow_ups FOR SELECT USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'follow_ups_insert_policy' AND polrelid = 'follow_ups'::regclass) THEN
-        CREATE POLICY follow_ups_insert_policy ON follow_ups FOR INSERT WITH CHECK (true);
+        CREATE POLICY follow_ups_insert_policy ON follow_ups FOR INSERT WITH CHECK (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'follow_ups_update_policy' AND polrelid = 'follow_ups'::regclass) THEN
-        CREATE POLICY follow_ups_update_policy ON follow_ups FOR UPDATE USING (true);
+        CREATE POLICY follow_ups_update_policy ON follow_ups FOR UPDATE USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'follow_ups_delete_policy' AND polrelid = 'follow_ups'::regclass) THEN
-        CREATE POLICY follow_ups_delete_policy ON follow_ups FOR DELETE USING (true);
+        CREATE POLICY follow_ups_delete_policy ON follow_ups FOR DELETE USING (dealership_id = get_user_dealership_id());
     END IF;
 END $$;
 
+-- Bill of Sale policies - filtered by dealership_id
 DO $$
 BEGIN
-    -- Follow-up Activity policies
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'follow_up_activity_select_policy' AND polrelid = 'follow_up_activity'::regclass) THEN
-        CREATE POLICY follow_up_activity_select_policy ON follow_up_activity FOR SELECT USING (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'follow_up_activity_insert_policy' AND polrelid = 'follow_up_activity'::regclass) THEN
-        CREATE POLICY follow_up_activity_insert_policy ON follow_up_activity FOR INSERT WITH CHECK (true);
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    -- Follow-up History policies
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'follow_up_history_select_policy' AND polrelid = 'follow_up_history'::regclass) THEN
-        CREATE POLICY follow_up_history_select_policy ON follow_up_history FOR SELECT USING (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'follow_up_history_insert_policy' AND polrelid = 'follow_up_history'::regclass) THEN
-        CREATE POLICY follow_up_history_insert_policy ON follow_up_history FOR INSERT WITH CHECK (true);
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    -- Expense Activity policies
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'expense_activity_select_policy' AND polrelid = 'expense_activity'::regclass) THEN
-        CREATE POLICY expense_activity_select_policy ON expense_activity FOR SELECT USING (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'expense_activity_insert_policy' AND polrelid = 'expense_activity'::regclass) THEN
-        CREATE POLICY expense_activity_insert_policy ON expense_activity FOR INSERT WITH CHECK (true);
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    -- Bill of Sale policies
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'bill_of_sale_select_policy' AND polrelid = 'bill_of_sale'::regclass) THEN
-        CREATE POLICY bill_of_sale_select_policy ON bill_of_sale FOR SELECT USING (true);
+        CREATE POLICY bill_of_sale_select_policy ON bill_of_sale FOR SELECT USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'bill_of_sale_insert_policy' AND polrelid = 'bill_of_sale'::regclass) THEN
-        CREATE POLICY bill_of_sale_insert_policy ON bill_of_sale FOR INSERT WITH CHECK (true);
+        CREATE POLICY bill_of_sale_insert_policy ON bill_of_sale FOR INSERT WITH CHECK (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'bill_of_sale_update_policy' AND polrelid = 'bill_of_sale'::regclass) THEN
-        CREATE POLICY bill_of_sale_update_policy ON bill_of_sale FOR UPDATE USING (true);
+        CREATE POLICY bill_of_sale_update_policy ON bill_of_sale FOR UPDATE USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'bill_of_sale_delete_policy' AND polrelid = 'bill_of_sale'::regclass) THEN
-        CREATE POLICY bill_of_sale_delete_policy ON bill_of_sale FOR DELETE USING (true);
+        CREATE POLICY bill_of_sale_delete_policy ON bill_of_sale FOR DELETE USING (dealership_id = get_user_dealership_id());
     END IF;
 END $$;
 
+-- Social Media Posts policies - filtered by dealership_id
 DO $$
 BEGIN
-    -- Social Media Posts policies
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'social_media_posts_select_policy' AND polrelid = 'social_media_posts'::regclass) THEN
-        CREATE POLICY social_media_posts_select_policy ON social_media_posts FOR SELECT USING (true);
+        CREATE POLICY social_media_posts_select_policy ON social_media_posts FOR SELECT USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'social_media_posts_insert_policy' AND polrelid = 'social_media_posts'::regclass) THEN
-        CREATE POLICY social_media_posts_insert_policy ON social_media_posts FOR INSERT WITH CHECK (true);
+        CREATE POLICY social_media_posts_insert_policy ON social_media_posts FOR INSERT WITH CHECK (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'social_media_posts_update_policy' AND polrelid = 'social_media_posts'::regclass) THEN
-        CREATE POLICY social_media_posts_update_policy ON social_media_posts FOR UPDATE USING (true);
+        CREATE POLICY social_media_posts_update_policy ON social_media_posts FOR UPDATE USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'social_media_posts_delete_policy' AND polrelid = 'social_media_posts'::regclass) THEN
-        CREATE POLICY social_media_posts_delete_policy ON social_media_posts FOR DELETE USING (true);
+        CREATE POLICY social_media_posts_delete_policy ON social_media_posts FOR DELETE USING (dealership_id = get_user_dealership_id());
     END IF;
 END $$;
 
+-- Purchase from Public policies - filtered by dealership_id
 DO $$
 BEGIN
-    -- Facebook Business Account policies
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'facebook_business_account_select_policy' AND polrelid = 'facebook_business_account'::regclass) THEN
-        CREATE POLICY facebook_business_account_select_policy ON facebook_business_account FOR SELECT USING (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'facebook_business_account_insert_policy' AND polrelid = 'facebook_business_account'::regclass) THEN
-        CREATE POLICY facebook_business_account_insert_policy ON facebook_business_account FOR INSERT WITH CHECK (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'facebook_business_account_update_policy' AND polrelid = 'facebook_business_account'::regclass) THEN
-        CREATE POLICY facebook_business_account_update_policy ON facebook_business_account FOR UPDATE USING (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'facebook_business_account_delete_policy' AND polrelid = 'facebook_business_account'::regclass) THEN
-        CREATE POLICY facebook_business_account_delete_policy ON facebook_business_account FOR DELETE USING (true);
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    -- Purchase from Public policies
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'purchase_from_public_select_policy' AND polrelid = 'purchase_from_public'::regclass) THEN
-        CREATE POLICY purchase_from_public_select_policy ON purchase_from_public FOR SELECT USING (true);
+        CREATE POLICY purchase_from_public_select_policy ON purchase_from_public FOR SELECT USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'purchase_from_public_insert_policy' AND polrelid = 'purchase_from_public'::regclass) THEN
-        CREATE POLICY purchase_from_public_insert_policy ON purchase_from_public FOR INSERT WITH CHECK (true);
+        CREATE POLICY purchase_from_public_insert_policy ON purchase_from_public FOR INSERT WITH CHECK (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'purchase_from_public_update_policy' AND polrelid = 'purchase_from_public'::regclass) THEN
-        CREATE POLICY purchase_from_public_update_policy ON purchase_from_public FOR UPDATE USING (true);
+        CREATE POLICY purchase_from_public_update_policy ON purchase_from_public FOR UPDATE USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'purchase_from_public_delete_policy' AND polrelid = 'purchase_from_public'::regclass) THEN
-        CREATE POLICY purchase_from_public_delete_policy ON purchase_from_public FOR DELETE USING (true);
+        CREATE POLICY purchase_from_public_delete_policy ON purchase_from_public FOR DELETE USING (dealership_id = get_user_dealership_id());
     END IF;
 END $$;
 
+-- Financial Transactions policies - filtered by dealership_id
 DO $$
 BEGIN
-    -- Financial Transactions policies
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'financial_transactions_select_policy' AND polrelid = 'financial_transactions'::regclass) THEN
-        CREATE POLICY financial_transactions_select_policy ON financial_transactions FOR SELECT USING (true);
+        CREATE POLICY financial_transactions_select_policy ON financial_transactions FOR SELECT USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'financial_transactions_insert_policy' AND polrelid = 'financial_transactions'::regclass) THEN
-        CREATE POLICY financial_transactions_insert_policy ON financial_transactions FOR INSERT WITH CHECK (true);
+        CREATE POLICY financial_transactions_insert_policy ON financial_transactions FOR INSERT WITH CHECK (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'financial_transactions_update_policy' AND polrelid = 'financial_transactions'::regclass) THEN
-        CREATE POLICY financial_transactions_update_policy ON financial_transactions FOR UPDATE USING (true);
+        CREATE POLICY financial_transactions_update_policy ON financial_transactions FOR UPDATE USING (dealership_id = get_user_dealership_id());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'financial_transactions_delete_policy' AND polrelid = 'financial_transactions'::regclass) THEN
-        CREATE POLICY financial_transactions_delete_policy ON financial_transactions FOR DELETE USING (true);
+        CREATE POLICY financial_transactions_delete_policy ON financial_transactions FOR DELETE USING (dealership_id = get_user_dealership_id());
     END IF;
 END $$;
 
@@ -1227,6 +1312,7 @@ CREATE TABLE IF NOT EXISTS ocr_documents (
     is_verified BOOLEAN DEFAULT false,
     verified_by UUID REFERENCES users(id) ON DELETE SET NULL,
     verified_at TIMESTAMPTZ,
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -1265,6 +1351,7 @@ CREATE TABLE IF NOT EXISTS carfax_reports (
     title_status TEXT,
     last_updated TIMESTAMPTZ,
     purchased_at TIMESTAMPTZ DEFAULT NOW(),
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -1289,6 +1376,7 @@ CREATE TABLE IF NOT EXISTS finance_calculations (
     total_cost NUMERIC(12,2) DEFAULT 0,
     tax_amount NUMERIC(12,2) DEFAULT 0,
     admin_fee NUMERIC(12,2) DEFAULT 0,
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

@@ -53,13 +53,18 @@ interface LeadDetailsModalProps {
     lead: Lead;
     onClose: () => void;
     onEdit: () => void;
+    userRole?: string;
+    userPermissions?: string[];
 }
 
 export default function LeadDetailsModal({
     lead,
     onClose,
     onEdit,
+    userRole,
+    userPermissions = [],
 }: LeadDetailsModalProps) {
+    const canEdit = userRole === "Admin" || userPermissions.includes("leads:write");
     const getStatusColor = (status: string) => {
         const colors: Record<string, string> = {
             "Not Started": "bg-gray-100 text-gray-800",
@@ -247,13 +252,15 @@ export default function LeadDetailsModal({
                             >
                                 Close
                             </button>
-                            <button
-                                onClick={onEdit}
-                                className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
-                            >
-                                <Edit className="w-4 h-4" />
-                                Edit Lead
-                            </button>
+                            {canEdit && (
+                                <button
+                                    onClick={onEdit}
+                                    className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                                >
+                                    <Edit className="w-4 h-4" />
+                                    Edit Lead
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
