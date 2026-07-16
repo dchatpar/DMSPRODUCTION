@@ -64,7 +64,7 @@ const platformAdminSections = [
     },
 ];
 
-// Regular dealership navigation sections
+// Regular dealership navigation sectionss
 const navigationSections = [
     {
         title: "OVERVIEW",
