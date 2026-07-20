@@ -47,27 +47,49 @@ export default function LoginPage() {
         }
 
         try {
-            const { data, error } = await supabaseBrowser.auth.signInWithPassword({
-                email: email.trim(),
-                password,
+            // Call our custom login API which records login history
+            const response = await fetch("/api/auth/login", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    email: email.trim(),
+                    password,
+                }),
             });
 
-            if (error) {
-                throw error;
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || "Login failed");
             }
 
-            if (data?.session) {
-                localStorage.setItem("access_token", data.session.access_token);
-                localStorage.setItem("refresh_token", data.session.refresh_token || "");
+            // Store the tokens and user data
+            if (data.access_token) {
+                localStorage.setItem("access_token", data.access_token);
+                localStorage.setItem("refresh_token", data.refresh_token || "");
                 localStorage.setItem("user_email", data.user?.email || "");
 
-                await router.replace("/dashboard");
+                // Set the session in supabaseBrowser so dashboard can use getSession()
+                await supabaseBrowser.auth.setSession({
+                    access_token: data.access_token,
+                    refresh_token: data.refresh_token || "",
+                });
+
+                console.log("Login successful, redirecting to dashboard...");
+                router.push("/dashboard");
+            } else {
+                console.error("No access_token in response:", data);
+                setError("Login failed: No access token received");
             }
         } catch (err: any) {
-            if (err.message.includes("Invalid login credentials")) {
+            if (err.message.includes("Invalid login credentials") || err.message.includes("Invalid email or password")) {
                 setError("Invalid email or password. Please try again.");
             } else if (err.message.includes("Email not confirmed")) {
                 setError("Please confirm your email address before logging in.");
+            } else if (err.message.includes("suspended")) {
+                setError("Account is suspended. Please contact your administrator.");
             } else {
                 setError(err.message || "An error occurred during login.");
             }

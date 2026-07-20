@@ -143,29 +143,24 @@ export default function ResetPasswordPage() {
     return (
         <div className="min-h-screen bg-gray-50">
             {/* Page Header */}
-            <div className="bg-white border-b border-gray-200 px-6 py-4">
-                <div className="flex items-center gap-3 mb-2">
-                    <div className="p-2 bg-blue-100 rounded-lg">
-                        <Key className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900">Reset Password</h1>
-                        <p className="text-sm text-gray-500">
-                            Reset a user's password to provide them with a temporary login
-                        </p>
-                    </div>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900">Reset Password</h1>
+                    <p className="text-sm text-gray-500 mt-1">
+                        Reset user passwords to provide temporary access
+                    </p>
                 </div>
+            </div>
 
-                {/* Warning Banner */}
-                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-3">
-                    <Shield className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                    <div className="text-sm">
-                        <p className="font-medium text-blue-800">Security Notice</p>
-                        <p className="text-blue-700 mt-1">
-                            All password resets are logged for security and compliance purposes.
-                            Share temporary passwords securely with the user through a verified channel.
-                        </p>
-                    </div>
+            {/* Warning Banner */}
+            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-3">
+                <Shield className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                <div className="text-sm">
+                    <p className="font-medium text-blue-800">Security Notice</p>
+                    <p className="text-blue-700 mt-1">
+                        All password resets are logged for security and compliance purposes.
+                        Share temporary passwords securely with the user through a verified channel.
+                    </p>
                 </div>
             </div>
 

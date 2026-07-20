@@ -128,51 +128,49 @@ export default function LoginHistoryPage() {
     return (
         <div className="min-h-screen bg-gray-50">
             {/* Page Header */}
-            <div className="bg-white border-b border-gray-200 px-6 py-4">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900">Login History</h1>
-                        <p className="text-sm text-gray-500 mt-1">
-                            Track user login attempts across the platform
-                        </p>
-                    </div>
-                    <button
-                        onClick={fetchLoginHistory}
-                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
-                    >
-                        <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-                        Refresh
-                    </button>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900">Login History</h1>
+                    <p className="text-sm text-gray-500 mt-1">
+                        Track user login attempts across the platform
+                    </p>
                 </div>
-
-                {/* Filters */}
-                <form onSubmit={handleSearch} className="mt-4 flex flex-col sm:flex-row gap-4">
-                    <div className="flex-1">
-                        <input
-                            type="text"
-                            placeholder="Filter by user ID..."
-                            value={userFilter}
-                            onChange={(e) => setUserFilter(e.target.value)}
-                            className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                    </div>
-                    <select
-                        value={successFilter}
-                        onChange={(e) => setSuccessFilter(e.target.value)}
-                        className="px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                        <option value="">All Attempts</option>
-                        <option value="true">Successful</option>
-                        <option value="false">Failed</option>
-                    </select>
-                    <button
-                        type="submit"
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-                    >
-                        Filter
-                    </button>
-                </form>
+                <button
+                    onClick={fetchLoginHistory}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
+                >
+                    <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+                    Refresh
+                </button>
             </div>
+
+            {/* Filters */}
+            <form onSubmit={handleSearch} className="mt-4 flex flex-col sm:flex-row gap-4">
+                <div className="flex-1">
+                    <input
+                        type="text"
+                        placeholder="Filter by user ID..."
+                        value={userFilter}
+                        onChange={(e) => setUserFilter(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                </div>
+                <select
+                    value={successFilter}
+                    onChange={(e) => setSuccessFilter(e.target.value)}
+                    className="px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                    <option value="">All Attempts</option>
+                    <option value="true">Successful</option>
+                    <option value="false">Failed</option>
+                </select>
+                <button
+                    type="submit"
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+                >
+                    Filter
+                </button>
+            </form>
 
             {/* Content */}
             <div className="p-6">

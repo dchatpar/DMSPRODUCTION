@@ -128,64 +128,62 @@ export default function AuditLogsPage() {
     return (
         <div className="min-h-screen bg-gray-50">
             {/* Page Header */}
-            <div className="bg-white border-b border-gray-200 px-6 py-4">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900">Audit Logs</h1>
-                        <p className="text-sm text-gray-500 mt-1">
-                            Track all administrative actions on the platform
-                        </p>
-                    </div>
-                    <button
-                        onClick={fetchAuditLogs}
-                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
-                    >
-                        <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-                        Refresh
-                    </button>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900">Audit Logs</h1>
+                    <p className="text-sm text-gray-500 mt-1">
+                        Track all administrative actions across the platform
+                    </p>
                 </div>
-
-                {/* Filters */}
-                <form onSubmit={handleSearch} className="mt-4 flex flex-col sm:flex-row gap-4">
-                    <div className="flex-1 relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                            type="text"
-                            placeholder="Search by action..."
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                    </div>
-                    <select
-                        value={actionFilter}
-                        onChange={(e) => setActionFilter(e.target.value)}
-                        className="px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                        <option value="">All Actions</option>
-                        <option value="user">User Actions</option>
-                        <option value="dealership">Dealership Actions</option>
-                        <option value="platform">Platform Actions</option>
-                    </select>
-                    <select
-                        value={entityFilter}
-                        onChange={(e) => setEntityFilter(e.target.value)}
-                        className="px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                        <option value="">All Entities</option>
-                        <option value="user">User</option>
-                        <option value="dealership">Dealership</option>
-                        <option value="deal">Deal</option>
-                        <option value="vehicle">Vehicle</option>
-                    </select>
-                    <button
-                        type="submit"
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-                    >
-                        Filter
-                    </button>
-                </form>
+                <button
+                    onClick={fetchAuditLogs}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
+                >
+                    <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+                    Refresh
+                </button>
             </div>
+
+            {/* Filters */}
+            <form onSubmit={handleSearch} className="mt-4 flex flex-col sm:flex-row gap-4">
+                <div className="flex-1 relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                        type="text"
+                        placeholder="Search by action..."
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                </div>
+                <select
+                    value={actionFilter}
+                    onChange={(e) => setActionFilter(e.target.value)}
+                    className="px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                    <option value="">All Actions</option>
+                    <option value="user">User Actions</option>
+                    <option value="dealership">Dealership Actions</option>
+                    <option value="platform">Platform Actions</option>
+                </select>
+                <select
+                    value={entityFilter}
+                    onChange={(e) => setEntityFilter(e.target.value)}
+                    className="px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                    <option value="">All Entities</option>
+                    <option value="user">User</option>
+                    <option value="dealership">Dealership</option>
+                    <option value="deal">Deal</option>
+                    <option value="vehicle">Vehicle</option>
+                </select>
+                <button
+                    type="submit"
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+                >
+                    Filter
+                </button>
+            </form>
 
             {/* Content */}
             <div className="p-6">

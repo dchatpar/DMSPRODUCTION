@@ -129,28 +129,23 @@ export default function FeatureFlagsPage() {
     return (
         <div className="min-h-screen bg-gray-50">
             {/* Page Header */}
-            <div className="bg-white border-b border-gray-200 px-6 py-4">
-                <div className="flex items-center gap-3 mb-2">
-                    <div className="p-2 bg-blue-100 rounded-lg">
-                        <Flag className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900">Feature Flags</h1>
-                        <p className="text-sm text-gray-500">
-                            Enable or disable platform features
-                        </p>
-                    </div>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900">Feature Flags</h1>
+                    <p className="text-sm text-gray-500 mt-1">
+                        Enable or disable platform-wide features
+                    </p>
                 </div>
+            </div>
 
-                {/* Warning Banner */}
-                <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
-                    <Shield className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                    <div className="text-sm">
-                        <p className="font-medium text-amber-800">Platform Admin Only</p>
-                        <p className="text-amber-700 mt-1">
-                            Feature flags control platform-wide functionality. Changes take effect immediately.
-                        </p>
-                    </div>
+            {/* Warning Banner */}
+            <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
+                <Shield className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="text-sm">
+                    <p className="font-medium text-amber-800">Platform Admin Only</p>
+                    <p className="text-amber-700 mt-1">
+                        Feature flags control platform-wide functionality. Changes take effect immediately.
+                    </p>
                 </div>
             </div>
 

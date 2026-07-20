@@ -3,6 +3,51 @@ import { supabase } from "@/src/lib/supabase";
 import { supabaseAdmin } from "@/src/lib/supabase-admin";
 import { NextRequest, NextResponse } from "next/server";
 
+// Helper function to determine device type from user agent
+function getDeviceType(userAgent: string): string {
+  if (userAgent.includes('mobile') || userAgent.includes('android') || userAgent.includes('iphone')) {
+    return 'Mobile';
+  }
+  if (userAgent.includes('tablet') || userAgent.includes('ipad')) {
+    return 'Tablet';
+  }
+  return 'Desktop';
+}
+
+// Helper function to log login attempt
+async function logLoginAttempt(
+  userId: string | null,
+  email: string,
+  success: boolean,
+  failureReason: string | null,
+  ipAddress: string,
+  userAgent: string,
+  dealershipId: string | null
+) {
+  try {
+    const deviceType = getDeviceType(userAgent);
+
+    const { error } = await supabaseAdmin
+      .from('login_history')
+      .insert({
+        user_id: userId,
+        email: email,
+        success: success,
+        failure_reason: failureReason,
+        ip_address: ipAddress,
+        user_agent: userAgent,
+        device_type: deviceType,
+        dealership_id: dealershipId,
+      });
+
+    if (error) {
+      console.error('Failed to log login attempt:', error);
+    }
+  } catch (err) {
+    // Log failures should not block login
+    console.error('Exception logging login attempt:', err);
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -27,19 +72,15 @@ export async function POST(req: NextRequest) {
 
     if (error || !data?.session) {
       // Log failed login attempt
-      try {
-        await supabaseAdmin.rpc("log_user_login", {
-          p_user_id: null,
-          p_email: email,
-          p_success: false,
-          p_failure_reason: error?.message || "Invalid credentials",
-          p_ip_address: ipAddress,
-          p_user_agent: userAgent,
-          p_dealership_id: null,
-        });
-      } catch (logError) {
-        console.error("Failed to log login attempt:", logError);
-      }
+      await logLoginAttempt(
+        null,
+        email,
+        false,
+        error?.message || "Invalid credentials",
+        ipAddress,
+        userAgent,
+        null
+      );
 
       return NextResponse.json(
         { error: "Invalid email or password" },
@@ -63,19 +104,15 @@ export async function POST(req: NextRequest) {
     }
 
     // Log successful login
-    try {
-      await supabaseAdmin.rpc("log_user_login", {
-        p_user_id: data.user.id,
-        p_email: email,
-        p_success: true,
-        p_failure_reason: null,
-        p_ip_address: ipAddress,
-        p_user_agent: userAgent,
-        p_dealership_id: userProfile?.dealership_id || null,
-      });
-    } catch (logError) {
-      console.error("Failed to log login:", logError);
-    }
+    await logLoginAttempt(
+      data.user.id,
+      email,
+      true,
+      null,
+      ipAddress,
+      userAgent,
+      userProfile?.dealership_id || null
+    );
 
     // Return response with role and set HttpOnly cookies so middleware can read session
     const body = {

@@ -126,48 +126,46 @@ export default function SubscriptionsPage() {
     return (
         <div className="min-h-screen bg-gray-50">
             {/* Page Header */}
-            <div className="bg-white border-b border-gray-200 px-6 py-4">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900">Subscriptions</h1>
-                        <p className="text-sm text-gray-500 mt-1">
-                            Manage all dealership subscriptions on the platform
-                        </p>
-                    </div>
-                    <button
-                        onClick={fetchSubscriptions}
-                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
-                    >
-                        <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-                        Refresh
-                    </button>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900">Subscriptions</h1>
+                    <p className="text-sm text-gray-500 mt-1">
+                        Manage all dealership subscriptions across the platform
+                    </p>
                 </div>
+                <button
+                    onClick={fetchSubscriptions}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
+                >
+                    <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+                    Refresh
+                </button>
+            </div>
 
-                {/* Filters */}
-                <div className="mt-4 flex flex-col sm:flex-row gap-4">
-                    <select
-                        value={statusFilter}
-                        onChange={(e) => setStatusFilter(e.target.value)}
-                        className="px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                        <option value="">All Statuses</option>
-                        <option value="Active">Active</option>
-                        <option value="Trial">Trial</option>
-                        <option value="PastDue">Past Due</option>
-                        <option value="Suspended">Suspended</option>
-                        <option value="Cancelled">Cancelled</option>
-                    </select>
-                    <select
-                        value={planFilter}
-                        onChange={(e) => setPlanFilter(e.target.value)}
-                        className="px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                        <option value="">All Plans</option>
-                        <option value="Basic">Basic</option>
-                        <option value="Standard">Standard</option>
-                        <option value="Premium">Premium</option>
-                    </select>
-                </div>
+            {/* Filters */}
+            <div className="mt-4 flex flex-col sm:flex-row gap-4">
+                <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                    <option value="">All Statuses</option>
+                    <option value="Active">Active</option>
+                    <option value="Trial">Trial</option>
+                    <option value="PastDue">Past Due</option>
+                    <option value="Suspended">Suspended</option>
+                    <option value="Cancelled">Cancelled</option>
+                </select>
+                <select
+                    value={planFilter}
+                    onChange={(e) => setPlanFilter(e.target.value)}
+                    className="px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                    <option value="">All Plans</option>
+                    <option value="Basic">Basic</option>
+                    <option value="Standard">Standard</option>
+                    <option value="Premium">Premium</option>
+                </select>
             </div>
 
             {/* Content */}

@@ -139,29 +139,24 @@ export default function ImpersonatePage() {
     return (
         <div className="min-h-screen bg-gray-50">
             {/* Page Header */}
-            <div className="bg-white border-b border-gray-200 px-6 py-4">
-                <div className="flex items-center gap-3 mb-2">
-                    <div className="p-2 bg-amber-100 rounded-lg">
-                        <UserCheck className="w-5 h-5 text-amber-600" />
-                    </div>
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900">Impersonate User</h1>
-                        <p className="text-sm text-gray-500">
-                            Access a user's account to troubleshoot issues or provide support
-                        </p>
-                    </div>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900">Impersonate User</h1>
+                    <p className="text-sm text-gray-500 mt-1">
+                        Access user accounts to troubleshoot or provide support
+                    </p>
                 </div>
+            </div>
 
-                {/* Warning Banner */}
-                <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
-                    <Shield className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                    <div className="text-sm">
-                        <p className="font-medium text-amber-800">Important Notice</p>
-                        <p className="text-amber-700 mt-1">
-                            All impersonation sessions are logged for security and compliance purposes.
-                            Use this feature responsibly and only when necessary for support purposes.
-                        </p>
-                    </div>
+            {/* Warning Banner */}
+            <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
+                <Shield className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="text-sm">
+                    <p className="font-medium text-amber-800">Important Notice</p>
+                    <p className="text-amber-700 mt-1">
+                        All impersonation sessions are logged for security and compliance purposes.
+                        Use this feature responsibly and only when necessary for support purposes.
+                    </p>
                 </div>
             </div>
 
