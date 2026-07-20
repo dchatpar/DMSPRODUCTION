@@ -1,6 +1,11 @@
 // app/api/deals/route.ts
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
+import {
+    shouldScopeToAssigned,
+    canViewAll,
+    canCreate,
+} from "@/src/lib/permission-middleware";
 
 // GET all deals
 export async function GET(req: NextRequest) {
@@ -69,11 +74,10 @@ export async function GET(req: NextRequest) {
             query = query.eq("dealership_id", currentUser.dealership_id);
 
             // Scope to assigned deals for Salesperson/Staff
-            const scopedToAssigned = userRole === "Salesperson" || userRole === "Staff";
-            const viewAll = userPermissions.includes("*") ||
-                (userPermissions.includes("deals:read") && !userPermissions.includes("deals:read:assigned"));
+            const scopedToAssigned = shouldScopeToAssigned(userRole, userPermissions);
+            const viewAllDeals = canViewAll(userRole, userPermissions);
 
-            if (scopedToAssigned || !viewAll) {
+            if (scopedToAssigned || !viewAllDeals) {
                 query = query.eq("salesperson_id", user.id);
             }
         }
@@ -151,13 +155,8 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "User profile not found" }, { status: 404 });
         }
 
-        // Check permission
-        const canCreate = currentUser.is_platform_admin ||
-            currentUser.role === "Admin" ||
-            currentUser.role === "Manager" ||
-            (currentUser.user_permissions || []).includes("deals:write");
-
-        if (!canCreate) {
+        // Check permission using centralized helper
+        if (!canCreate(currentUser.role, currentUser.user_permissions || [], "deals")) {
             return NextResponse.json({ error: "Forbidden - You cannot create deals" }, { status: 403 });
         }
 

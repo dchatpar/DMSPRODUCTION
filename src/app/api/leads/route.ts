@@ -1,27 +1,11 @@
 // app/api/leads/route.ts
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
-
-// Helper: Check if user should be scoped to assigned records only
-function shouldScopeToAssigned(role: string, permissions: string[]): boolean {
-    // Salesperson and Staff are always scoped to their own records
-    if (role === "Salesperson" || role === "Staff") return true;
-    // If user has :assigned permission but not :all, scope to assigned
-    // (currently we treat :assigned-only as scope filter, not separate permission)
-    return false;
-}
-
-// Helper: Check if user can view all records (not just assigned)
-function canViewAll(role: string, permissions: string[]): boolean {
-    // Admin or Manager can view all
-    if (role === "Admin" || role === "Manager") return true;
-    // Has * (full access)
-    if (permissions.includes("*")) return true;
-    // Has :read without :assigned restriction
-    // If they have :read AND :read:assigned, we treat :read as "view all"
-    if (permissions.includes("leads:read") && !permissions.includes("leads:read:assigned")) return true;
-    return false;
-}
+import {
+    shouldScopeToAssigned,
+    canViewAll,
+    canCreate,
+} from "@/src/lib/permission-middleware";
 
 export async function GET(req: NextRequest) {
     try {
@@ -208,15 +192,8 @@ export async function POST(req: NextRequest) {
         const userRole = currentUser.role;
         const userPermissions = currentUser.user_permissions || [];
 
-        // Check if user can create leads - ALL roles can create (Admin, Manager, Salesperson, Staff)
-        const canCreate = userPermissions.includes("*") ||
-            userPermissions.includes("leads:write") ||
-            userRole === "Admin" ||
-            userRole === "Manager" ||
-            userRole === "Salesperson" ||
-            userRole === "Staff";
-
-        if (!canCreate) {
+        // Check if user can create leads
+        if (!canCreate(userRole, userPermissions, "leads")) {
             return NextResponse.json(
                 { error: "Forbidden - You cannot create leads" },
                 { status: 403 }

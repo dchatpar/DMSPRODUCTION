@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/src/lib/supabase-browser";
+import { hasPermission as checkPermission } from "@/src/lib/permission-middleware";
 import {
     LayoutDashboard,
     BarChart3,
@@ -302,13 +303,13 @@ export default function Sidebar() {
         const permKey = pagePermMap[href];
         if (!permKey) return true; // If not in map, show it
 
-        // Check for specific permission
-        if (effectivePermissions.includes(permKey)) return true;
+        // Check for specific permission using centralized helper
+        if (checkPermission(effectivePermissions, permKey)) return true;
 
         // Also check for :assigned variant (user can see assigned items only)
         // e.g., leads:read:assigned means they can see leads nav but scoped to assigned
         const assignedPermKey = permKey + ":assigned";
-        if (effectivePermissions.includes(assignedPermKey)) return true;
+        if (checkPermission(effectivePermissions, assignedPermKey)) return true;
 
         return false;
     };

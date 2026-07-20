@@ -126,9 +126,41 @@ export default function ExpensesPage() {
         loading: boolean;
     }>({ expense: null, loading: false });
 
+    // User permissions
+    const [userPermissions, setUserPermissions] = useState<string[]>([]);
+    const [userRole, setUserRole] = useState<string>("");
+
+    // Permission helpers
+    const canWrite = (resource: string): boolean => {
+        if (userRole === "Admin") return true;
+        return userPermissions.includes(`${resource}:write`);
+    };
+
+    const canDelete = (resource: string): boolean => {
+        if (userRole === "Admin") return true;
+        return userPermissions.includes(`${resource}:delete`);
+    };
+
     useEffect(() => {
         fetchExpenses();
+        fetchUserPermissions();
     }, [currentPage, categoryFilter, statusFilter, debouncedSearch, expenseDateFrom, expenseDateTo]);
+
+    const fetchUserPermissions = async () => {
+        try {
+            const token = localStorage.getItem("access_token");
+            const response = await fetch("/api/me", {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setUserPermissions(data.data.user_permissions || []);
+                setUserRole(data.data.role || "");
+            }
+        } catch (error) {
+            console.error("Error fetching user permissions:", error);
+        }
+    };
 
     // Debounce search input
     useEffect(() => {
@@ -384,13 +416,15 @@ export default function ExpensesPage() {
                         <RefreshCw className="w-4 h-4" />
                         Refresh
                     </button>
-                    <button
-                        onClick={handleAdd}
-                        className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2"
-                    >
-                        <Plus className="w-4 h-4" />
-                        Add Expense
-                    </button>
+                    {canWrite("expenses") && (
+                        <button
+                            onClick={handleAdd}
+                            className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2"
+                        >
+                            <Plus className="w-4 h-4" />
+                            Add Expense
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -688,20 +722,24 @@ export default function ExpensesPage() {
                                                     >
                                                         <Eye className="w-4 h-4 text-blue-500" />
                                                     </button>
-                                                    <button
-                                                        onClick={() => handleEdit(expense)}
-                                                        className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
-                                                        title="Edit"
-                                                    >
-                                                        <Edit className="w-4 h-4 text-amber-500" />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleDelete(expense)}
-                                                        className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
-                                                        title="Delete"
-                                                    >
-                                                        <Trash2 className="w-4 h-4 text-red-500" />
-                                                    </button>
+                                                    {canWrite("expenses") && (
+                                                        <button
+                                                            onClick={() => handleEdit(expense)}
+                                                            className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                                            title="Edit"
+                                                        >
+                                                            <Edit className="w-4 h-4 text-amber-500" />
+                                                        </button>
+                                                    )}
+                                                    {canDelete("expenses") && (
+                                                        <button
+                                                            onClick={() => handleDelete(expense)}
+                                                            className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                                            title="Delete"
+                                                        >
+                                                            <Trash2 className="w-4 h-4 text-red-500" />
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>
@@ -762,18 +800,22 @@ export default function ExpensesPage() {
                                             >
                                                 <Eye className="w-4 h-4 text-blue-500" />
                                             </button>
-                                            <button
-                                                onClick={() => handleEdit(expense)}
-                                                className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
-                                            >
-                                                <Edit className="w-4 h-4 text-amber-500" />
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(expense)}
-                                                className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
-                                            >
-                                                <Trash2 className="w-4 h-4 text-red-500" />
-                                            </button>
+                                            {canWrite("expenses") && (
+                                                <button
+                                                    onClick={() => handleEdit(expense)}
+                                                    className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                                >
+                                                    <Edit className="w-4 h-4 text-amber-500" />
+                                                </button>
+                                            )}
+                                            {canDelete("expenses") && (
+                                                <button
+                                                    onClick={() => handleDelete(expense)}
+                                                    className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                                >
+                                                    <Trash2 className="w-4 h-4 text-red-500" />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                     <div className="flex flex-wrap gap-2 mb-2">

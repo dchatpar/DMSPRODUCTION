@@ -112,6 +112,20 @@ export default function DealsPage() {
     const [exportLoading, setExportLoading] = useState(false);
     const [itemsPerPage] = useState(10);
     const [viewMode, setViewMode] = useState<ViewMode>("table");
+    // User permissions
+    const [userPermissions, setUserPermissions] = useState<string[]>([]);
+    const [userRole, setUserRole] = useState<string>("");
+
+    // Permission helpers
+    const canWrite = (resource: string): boolean => {
+        if (userRole === "Admin") return true;
+        return userPermissions.includes(`${resource}:write`);
+    };
+
+    const canDelete = (resource: string): boolean => {
+        if (userRole === "Admin") return true;
+        return userPermissions.includes(`${resource}:delete`);
+    };
 
     // Modal states
     const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -135,7 +149,24 @@ export default function DealsPage() {
 
     useEffect(() => {
         fetchDeals();
+        fetchUserPermissions();
     }, [currentPage, statusFilter, searchTerm]);
+
+    const fetchUserPermissions = async () => {
+        try {
+            const token = localStorage.getItem("access_token");
+            const response = await fetch("/api/me", {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setUserPermissions(data.data.user_permissions || []);
+                setUserRole(data.data.role || "");
+            }
+        } catch (error) {
+            console.error("Error fetching user permissions:", error);
+        }
+    };
 
     const fetchDeals = async () => {
         try {
@@ -427,13 +458,15 @@ export default function DealsPage() {
                         <RefreshCw className="w-4 h-4" />
                         Refresh
                     </button>
-                    <button
-                        onClick={handleAdd}
-                        className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2"
-                    >
-                        <Plus className="w-4 h-4" />
-                        New Deal
-                    </button>
+                    {canWrite("deals") && (
+                        <button
+                            onClick={handleAdd}
+                            className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2"
+                        >
+                            <Plus className="w-4 h-4" />
+                            New Deal
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -628,20 +661,24 @@ export default function DealsPage() {
                                                     >
                                                         <Eye className="w-4 h-4 text-blue-500" />
                                                     </button>
-                                                    <button
-                                                        onClick={() => handleEdit(deal)}
-                                                        className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
-                                                        title="Edit"
-                                                    >
-                                                        <Edit className="w-4 h-4 text-amber-500" />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleDelete(deal)}
-                                                        className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
-                                                        title="Delete"
-                                                    >
-                                                        <Trash2 className="w-4 h-4 text-red-500" />
-                                                    </button>
+                                                    {canWrite("deals") && (
+                                                        <button
+                                                            onClick={() => handleEdit(deal)}
+                                                            className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                                            title="Edit"
+                                                        >
+                                                            <Edit className="w-4 h-4 text-amber-500" />
+                                                        </button>
+                                                    )}
+                                                    {canDelete("deals") && (
+                                                        <button
+                                                            onClick={() => handleDelete(deal)}
+                                                            className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                                            title="Delete"
+                                                        >
+                                                            <Trash2 className="w-4 h-4 text-red-500" />
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>
@@ -726,18 +763,22 @@ export default function DealsPage() {
                                             >
                                                 <Eye className="w-4 h-4 text-blue-500" />
                                             </button>
-                                            <button
-                                                onClick={() => handleEdit(deal)}
-                                                className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
-                                            >
-                                                <Edit className="w-4 h-4 text-amber-500" />
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(deal)}
-                                                className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
-                                            >
-                                                <Trash2 className="w-4 h-4 text-red-500" />
-                                            </button>
+                                            {canWrite("deals") && (
+                                                <button
+                                                    onClick={() => handleEdit(deal)}
+                                                    className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                                >
+                                                    <Edit className="w-4 h-4 text-amber-500" />
+                                                </button>
+                                            )}
+                                            {canDelete("deals") && (
+                                                <button
+                                                    onClick={() => handleDelete(deal)}
+                                                    className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                                >
+                                                    <Trash2 className="w-4 h-4 text-red-500" />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                     {/* Status and Price Row */}
@@ -972,18 +1013,22 @@ export default function DealsPage() {
                                             >
                                                 <Eye className="w-4 h-4 text-blue-500" />
                                             </button>
-                                            <button
-                                                onClick={() => handleEdit(deal)}
-                                                className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
-                                            >
-                                                <Edit className="w-4 h-4 text-amber-500" />
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(deal)}
-                                                className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
-                                            >
-                                                <Trash2 className="w-4 h-4 text-red-500" />
-                                            </button>
+                                            {canWrite("deals") && (
+                                                <button
+                                                    onClick={() => handleEdit(deal)}
+                                                    className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                                >
+                                                    <Edit className="w-4 h-4 text-amber-500" />
+                                                </button>
+                                            )}
+                                            {canDelete("deals") && (
+                                                <button
+                                                    onClick={() => handleDelete(deal)}
+                                                    className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                                >
+                                                    <Trash2 className="w-4 h-4 text-red-500" />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 </div>

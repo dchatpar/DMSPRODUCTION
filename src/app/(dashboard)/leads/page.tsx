@@ -93,6 +93,20 @@ export default function LeadsPage() {
     const [totalItems, setTotalItems] = useState(0);
     const [itemsPerPage] = useState(10);
     const [viewMode, setViewMode] = useState<ViewMode>("table");
+    // User permissions
+    const [userPermissions, setUserPermissions] = useState<string[]>([]);
+    const [userRole, setUserRole] = useState<string>("");
+
+    // Permission helpers
+    const canWrite = (resource: string): boolean => {
+        if (userRole === "Admin") return true;
+        return userPermissions.includes(`${resource}:write`);
+    };
+
+    const canDelete = (resource: string): boolean => {
+        if (userRole === "Admin") return true;
+        return userPermissions.includes(`${resource}:delete`);
+    };
 
     // Modal states
     const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -109,7 +123,24 @@ export default function LeadsPage() {
 
     useEffect(() => {
         fetchLeads();
+        fetchUserPermissions();
     }, [currentPage, statusFilter, sourceFilter, searchTerm, createdAtFrom, createdAtTo]);
+
+    const fetchUserPermissions = async () => {
+        try {
+            const token = localStorage.getItem("access_token");
+            const response = await fetch("/api/me", {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setUserPermissions(data.data.user_permissions || []);
+                setUserRole(data.data.role || "");
+            }
+        } catch (error) {
+            console.error("Error fetching user permissions:", error);
+        }
+    };
 
     const fetchLeads = async () => {
         try {
@@ -356,13 +387,15 @@ export default function LeadsPage() {
                         <RefreshCw className="w-4 h-4" />
                         <span className="hidden sm:inline">Refresh</span>
                     </button>
-                    <button
-                        onClick={handleAdd}
-                        className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-1 sm:gap-2"
-                    >
-                        <UserPlus className="w-4 h-4" />
-                        <span className="hidden sm:inline">Add Lead</span>
-                    </button>
+                    {canWrite("leads") && (
+                        <button
+                            onClick={handleAdd}
+                            className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-1 sm:gap-2"
+                        >
+                            <UserPlus className="w-4 h-4" />
+                            <span className="hidden sm:inline">Add Lead</span>
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -622,20 +655,24 @@ export default function LeadsPage() {
                                                     >
                                                         <Eye className="w-4 h-4 text-blue-500" />
                                                     </button>
-                                                    <button
-                                                        onClick={() => handleEdit(lead)}
-                                                        className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
-                                                        title="Edit"
-                                                    >
-                                                        <Edit className="w-4 h-4 text-amber-500" />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleDelete(lead)}
-                                                        className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
-                                                        title="Delete"
-                                                    >
-                                                        <Trash2 className="w-4 h-4 text-red-500" />
-                                                    </button>
+                                                    {canWrite("leads") && (
+                                                        <button
+                                                            onClick={() => handleEdit(lead)}
+                                                            className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                                            title="Edit"
+                                                        >
+                                                            <Edit className="w-4 h-4 text-amber-500" />
+                                                        </button>
+                                                    )}
+                                                    {canDelete("leads") && (
+                                                        <button
+                                                            onClick={() => handleDelete(lead)}
+                                                            className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                                            title="Delete"
+                                                        >
+                                                            <Trash2 className="w-4 h-4 text-red-500" />
+                                                        </button>
+                                                    )}
                                                     <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
                                                         <MoreVertical className="w-4 h-4 text-gray-400" />
                                                     </button>
@@ -710,18 +747,22 @@ export default function LeadsPage() {
                                             >
                                                 <Eye className="w-4 h-4 text-blue-500" />
                                             </button>
-                                            <button
-                                                onClick={() => handleEdit(lead)}
-                                                className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
-                                            >
-                                                <Edit className="w-4 h-4 text-amber-500" />
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(lead)}
-                                                className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
-                                            >
-                                                <Trash2 className="w-4 h-4 text-red-500" />
-                                            </button>
+                                            {canWrite("leads") && (
+                                                <button
+                                                    onClick={() => handleEdit(lead)}
+                                                    className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                                >
+                                                    <Edit className="w-4 h-4 text-amber-500" />
+                                                </button>
+                                            )}
+                                            {canDelete("leads") && (
+                                                <button
+                                                    onClick={() => handleDelete(lead)}
+                                                    className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                                >
+                                                    <Trash2 className="w-4 h-4 text-red-500" />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                     {/* Info Row */}

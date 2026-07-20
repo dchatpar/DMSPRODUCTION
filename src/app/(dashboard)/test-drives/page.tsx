@@ -118,9 +118,41 @@ export default function TestDrivesPage() {
         loading: boolean;
     }>({ testDrive: null, loading: false });
 
+    // User permissions
+    const [userPermissions, setUserPermissions] = useState<string[]>([]);
+    const [userRole, setUserRole] = useState<string>("");
+
+    // Permission helpers
+    const canWrite = (resource: string): boolean => {
+        if (userRole === "Admin") return true;
+        return userPermissions.includes(`${resource}:write`);
+    };
+
+    const canDelete = (resource: string): boolean => {
+        if (userRole === "Admin") return true;
+        return userPermissions.includes(`${resource}:delete`);
+    };
+
     useEffect(() => {
         fetchTestDrives();
+        fetchUserPermissions();
     }, [currentPage, statusFilter, searchTerm, scheduledDateFrom, scheduledDateTo, vehicleFilter]);
+
+    const fetchUserPermissions = async () => {
+        try {
+            const token = localStorage.getItem("access_token");
+            const response = await fetch("/api/me", {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setUserPermissions(data.data.user_permissions || []);
+                setUserRole(data.data.role || "");
+            }
+        } catch (error) {
+            console.error("Error fetching user permissions:", error);
+        }
+    };
 
     const fetchTestDrives = async () => {
         try {
@@ -365,13 +397,15 @@ export default function TestDrivesPage() {
                         <RefreshCw className="w-4 h-4" />
                         Refresh
                     </button>
-                    <button
-                        onClick={handleAdd}
-                        className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2"
-                    >
-                        <Plus className="w-4 h-4" />
-                        Schedule Test Drive
-                    </button>
+                    {canWrite("test_drives") && (
+                        <button
+                            onClick={handleAdd}
+                            className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2"
+                        >
+                            <Plus className="w-4 h-4" />
+                            Schedule Test Drive
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -622,20 +656,24 @@ export default function TestDrivesPage() {
                                                 >
                                                     <Eye className="w-4 h-4 text-blue-500" />
                                                 </button>
-                                                <button
-                                                    onClick={() => handleEdit(testDrive)}
-                                                    className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
-                                                    title="Edit"
-                                                >
-                                                    <Edit className="w-4 h-4 text-amber-500" />
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDelete(testDrive)}
-                                                    className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
-                                                    title="Delete"
-                                                >
-                                                    <Trash2 className="w-4 h-4 text-red-500" />
-                                                </button>
+                                                {canWrite("test_drives") && (
+                                                    <button
+                                                        onClick={() => handleEdit(testDrive)}
+                                                        className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                                        title="Edit"
+                                                    >
+                                                        <Edit className="w-4 h-4 text-amber-500" />
+                                                    </button>
+                                                )}
+                                                {canDelete("test_drives") && (
+                                                    <button
+                                                        onClick={() => handleDelete(testDrive)}
+                                                        className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                                        title="Delete"
+                                                    >
+                                                        <Trash2 className="w-4 h-4 text-red-500" />
+                                                    </button>
+                                                )}
                                                 <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
                                                     <MoreVertical className="w-4 h-4 text-gray-400" />
                                                 </button>
@@ -699,18 +737,22 @@ export default function TestDrivesPage() {
                                         >
                                             <Eye className="w-4 h-4 text-blue-500" />
                                         </button>
-                                        <button
-                                            onClick={() => handleEdit(testDrive)}
-                                            className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
-                                        >
-                                            <Edit className="w-4 h-4 text-amber-500" />
-                                        </button>
-                                        <button
-                                            onClick={() => handleDelete(testDrive)}
-                                            className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
-                                        >
-                                            <Trash2 className="w-4 h-4 text-red-500" />
-                                        </button>
+                                        {canWrite("test_drives") && (
+                                            <button
+                                                onClick={() => handleEdit(testDrive)}
+                                                className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                            >
+                                                <Edit className="w-4 h-4 text-amber-500" />
+                                            </button>
+                                        )}
+                                        {canDelete("test_drives") && (
+                                            <button
+                                                onClick={() => handleDelete(testDrive)}
+                                                className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                            >
+                                                <Trash2 className="w-4 h-4 text-red-500" />
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="flex flex-wrap gap-2 mb-2">
