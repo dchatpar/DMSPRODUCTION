@@ -2,6 +2,32 @@
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
 
+// Helper function to enrich a test drive with related data
+async function enrichTestDrive(supabase: any, testDrive: any) {
+    const [customerData, leadData, vehicleData, userData] = await Promise.all([
+        testDrive.customer_id
+            ? supabase.from("customers").select("id, name, email, phone").eq("id", testDrive.customer_id).single()
+            : { data: null },
+        testDrive.lead_id
+            ? supabase.from("leads").select("id, source, status").eq("id", testDrive.lead_id).single()
+            : { data: null },
+        testDrive.vehicle_id
+            ? supabase.from("vehicles").select("id, make, model, year, vin, stock_number").eq("id", testDrive.vehicle_id).single()
+            : { data: null },
+        testDrive.user_id
+            ? supabase.from("users").select("id, full_name, email").eq("id", testDrive.user_id).single()
+            : { data: null },
+    ]);
+
+    return {
+        ...testDrive,
+        customer: customerData.data,
+        lead: leadData.data,
+        vehicle: vehicleData.data,
+        salesperson: userData.data,
+    };
+}
+
 // GET single test drive
 export async function GET(
     req: NextRequest,
@@ -22,7 +48,6 @@ export async function GET(
             throw error;
         }
 
-        // Verify user is authenticated
         const { data: { user }, error: authError } = await supabase.auth.getUser();
 
         if (authError || !user) {
@@ -34,41 +59,9 @@ export async function GET(
 
         const { id } = await params;
 
-        const { data, error: dbError } = await supabase
+        const { data: testDrive, error: dbError } = await supabase
             .from("test_drives")
-            .select(`
-                *,
-                customer:customers(
-                    id, 
-                    name, 
-                    email, 
-                    phone
-                ),
-                lead:leads(
-                    id, 
-                    source, 
-                    status, 
-                    customer:customers(
-                        id, 
-                        name, 
-                        email, 
-                        phone
-                    )
-                ),
-                vehicle:vehicles(
-                    id, 
-                    make, 
-                    model, 
-                    year, 
-                    vin, 
-                    stock_number
-                ),
-                salesperson:users(
-                    id, 
-                    full_name, 
-                    email
-                )
-            `)
+            .select("*")
             .eq("id", id)
             .single();
 
@@ -82,7 +75,9 @@ export async function GET(
             throw dbError;
         }
 
-        return NextResponse.json({ data });
+        const enriched = await enrichTestDrive(supabase, testDrive);
+
+        return NextResponse.json({ data: enriched });
     } catch (error: any) {
         console.error("Error fetching test drive:", error);
         return NextResponse.json(
@@ -112,7 +107,6 @@ export async function PUT(
             throw error;
         }
 
-        // Verify user is authenticated
         const { data: { user }, error: authError } = await supabase.auth.getUser();
 
         if (authError || !user) {
@@ -125,8 +119,8 @@ export async function PUT(
         const { id } = await params;
         const payload = await req.json();
 
-        // Validate required fields for full update
-        const required = ["vehicle_id", "driver_license_number", "driver_license_expiry", "start_time"];
+        // Validate required fields for full update - use actual schema columns
+        const required = ["vehicle_id", "scheduled_date"];
         for (const field of required) {
             if (!payload[field]) {
                 return NextResponse.json(
@@ -154,68 +148,23 @@ export async function PUT(
             );
         }
 
-        // Validate date/time
-        const startTime = new Date(payload.start_time);
-        if (isNaN(startTime.getTime())) {
-            return NextResponse.json(
-                { error: "Invalid start_time format" },
-                { status: 400 }
-            );
-        }
+        // Build update data - use actual schema column names
+        const updateData = {
+            vehicle_id: payload.vehicle_id,
+            customer_id: payload.customer_id || null,
+            lead_id: payload.lead_id || null,
+            user_id: payload.user_id || null,
+            scheduled_date: payload.scheduled_date,
+            status: payload.status || "Scheduled",
+            notes: payload.notes || null,
+            outcome: payload.outcome || null,
+        };
 
-        if (payload.end_time) {
-            const endTime = new Date(payload.end_time);
-            if (isNaN(endTime.getTime())) {
-                return NextResponse.json(
-                    { error: "Invalid end_time format" },
-                    { status: 400 }
-                );
-            }
-            if (endTime < startTime) {
-                return NextResponse.json(
-                    { error: "end_time must be after start_time" },
-                    { status: 400 }
-                );
-            }
-        }
-
-        const { data, error: dbError } = await supabase
+        const { data: updatedTestDrive, error: dbError } = await supabase
             .from("test_drives")
-            .update(payload)
+            .update(updateData)
             .eq("id", id)
-            .select(`
-                *,
-                customer:customers(
-                    id, 
-                    name, 
-                    email, 
-                    phone
-                ),
-                lead:leads(
-                    id, 
-                    source, 
-                    status, 
-                    customer:customers(
-                        id, 
-                        name, 
-                        email, 
-                        phone
-                    )
-                ),
-                vehicle:vehicles(
-                    id, 
-                    make, 
-                    model, 
-                    year, 
-                    vin, 
-                    stock_number
-                ),
-                salesperson:users(
-                    id, 
-                    full_name, 
-                    email
-                )
-            `)
+            .select("*")
             .single();
 
         if (dbError) {
@@ -228,7 +177,9 @@ export async function PUT(
             throw dbError;
         }
 
-        return NextResponse.json({ data });
+        const enriched = await enrichTestDrive(supabase, updatedTestDrive);
+
+        return NextResponse.json({ data: enriched });
     } catch (error: any) {
         console.error("Error updating test drive:", error);
         return NextResponse.json(
@@ -258,7 +209,6 @@ export async function PATCH(
             throw error;
         }
 
-        // Verify user is authenticated
         const { data: { user }, error: authError } = await supabase.auth.getUser();
 
         if (authError || !user) {
@@ -271,11 +221,10 @@ export async function PATCH(
         const { id } = await params;
         const payload = await req.json();
 
-        // Allowed fields for update
+        // Allowed fields for update - use actual schema column names
         const allowedFields = [
-            "customer_id", "lead_id", "vehicle_id", "driver_license_number",
-            "driver_license_expiry", "driver_license_image_url", "signature_image_url",
-            "start_time", "end_time", "salesperson_id", "notes", "status"
+            "customer_id", "lead_id", "vehicle_id", "user_id",
+            "scheduled_date", "notes", "outcome", "status"
         ];
         const updateFields = Object.keys(payload).filter(key => allowedFields.includes(key));
 
@@ -294,64 +243,17 @@ export async function PATCH(
             );
         }
 
-        // Validate date/time if provided
-        if (payload.start_time) {
-            const startTime = new Date(payload.start_time);
-            if (isNaN(startTime.getTime())) {
-                return NextResponse.json(
-                    { error: "Invalid start_time format" },
-                    { status: 400 }
-                );
-            }
+        // Build update object
+        const updateData: Record<string, any> = {};
+        for (const field of updateFields) {
+            updateData[field] = payload[field];
         }
 
-        if (payload.end_time) {
-            const endTime = new Date(payload.end_time);
-            if (isNaN(endTime.getTime())) {
-                return NextResponse.json(
-                    { error: "Invalid end_time format" },
-                    { status: 400 }
-                );
-            }
-        }
-
-        const { data, error: dbError } = await supabase
+        const { data: updatedTestDrive, error: dbError } = await supabase
             .from("test_drives")
-            .update(payload)
+            .update(updateData)
             .eq("id", id)
-            .select(`
-                *,
-                customer:customers(
-                    id, 
-                    name, 
-                    email, 
-                    phone
-                ),
-                lead:leads(
-                    id, 
-                    source, 
-                    status, 
-                    customer:customers(
-                        id, 
-                        name, 
-                        email, 
-                        phone
-                    )
-                ),
-                vehicle:vehicles(
-                    id, 
-                    make, 
-                    model, 
-                    year, 
-                    vin, 
-                    stock_number
-                ),
-                salesperson:users(
-                    id, 
-                    full_name, 
-                    email
-                )
-            `)
+            .select("*")
             .single();
 
         if (dbError) {
@@ -364,7 +266,9 @@ export async function PATCH(
             throw dbError;
         }
 
-        return NextResponse.json({ data });
+        const enriched = await enrichTestDrive(supabase, updatedTestDrive);
+
+        return NextResponse.json({ data: enriched });
     } catch (error: any) {
         console.error("Error updating test drive:", error);
         return NextResponse.json(
@@ -394,13 +298,41 @@ export async function DELETE(
             throw error;
         }
 
-        // Verify user is authenticated
         const { data: { user }, error: authError } = await supabase.auth.getUser();
 
         if (authError || !user) {
             return NextResponse.json(
                 { error: "Invalid or expired token" },
                 { status: 401 }
+            );
+        }
+
+        // Get current user's permissions
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("role, dealership_id, is_platform_admin, user_permissions")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        }
+
+        const userRole = currentUser.role;
+        const userPerms = currentUser.user_permissions || [];
+        const isPlatformAdmin = currentUser.is_platform_admin;
+
+        // Check test_drives:delete permission
+        const canDelete = isPlatformAdmin ||
+            userRole === "Admin" ||
+            userRole === "Manager" ||
+            userPerms.includes("test_drives:delete") ||
+            userPerms.includes("*");
+
+        if (!canDelete) {
+            return NextResponse.json(
+                { error: "Forbidden - You need test_drives:delete permission to delete test drives" },
+                { status: 403 }
             );
         }
 

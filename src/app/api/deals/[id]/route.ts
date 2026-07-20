@@ -34,6 +34,52 @@ export async function GET(
 
         const { id } = await params;
 
+        // Get current user's role and permissions
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("role, dealership_id, is_platform_admin")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        }
+
+        // First fetch the deal to check ownership
+        const { data: deal, error: dealError } = await supabase
+            .from("sales_deals")
+            .select("*, dealership_id, salesperson_id")
+            .eq("id", id)
+            .single();
+
+        if (dealError || !deal) {
+            if (dealError?.code === "PGRST116" || !deal) {
+                return NextResponse.json(
+                    { error: "Deal not found" },
+                    { status: 404 }
+                );
+            }
+            throw dealError;
+        }
+
+        // Scoping: Salesperson/Staff can only view their own deals
+        const isScopedUser = currentUser.role === "Salesperson" || currentUser.role === "Staff";
+        if (isScopedUser && deal.salesperson_id !== user.id) {
+            return NextResponse.json(
+                { error: "Access denied - you can only view your own deals" },
+                { status: 403 }
+            );
+        }
+
+        // Dealership check for non-platform-admin
+        if (!currentUser.is_platform_admin && deal.dealership_id !== currentUser.dealership_id) {
+            return NextResponse.json(
+                { error: "Access denied" },
+                { status: 403 }
+            );
+        }
+
+        // Now fetch full deal with relations
         const { data, error: dbError } = await supabase
             .from("sales_deals")
             .select(`
@@ -206,8 +252,53 @@ export async function PATCH(
             );
         }
 
+        // Get current user's permissions
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("role, dealership_id, is_platform_admin, user_permissions")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        }
+
+        const userRole = currentUser.role;
+        const userPerms = currentUser.user_permissions || [];
+        const isPlatformAdmin = currentUser.is_platform_admin;
+
         const { id } = await params;
         const payload = await req.json();
+
+        // Check deals:close permission for closing a deal (Paid Off)
+        if (payload.deal_status === 'Paid Off') {
+            const canCloseDeal = isPlatformAdmin ||
+                userRole === "Admin" ||
+                userRole === "Manager" ||
+                userPerms.includes("deals:close") ||
+                userPerms.includes("*");
+            if (!canCloseDeal) {
+                return NextResponse.json(
+                    { error: "Forbidden - You need deals:close permission to close deals" },
+                    { status: 403 }
+                );
+            }
+        }
+
+        // Check deals:cancel permission for cancelling a deal
+        if (payload.deal_status === 'Cancelled') {
+            const canCancelDeal = isPlatformAdmin ||
+                userRole === "Admin" ||
+                userRole === "Manager" ||
+                userPerms.includes("deals:cancel") ||
+                userPerms.includes("*");
+            if (!canCancelDeal) {
+                return NextResponse.json(
+                    { error: "Forbidden - You need deals:cancel permission to cancel deals" },
+                    { status: 403 }
+                );
+            }
+        }
 
         // Validate deal_status if being updated
         if (payload.deal_status) {

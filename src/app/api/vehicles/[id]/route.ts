@@ -90,8 +90,51 @@ export async function PUT(
             );
         }
 
+        // Get current user's permissions
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("role, dealership_id, is_platform_admin, user_permissions")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        }
+
+        const userRole = currentUser.role;
+        const userPerms = currentUser.user_permissions || [];
+        const isPlatformAdmin = currentUser.is_platform_admin;
+
+        const canManagePricing = isPlatformAdmin ||
+            userRole === "Admin" ||
+            userRole === "Manager" ||
+            userPerms.includes("vehicles:pricing") ||
+            userPerms.includes("*");
+
+        const canManagePhotos = isPlatformAdmin ||
+            userRole === "Admin" ||
+            userRole === "Manager" ||
+            userPerms.includes("vehicles:photos") ||
+            userPerms.includes("*");
+
         const { id } = await params;
         const payload = await req.json();
+
+        // Check pricing permission if retail_price is being modified
+        if (payload.retail_price !== undefined && !canManagePricing) {
+            return NextResponse.json(
+                { error: "Forbidden - You need vehicles:pricing permission to modify pricing" },
+                { status: 403 }
+            );
+        }
+
+        // Check photos permission if image_gallery is being modified
+        if (payload.image_gallery !== undefined && !canManagePhotos) {
+            return NextResponse.json(
+                { error: "Forbidden - You need vehicles:photos permission to modify photos" },
+                { status: 403 }
+            );
+        }
 
         // Validate required fields for update (optional fields)
         const allowedFields = [
@@ -172,8 +215,51 @@ export async function PATCH(
             );
         }
 
+        // Get current user's permissions
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("role, dealership_id, is_platform_admin, user_permissions")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        }
+
+        const userRole = currentUser.role;
+        const userPerms = currentUser.user_permissions || [];
+        const isPlatformAdmin = currentUser.is_platform_admin;
+
+        const canManagePricing = isPlatformAdmin ||
+            userRole === "Admin" ||
+            userRole === "Manager" ||
+            userPerms.includes("vehicles:pricing") ||
+            userPerms.includes("*");
+
+        const canManagePhotos = isPlatformAdmin ||
+            userRole === "Admin" ||
+            userRole === "Manager" ||
+            userPerms.includes("vehicles:photos") ||
+            userPerms.includes("*");
+
         const { id } = await params;
         const payload = await req.json();
+
+        // Check pricing permission if retail_price is being modified
+        if (payload.retail_price !== undefined && !canManagePricing) {
+            return NextResponse.json(
+                { error: "Forbidden - You need vehicles:pricing permission to modify pricing" },
+                { status: 403 }
+            );
+        }
+
+        // Check photos permission if image_gallery is being modified
+        if (payload.image_gallery !== undefined && !canManagePhotos) {
+            return NextResponse.json(
+                { error: "Forbidden - You need vehicles:photos permission to modify photos" },
+                { status: 403 }
+            );
+        }
 
         const { data, error: dbError } = await supabase
             .from("vehicles")

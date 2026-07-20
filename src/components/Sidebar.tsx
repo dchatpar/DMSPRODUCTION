@@ -33,6 +33,11 @@ import {
     Calculator,
     Phone as PhoneIcon,
     FileSignature,
+    LogIn,
+    CreditCard,
+    UserCheck,
+    Key,
+    Flag,
 } from "lucide-react";
 
 interface UserData {
@@ -45,6 +50,7 @@ interface UserData {
     dealership_id: string | null;
     dealership_name?: string;
     user_permissions?: string[];
+    effective_permissions?: string[];
 }
 
 // Platform admin navigation sections
@@ -54,11 +60,18 @@ const platformAdminSections = [
         items: [
             { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
             { name: "All Dealerships", href: "/dealerships", icon: Store },
+            { name: "Audit Logs", href: "/platform/audit-logs", icon: Shield },
+            { name: "Login History", href: "/platform/login-history", icon: LogIn },
+            { name: "Analytics", href: "/platform/analytics", icon: BarChart3 },
+            { name: "Subscriptions", href: "/platform/subscriptions", icon: CreditCard },
         ],
     },
     {
-        title: "SETTINGS",
+        title: "ADMIN TOOLS",
         items: [
+            { name: "Impersonate User", href: "/platform/impersonate", icon: UserCheck },
+            { name: "Reset Password", href: "/platform/reset-password", icon: Key },
+            { name: "Feature Flags", href: "/platform/feature-flags", icon: Flag },
             { name: "Platform Settings", href: "/settings/platform", icon: Settings },
         ],
     },
@@ -279,10 +292,25 @@ export default function Sidebar() {
         // Admin and platform admin see everything
         if (userData?.role === "Admin" || userData?.is_platform_admin) return true;
 
+        // Get user's effective permissions (role + individual overrides)
+        const effectivePermissions: string[] = userData?.effective_permissions || userData?.user_permissions || [];
+
+        // If user has full access (*), show everything
+        if (effectivePermissions.includes("*")) return true;
+
         // Check if user has the required permission for this page
         const permKey = pagePermMap[href];
         if (!permKey) return true; // If not in map, show it
-        return userData?.user_permissions?.includes(permKey) ?? false;
+
+        // Check for specific permission
+        if (effectivePermissions.includes(permKey)) return true;
+
+        // Also check for :assigned variant (user can see assigned items only)
+        // e.g., leads:read:assigned means they can see leads nav but scoped to assigned
+        const assignedPermKey = permKey + ":assigned";
+        if (effectivePermissions.includes(assignedPermKey)) return true;
+
+        return false;
     };
 
     // Filter navigation items based on permissions

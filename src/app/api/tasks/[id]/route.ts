@@ -212,6 +212,35 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
             return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
         }
 
+        // Get current user's permissions
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("role, dealership_id, is_platform_admin, user_permissions")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        }
+
+        const userRole = currentUser.role;
+        const userPerms = currentUser.user_permissions || [];
+        const isPlatformAdmin = currentUser.is_platform_admin;
+
+        // Check tasks:delete permission
+        const canDelete = isPlatformAdmin ||
+            userRole === "Admin" ||
+            userRole === "Manager" ||
+            userPerms.includes("tasks:delete") ||
+            userPerms.includes("*");
+
+        if (!canDelete) {
+            return NextResponse.json(
+                { error: "Forbidden - You need tasks:delete permission to delete tasks" },
+                { status: 403 }
+            );
+        }
+
         // Delete related records first (cascades should handle this, but being explicit)
         await supabase.from("task_reminders").delete().eq("task_id", id);
         await supabase.from("task_attachments").delete().eq("task_id", id);

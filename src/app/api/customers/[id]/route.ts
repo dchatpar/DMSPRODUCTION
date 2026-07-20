@@ -254,6 +254,35 @@ export async function DELETE(
             );
         }
 
+        // Get current user's permissions
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("role, dealership_id, is_platform_admin, user_permissions")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        }
+
+        const userRole = currentUser.role;
+        const userPerms = currentUser.user_permissions || [];
+        const isPlatformAdmin = currentUser.is_platform_admin;
+
+        // Check customers:delete permission
+        const canDelete = isPlatformAdmin ||
+            userRole === "Admin" ||
+            userRole === "Manager" ||
+            userPerms.includes("customers:delete") ||
+            userPerms.includes("*");
+
+        if (!canDelete) {
+            return NextResponse.json(
+                { error: "Forbidden - You need customers:delete permission to delete customers" },
+                { status: 403 }
+            );
+        }
+
         const { id } = await params;
 
         // Check if customer has any related records (sales, leads, etc.)

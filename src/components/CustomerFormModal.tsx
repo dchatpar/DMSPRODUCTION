@@ -39,6 +39,13 @@ interface CustomerFormModalProps {
     onSuccess: () => void;
 }
 
+interface User {
+    id: string;
+    full_name: string;
+    email: string;
+    role: string;
+}
+
 export default function CustomerFormModal({
     mode,
     customer,
@@ -48,6 +55,9 @@ export default function CustomerFormModal({
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [showOCR, setShowOCR] = useState(false);
+    const [users, setUsers] = useState<User[]>([]);
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
     const [formData, setFormData] = useState({
         name: "",
         email: "",
@@ -57,9 +67,43 @@ export default function CustomerFormModal({
         province: "",  // Changed from 'state'
         postal_code: "",  // Changed from 'zip'
         notes: "",
+        assigned_to: "",
     });
 
     useEffect(() => {
+        // Fetch current user info and users list
+        const fetchData = async () => {
+            const token = localStorage.getItem("access_token");
+            if (!token) return;
+
+            try {
+                // Get current user
+                const meResponse = await fetch("/api/me", {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                if (meResponse.ok) {
+                    const meData = await meResponse.json();
+                    setCurrentUserId(meData.data?.id);
+                    setCurrentUserRole(meData.data?.role);
+
+                    // If Admin/Manager, fetch all users in dealership to assign
+                    if (meData.data?.role === "Admin" || meData.data?.role === "Manager") {
+                        const usersResponse = await fetch("/api/users", {
+                            headers: { Authorization: `Bearer ${token}` },
+                        });
+                        if (usersResponse.ok) {
+                            const usersData = await usersResponse.json();
+                            setUsers(usersData.data || []);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("Error fetching data:", err);
+            }
+        };
+
+        fetchData();
+
         if (mode === "edit" && customer) {
             setFormData({
                 name: customer.name,
@@ -67,9 +111,10 @@ export default function CustomerFormModal({
                 phone: customer.phone || "",
                 address: customer.address || "",
                 city: customer.city || "",
-                province: customer.province || "",  // Changed from 'state'
-                postal_code: customer.postal_code || "",  // Changed from 'zip'
-                notes: customer.notes || ""
+                province: customer.province || "",
+                postal_code: customer.postal_code || "",
+                notes: customer.notes || "",
+                assigned_to: (customer as any)?.assigned_to || "",
             });
         }
     }, [mode, customer]);
@@ -94,7 +139,7 @@ export default function CustomerFormModal({
             const url = mode === "add" ? "/api/customers" : `/api/customers/${customer?.id}`;
             const method = mode === "add" ? "POST" : "PATCH";
 
-            const payload = {
+            const payload: Record<string, any> = {
                 name: formData.name,
                 email: formData.email || null,
                 phone: formData.phone || null,
@@ -104,6 +149,11 @@ export default function CustomerFormModal({
                 postal_code: formData.postal_code || null,  // Changed from 'zip'
                 notes: formData.notes || null,
             };
+
+            // Include assigned_to if Admin/Manager set it
+            if (formData.assigned_to) {
+                payload.assigned_to = formData.assigned_to;
+            }
 
             const response = await fetch(url, {
                 method,
@@ -316,6 +366,31 @@ export default function CustomerFormModal({
                                     />
                                 </div>
                             </div>
+
+                            {/* Assign To - Only shown for Admin/Manager */}
+                            {(currentUserRole === "Admin" || currentUserRole === "Manager") && users.length > 0 && (
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                        Assign To
+                                    </label>
+                                    <select
+                                        name="assigned_to"
+                                        value={formData.assigned_to}
+                                        onChange={handleChange}
+                                        className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                                    >
+                                        <option value="">Unassigned (Visible to all)</option>
+                                        {users.map((user) => (
+                                            <option key={user.id} value={user.id}>
+                                                {user.full_name || user.email} ({user.role})
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <p className="mt-1 text-xs text-gray-500">
+                                        Assign this customer to a specific user. Unassigned customers are visible to all.
+                                    </p>
+                                </div>
+                            )}
 
                             {/* Actions */}
                             <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-gray-200">

@@ -34,7 +34,59 @@ export async function GET(
 
         const { id } = await params;
 
-        const { data, error: dbError } = await supabase
+        // Get user's profile
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("role, dealership_id, is_platform_admin, user_permissions")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        }
+
+        const { data: lead, error: dbError } = await supabase
+            .from("leads")
+            .select("*, dealership_id, assigned_to")
+            .eq("id", id)
+            .single();
+
+        if (dbError || !lead) {
+            if (dbError?.code === "PGRST116" || !lead) {
+                return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+            }
+            throw dbError;
+        }
+
+        // Check access: Admin/Manager/PlatformAdmin can view all
+        // Others with leads:read (without :assigned) can view all
+        // Others with leads:read:assigned can only view assigned leads
+        // If user has neither permission, deny access
+        const userPerms = currentUser.user_permissions || [];
+        const isAdminOrManager = currentUser.is_platform_admin ||
+            currentUser.role === "Admin" ||
+            currentUser.role === "Manager";
+
+        const hasFullRead = isAdminOrManager || userPerms.includes("leads:read");
+        const hasAssignedOnly = userPerms.includes("leads:read:assigned") && !userPerms.includes("leads:read");
+
+        // Deny if neither full read nor assigned-only permission
+        if (!hasFullRead && !hasAssignedOnly) {
+            return NextResponse.json({ error: "Access denied" }, { status: 403 });
+        }
+
+        // If has assigned-only permission, verify ownership
+        if (hasAssignedOnly && lead.assigned_to !== user.id) {
+            return NextResponse.json({ error: "Access denied - you can only view assigned leads" }, { status: 403 });
+        }
+
+        // Dealership check
+        if (!currentUser.is_platform_admin && lead.dealership_id !== currentUser.dealership_id) {
+            return NextResponse.json({ error: "Access denied" }, { status: 403 });
+        }
+
+        // Fetch full lead with relations
+        const { data: fullLead } = await supabase
             .from("leads")
             .select(`
                 *,
@@ -45,17 +97,7 @@ export async function GET(
             .eq("id", id)
             .single();
 
-        if (dbError) {
-            if (dbError.code === "PGRST116") {
-                return NextResponse.json(
-                    { error: "Lead not found" },
-                    { status: 404 }
-                );
-            }
-            throw dbError;
-        }
-
-        return NextResponse.json({ data });
+        return NextResponse.json({ data: fullLead });
     } catch (error: any) {
         console.error("Error fetching lead:", error);
         return NextResponse.json(
@@ -191,7 +233,6 @@ export async function PATCH(
             throw error;
         }
 
-        // Verify user is authenticated
         const { data: { user }, error: authError } = await supabase.auth.getUser();
 
         if (authError || !user) {
@@ -201,8 +242,32 @@ export async function PATCH(
             );
         }
 
+        // Get current user's permissions
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("role, dealership_id, is_platform_admin, user_permissions")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        }
+
+        const userRole = currentUser.role;
+        const userPermissions = currentUser.user_permissions || [];
+        const isPlatformAdmin = currentUser.is_platform_admin;
+        const canAssign = isPlatformAdmin || userRole === "Admin" || userRole === "Manager" || userPermissions.includes("leads:assign");
+
         const { id } = await params;
         const payload = await req.json();
+
+        // If changing assigned_to, require leads:assign permission
+        if (payload.assigned_to !== undefined && !canAssign) {
+            return NextResponse.json(
+                { error: "Forbidden - You need leads:assign permission to reassign leads" },
+                { status: 403 }
+            );
+        }
 
         // Allowed fields for update
         const allowedFields = ["customer_id", "source", "status", "interest_vehicle_id", "assigned_to", "notes"];
@@ -306,6 +371,35 @@ export async function DELETE(
             return NextResponse.json(
                 { error: "Invalid or expired token" },
                 { status: 401 }
+            );
+        }
+
+        // Get current user's permissions
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("role, dealership_id, is_platform_admin, user_permissions")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        }
+
+        const userRole = currentUser.role;
+        const userPerms = currentUser.user_permissions || [];
+        const isPlatformAdmin = currentUser.is_platform_admin;
+
+        // Check leads:delete permission
+        const canDelete = isPlatformAdmin ||
+            userRole === "Admin" ||
+            userRole === "Manager" ||
+            userPerms.includes("leads:delete") ||
+            userPerms.includes("*");
+
+        if (!canDelete) {
+            return NextResponse.json(
+                { error: "Forbidden - You need leads:delete permission to delete leads" },
+                { status: 403 }
             );
         }
 

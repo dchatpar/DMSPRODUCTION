@@ -19,7 +19,6 @@ export async function GET(req: NextRequest) {
             throw error;
         }
 
-        // Verify user is authenticated
         const { data: { user }, error: authError } = await supabase.auth.getUser();
 
         if (authError || !user) {
@@ -28,6 +27,21 @@ export async function GET(req: NextRequest) {
                 { status: 401 }
             );
         }
+
+        // Get user profile
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("role, dealership_id, is_platform_admin, user_permissions")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        }
+
+        const userRole = currentUser.role;
+        const userPermissions = currentUser.user_permissions || [];
+        const isPlatformAdmin = currentUser.is_platform_admin;
 
         const url = new URL(req.url);
         const limit = parseInt(url.searchParams.get("limit") || "50");
@@ -51,13 +65,30 @@ export async function GET(req: NextRequest) {
             .order("follow_up_date", { ascending: true })
             .range(offset, offset + limit - 1);
 
+        // Platform admin sees all - no dealership filter needed
+        // Others: filter by dealership
+        if (!isPlatformAdmin) {
+            if (!currentUser.dealership_id) {
+                return NextResponse.json({ error: "No dealership context" }, { status: 403 });
+            }
+            query = query.eq("dealership_id", currentUser.dealership_id);
+
+            // Scope to assigned follow-ups for Salesperson/Staff
+            const scopedToAssigned = userRole === "Salesperson" || userRole === "Staff";
+            const viewAll = userPermissions.includes("*") ||
+                (userPermissions.includes("follow_ups:read") && !userPermissions.includes("follow_ups:read:assigned"));
+
+            if (scopedToAssigned || !viewAll) {
+                query = query.eq("assigned_to", user.id);
+            }
+        }
+
         if (status) query = query.eq("status", status);
         if (priority) query = query.eq("priority", priority);
         if (overdue === "true") {
             query = query.eq("status", "Pending").lt("follow_up_date", new Date().toISOString());
         }
         if (q) {
-            // PostgREST doesn't support FK references in .or(), so only search on direct columns
             query = query.or(
                 `title.ilike.%${q}%,notes.ilike.%${q}%,description.ilike.%${q}%`
             );
@@ -101,7 +132,6 @@ export async function POST(req: NextRequest) {
             throw error;
         }
 
-        // Verify user is authenticated
         const { data: { user }, error: authError } = await supabase.auth.getUser();
 
         if (authError || !user) {
@@ -111,9 +141,28 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("role, dealership_id, is_platform_admin, user_permissions")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        }
+
+        // Check permission
+        const canCreate = currentUser.is_platform_admin ||
+            currentUser.role === "Admin" ||
+            currentUser.role === "Manager" ||
+            (currentUser.user_permissions || []).includes("follow_ups:write");
+
+        if (!canCreate) {
+            return NextResponse.json({ error: "Forbidden - You cannot create follow-ups" }, { status: 403 });
+        }
+
         const payload = await req.json();
 
-        // Validate required fields
         const required = ["title", "follow_up_date"];
         for (const field of required) {
             if (!payload[field]) {
@@ -124,7 +173,6 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        // Validate status if provided
         const validStatuses = ['Pending', 'Completed', 'Cancelled'];
         if (payload.status && !validStatuses.includes(payload.status)) {
             return NextResponse.json(
@@ -133,7 +181,6 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Validate priority if provided
         const validPriorities = ['Low', 'Medium', 'High', 'Urgent'];
         if (payload.priority && !validPriorities.includes(payload.priority)) {
             return NextResponse.json(
@@ -142,7 +189,6 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Set default values
         const followUpData = {
             title: payload.title,
             description: payload.description || null,
@@ -157,6 +203,7 @@ export async function POST(req: NextRequest) {
             notes: payload.notes || null,
             completed_at: payload.status === 'Completed' ? new Date().toISOString() : null,
             completed_by: payload.status === 'Completed' ? user.id : null,
+            dealership_id: currentUser.dealership_id,
         };
 
         const { data, error: dbError } = await supabase
@@ -173,7 +220,6 @@ export async function POST(req: NextRequest) {
 
         if (dbError) throw dbError;
 
-        // Create initial history entry
         if (data) {
             await supabase
                 .from("follow_up_history")

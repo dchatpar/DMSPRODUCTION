@@ -97,7 +97,7 @@ export async function GET(
     }
 }
 
-// PATCH update dealership (platform admin only)
+// PATCH update dealership (platform admin only) - also handles suspend/activate actions
 export async function PATCH(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -142,6 +142,52 @@ export async function PATCH(
             );
         }
 
+        const url = new URL(req.url);
+        const action = url.searchParams.get("action");
+
+        // Handle suspend/activate actions
+        if (action === "suspend" || action === "activate") {
+            const newStatus = action === "suspend" ? "Suspended" : "Active";
+
+            const { data: dealership, error: dbError } = await supabase
+                .from("dealerships")
+                .update({ status: newStatus })
+                .eq("id", id)
+                .select()
+                .single();
+
+            if (dbError) {
+                if (dbError.code === "PGRST116") {
+                    return NextResponse.json({ error: "Dealership not found" }, { status: 404 });
+                }
+                throw dbError;
+            }
+
+            // Deactivate/reactivate all users in the dealership
+            const newIsActive = action === "activate";
+            await supabase
+                .from("users")
+                .update({ is_active: newIsActive })
+                .eq("dealership_id", id);
+
+            // Log audit action
+            await supabase.rpc("log_audit_action", {
+                p_action: `dealership.${action}`,
+                p_entity_type: "dealership",
+                p_entity_id: id,
+                p_actor_id: user.id,
+                p_metadata: JSON.stringify({ status: newStatus }),
+            });
+
+            return NextResponse.json({
+                data: dealership,
+                message: action === "suspend"
+                    ? "Dealership suspended successfully. All users in this dealership have been deactivated."
+                    : "Dealership activated successfully. All users in this dealership have been activated."
+            });
+        }
+
+        // Normal update logic
         const payload = await req.json();
         const {
             name,

@@ -19,7 +19,6 @@ export async function GET(req: NextRequest) {
             throw error;
         }
 
-        // Verify user is authenticated
         const { data: { user }, error: authError } = await supabase.auth.getUser();
 
         if (authError || !user) {
@@ -28,6 +27,21 @@ export async function GET(req: NextRequest) {
                 { status: 401 }
             );
         }
+
+        // Get user profile
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("role, dealership_id, is_platform_admin, user_permissions")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        }
+
+        const userRole = currentUser.role;
+        const userPermissions = currentUser.user_permissions || [];
+        const isPlatformAdmin = currentUser.is_platform_admin;
 
         const url = new URL(req.url);
         const limit = parseInt(url.searchParams.get("limit") || "50");
@@ -46,10 +60,26 @@ export async function GET(req: NextRequest) {
             .order("created_at", { ascending: false })
             .range(offset, offset + limit - 1);
 
+        // Platform admin sees all
+        if (!isPlatformAdmin) {
+            if (!currentUser.dealership_id) {
+                return NextResponse.json({ error: "No dealership context" }, { status: 403 });
+            }
+
+            query = query.eq("dealership_id", currentUser.dealership_id);
+
+            // Scope to assigned deals for Salesperson/Staff
+            const scopedToAssigned = userRole === "Salesperson" || userRole === "Staff";
+            const viewAll = userPermissions.includes("*") ||
+                (userPermissions.includes("deals:read") && !userPermissions.includes("deals:read:assigned"));
+
+            if (scopedToAssigned || !viewAll) {
+                query = query.eq("salesperson_id", user.id);
+            }
+        }
+
         if (status) query = query.eq("deal_status", status);
         if (q) {
-            // Search on direct columns AND via FK lookups (two-step approach)
-            // Step 1: Find matching customer IDs
             const { data: matchingCustomers } = await supabase
                 .from("customers")
                 .select("id")
@@ -57,7 +87,6 @@ export async function GET(req: NextRequest) {
 
             const customerIds = matchingCustomers?.map(c => c.id) || [];
 
-            // Step 2: Find matching vehicle IDs (make/model/vin search)
             const { data: matchingVehicles } = await supabase
                 .from("vehicles")
                 .select("id")
@@ -65,7 +94,6 @@ export async function GET(req: NextRequest) {
 
             const vehicleIds = matchingVehicles?.map(v => v.id) || [];
 
-            // Apply search - direct columns OR customer match OR vehicle match
             query = query.or(
                 `notes.ilike.%${q}%,deal_status.ilike.%${q}%,finance_company.ilike.%${q}%` +
                 (customerIds.length > 0 ? `,customer_id.in.(${customerIds.join(',')})` : '') +
@@ -77,12 +105,7 @@ export async function GET(req: NextRequest) {
 
         if (dbError) throw dbError;
 
-        return NextResponse.json({
-            data: data || [],
-            count: count || 0,
-            limit,
-            offset,
-        });
+        return NextResponse.json({ data: data || [], count: count || 0, limit, offset });
     } catch (error: any) {
         console.error("Error fetching deals:", error);
         return NextResponse.json(
@@ -109,7 +132,6 @@ export async function POST(req: NextRequest) {
             throw error;
         }
 
-        // Verify user is authenticated
         const { data: { user }, error: authError } = await supabase.auth.getUser();
 
         if (authError || !user) {
@@ -119,9 +141,28 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("role, dealership_id, is_platform_admin, user_permissions")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        }
+
+        // Check permission
+        const canCreate = currentUser.is_platform_admin ||
+            currentUser.role === "Admin" ||
+            currentUser.role === "Manager" ||
+            (currentUser.user_permissions || []).includes("deals:write");
+
+        if (!canCreate) {
+            return NextResponse.json({ error: "Forbidden - You cannot create deals" }, { status: 403 });
+        }
+
         const payload = await req.json();
 
-        // Validate required fields
         const required = ["vehicle_id", "customer_id", "sale_price"];
         for (const field of required) {
             if (!payload[field]) {
@@ -132,7 +173,6 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        // Validate deal_status if provided
         const validStatuses = ['Negotiation', 'Down Payment', 'Finance', 'Paid Off', 'Cancelled'];
         if (payload.deal_status && !validStatuses.includes(payload.deal_status)) {
             return NextResponse.json(
@@ -141,7 +181,6 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Set default values
         const dealData = {
             vehicle_id: payload.vehicle_id,
             customer_id: payload.customer_id,
@@ -154,6 +193,7 @@ export async function POST(req: NextRequest) {
             finance_company: payload.finance_company || null,
             notes: payload.notes || null,
             deal_date: payload.deal_date || new Date().toISOString().split('T')[0],
+            dealership_id: currentUser.dealership_id,
         };
 
         const { data, error: dbError } = await supabase
@@ -169,7 +209,6 @@ export async function POST(req: NextRequest) {
 
         if (dbError) throw dbError;
 
-        // If deal is marked as Paid Off, update vehicle status to Sold
         if (payload.deal_status === 'Paid Off' || payload.close_deal) {
             await supabase
                 .from("vehicles")

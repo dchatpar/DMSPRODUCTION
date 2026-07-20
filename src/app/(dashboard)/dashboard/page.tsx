@@ -32,9 +32,26 @@ import {
     Loader2,
     AlertCircle,
     Package,
+    Building2,
+    TrendingDown,
+    UserCheck,
+    Briefcase,
+    Target,
+    CheckCircle,
+    AlertTriangle,
 } from "lucide-react";
 
 const COLORS = ["#3B82F6", "#8B5CF6", "#EC4899", "#F59E0B", "#10B981", "#6366F1", "#EF4444", "#14B8A6"];
+
+// Types
+interface UserProfile {
+    id: string;
+    full_name: string;
+    email: string;
+    role: string;
+    dealership_id: string;
+    is_platform_admin: boolean;
+}
 
 interface DashboardStats {
     totalVehicles: number;
@@ -106,6 +123,15 @@ export default function DashboardPage() {
     const [inventoryData, setInventoryData] = useState<ChartData[]>([]);
     const [salesStatusData, setSalesStatusData] = useState<ChartData[]>([]);
     const [expensesData, setExpensesData] = useState<ChartData[]>([]);
+    const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+
+    // Salesperson/Staff personal data
+    const [myLeads, setMyLeads] = useState<any[]>([]);
+    const [myDeals, setMyDeals] = useState<any[]>([]);
+    const [myTasks, setMyTasks] = useState<any[]>([]);
+
+    // Manager team data
+    const [teamStats, setTeamStats] = useState<any>(null);
 
     const router = useRouter();
 
@@ -120,82 +146,129 @@ export default function DashboardPage() {
                     return;
                 }
 
-                const [dashboardRes, leadsRes, vehiclesRes, dealsRes, expensesRes] = await Promise.all([
-                    fetch("/api/dashboard", { headers: { Authorization: `Bearer ${token}` } }),
-                    fetch("/api/leads?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
-                    fetch("/api/vehicles?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
-                    fetch("/api/deals?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
-                    fetch("/api/expenses?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
-                ]);
-
-                if (dashboardRes.status === 401) {
+                // First, get user profile to determine role
+                const meRes = await fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } });
+                if (meRes.status === 401) {
                     await supabaseBrowser.auth.signOut();
                     router.push("/login");
                     return;
                 }
+                const meData = await meRes.json();
+                setUserProfile(meData.data);
 
-                if (!dashboardRes.ok) throw new Error("Failed to fetch dashboard data");
+                const isPlatformAdmin = meData.data?.is_platform_admin;
+                const userRole = meData.data?.role;
 
-                const json = await dashboardRes.json();
-                setData(json);
+                // Fetch data based on role
+                if (isPlatformAdmin) {
+                    // Platform Admin - fetch platform analytics
+                    const analyticsRes = await fetch("/api/platform/analytics", { headers: { Authorization: `Bearer ${token}` } });
+                    if (analyticsRes.ok) {
+                        const analyticsData = await analyticsRes.json();
+                        setData({
+                            stats: {
+                                totalVehicles: analyticsData.dealerships?.total || 0,
+                                totalCustomers: analyticsData.users?.total || 0,
+                                totalLeads: 0,
+                                totalSales: 0,
+                                totalInvoices: 0,
+                                activeVehicles: 0,
+                                pendingInvoices: 0,
+                            },
+                            changes: { vehicles: 0, customers: 0, leads: 0, sales: 0, invoices: 0, activeVehicles: 0 },
+                            recentSales: [],
+                            recentLeads: [],
+                        });
+                    }
+                } else if (userRole === "Salesperson" || userRole === "Staff") {
+                    // Salesperson/Staff - fetch personal data only
+                    const [myTasksRes] = await Promise.all([
+                        fetch("/api/tasks?my_tasks=true&limit=10", { headers: { Authorization: `Bearer ${token}` } }),
+                    ]);
 
-                // Process leads data for source chart
-                if (leadsRes.ok) {
-                    const leadsJson = await leadsRes.json();
-                    const sourceCounts: Record<string, number> = {};
-                    leadsJson.data?.forEach((l: any) => {
-                        if (l.source) {
-                            sourceCounts[l.source] = (sourceCounts[l.source] || 0) + 1;
-                        }
-                    });
-                    const sorted = Object.entries(sourceCounts)
-                        .map(([name, value]) => ({ name, value }))
-                        .sort((a, b) => b.value - a.value)
-                        .slice(0, 6);
-                    setLeadsSourceData(sorted);
-                }
+                    if (myTasksRes.ok) {
+                        const tasksData = await myTasksRes.json();
+                        setMyTasks(tasksData.data || []);
+                    }
+                } else {
+                    // Admin/Manager - fetch full dealership data
+                    const [dashboardRes, leadsRes, vehiclesRes, dealsRes, expensesRes] = await Promise.all([
+                        fetch("/api/dashboard", { headers: { Authorization: `Bearer ${token}` } }),
+                        fetch("/api/leads?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
+                        fetch("/api/vehicles?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
+                        fetch("/api/deals?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
+                        fetch("/api/expenses?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
+                    ]);
 
-                // Process vehicles data for inventory chart
-                if (vehiclesRes.ok) {
-                    const vehiclesJson = await vehiclesRes.json();
-                    const statusCounts: Record<string, number> = {};
-                    vehiclesJson.data?.forEach((v: any) => {
-                        const status = v.status || "Unknown";
-                        statusCounts[status] = (statusCounts[status] || 0) + 1;
-                    });
-                    const chartData = Object.entries(statusCounts)
-                        .map(([name, value]) => ({ name, value }))
-                        .filter(item => item.value > 0);
-                    setInventoryData(chartData);
-                }
+                    if (dashboardRes.status === 401) {
+                        await supabaseBrowser.auth.signOut();
+                        router.push("/login");
+                        return;
+                    }
 
-                // Process deals data for sales status chart
-                if (dealsRes.ok) {
-                    const dealsJson = await dealsRes.json();
-                    const statusCounts: Record<string, number> = {};
-                    dealsJson.data?.forEach((d: any) => {
-                        const status = d.deal_status || "Unknown";
-                        statusCounts[status] = (statusCounts[status] || 0) + 1;
-                    });
-                    const chartData = Object.entries(statusCounts)
-                        .map(([name, value]) => ({ name, value }))
-                        .filter(item => item.value > 0);
-                    setSalesStatusData(chartData);
-                }
+                    if (!dashboardRes.ok) throw new Error("Failed to fetch dashboard data");
 
-                // Process expenses data for category chart
-                if (expensesRes.ok) {
-                    const expensesJson = await expensesRes.json();
-                    const categoryCounts: Record<string, number> = {};
-                    expensesJson.data?.forEach((e: any) => {
-                        const category = e.category || "Unknown";
-                        categoryCounts[category] = (categoryCounts[category] || 0) + 1;
-                    });
-                    const chartData = Object.entries(categoryCounts)
-                        .map(([name, value]) => ({ name, value }))
-                        .sort((a, b) => b.value - a.value)
-                        .slice(0, 6);
-                    setExpensesData(chartData);
+                    const json = await dashboardRes.json();
+                    setData(json);
+
+                    // Process leads data for source chart
+                    if (leadsRes.ok) {
+                        const leadsJson = await leadsRes.json();
+                        const sourceCounts: Record<string, number> = {};
+                        leadsJson.data?.forEach((l: any) => {
+                            if (l.source) {
+                                sourceCounts[l.source] = (sourceCounts[l.source] || 0) + 1;
+                            }
+                        });
+                        const sorted = Object.entries(sourceCounts)
+                            .map(([name, value]) => ({ name, value }))
+                            .sort((a, b) => b.value - a.value)
+                            .slice(0, 6);
+                        setLeadsSourceData(sorted);
+                    }
+
+                    // Process vehicles data for inventory chart
+                    if (vehiclesRes.ok) {
+                        const vehiclesJson = await vehiclesRes.json();
+                        const statusCounts: Record<string, number> = {};
+                        vehiclesJson.data?.forEach((v: any) => {
+                            const status = v.status || "Unknown";
+                            statusCounts[status] = (statusCounts[status] || 0) + 1;
+                        });
+                        const chartData = Object.entries(statusCounts)
+                            .map(([name, value]) => ({ name, value }))
+                            .filter(item => item.value > 0);
+                        setInventoryData(chartData);
+                    }
+
+                    // Process deals data for sales status chart
+                    if (dealsRes.ok) {
+                        const dealsJson = await dealsRes.json();
+                        const statusCounts: Record<string, number> = {};
+                        dealsJson.data?.forEach((d: any) => {
+                            const status = d.deal_status || "Unknown";
+                            statusCounts[status] = (statusCounts[status] || 0) + 1;
+                        });
+                        const chartData = Object.entries(statusCounts)
+                            .map(([name, value]) => ({ name, value }))
+                            .filter(item => item.value > 0);
+                        setSalesStatusData(chartData);
+                    }
+
+                    // Process expenses data for category chart
+                    if (expensesRes.ok) {
+                        const expensesJson = await expensesRes.json();
+                        const categoryCounts: Record<string, number> = {};
+                        expensesJson.data?.forEach((e: any) => {
+                            const category = e.category || "Unknown";
+                            categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+                        });
+                        const chartData = Object.entries(categoryCounts)
+                            .map(([name, value]) => ({ name, value }))
+                            .sort((a, b) => b.value - a.value)
+                            .slice(0, 6);
+                        setExpensesData(chartData);
+                    }
                 }
             } catch (err) {
                 setError(err instanceof Error ? err.message : "An error occurred");
@@ -206,6 +279,58 @@ export default function DashboardPage() {
 
         fetchDashboard();
     }, [router]);
+
+    // Render based on role
+    const isPlatformAdmin = userProfile?.is_platform_admin;
+    const userRole = userProfile?.role;
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center min-h-[400px]">
+                <div className="flex flex-col items-center gap-4">
+                    <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
+                    <p className="text-sm text-slate-600">Loading dashboard...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="flex items-center justify-center min-h-[400px]">
+                <div className="text-center">
+                    <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-3" />
+                    <div className="text-red-600 text-sm font-medium mb-2">Error loading dashboard</div>
+                    <p className="text-slate-600 text-sm">{error}</p>
+                    <button
+                        onClick={() => window.location.reload()}
+                        className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors"
+                    >
+                        Retry
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    if (!data && !isPlatformAdmin && (userRole === "Salesperson" || userRole === "Staff")) {
+        // Show personal dashboard for Salesperson/Staff
+        return (
+            <PersonalDashboard
+                userProfile={userProfile}
+                myTasks={myTasks}
+            />
+        );
+    }
+
+    if (isPlatformAdmin) {
+        // Show platform admin dashboard
+        return (
+            <PlatformAdminDashboard userProfile={userProfile} />
+        );
+    }
+
+    // Default: Admin/Manager Dashboard (existing code)
 
     if (loading) {
         return (
@@ -691,6 +816,466 @@ export default function DashboardPage() {
                             ))
                         )}
                     </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// =============================================================================
+// PERSONAL DASHBOARD - For Salesperson and Staff
+// =============================================================================
+function PersonalDashboard({ userProfile, myTasks }: { userProfile: UserProfile | null; myTasks: any[] }) {
+    const router = useRouter();
+    const getStatusColor = (status: string) => {
+        const colors: Record<string, string> = {
+            "Pending": "bg-yellow-100 text-yellow-800",
+            "In Progress": "bg-blue-100 text-blue-800",
+            "Completed": "bg-green-100 text-green-800",
+            "Cancelled": "bg-gray-100 text-gray-800",
+            "Not Started": "bg-slate-100 text-slate-800",
+        };
+        return colors[status] || "bg-gray-100 text-gray-800";
+    };
+
+    const getPriorityColor = (priority: string) => {
+        const colors: Record<string, string> = {
+            "Urgent": "bg-red-100 text-red-800",
+            "High": "bg-orange-100 text-orange-800",
+            "Medium": "bg-blue-100 text-blue-800",
+            "Low": "bg-slate-100 text-slate-800",
+        };
+        return colors[priority] || "bg-gray-100 text-gray-800";
+    };
+
+    const pendingTasks = myTasks.filter((t: any) => t.status !== "Completed" && t.status !== "Cancelled");
+    const completedTasks = myTasks.filter((t: any) => t.status === "Completed");
+
+    return (
+        <div className="space-y-6">
+            {/* Page Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold text-slate-900">My Dashboard</h1>
+                    <p className="text-sm text-slate-600 mt-1">
+                        Welcome back, {userProfile?.full_name || 'User'}!
+                    </p>
+                </div>
+            </div>
+
+            {/* Personal Stats */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                <div className="bg-white rounded-xl border border-slate-200/60 p-4">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-blue-50 rounded-lg">
+                            <Target className="w-5 h-5 text-blue-600" />
+                        </div>
+                        <div>
+                            <p className="text-2xl font-bold text-slate-900">{pendingTasks.length}</p>
+                            <p className="text-xs text-slate-600">Pending Tasks</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-white rounded-xl border border-slate-200/60 p-4">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-green-50 rounded-lg">
+                            <CheckCircle className="w-5 h-5 text-green-600" />
+                        </div>
+                        <div>
+                            <p className="text-2xl font-bold text-slate-900">{completedTasks.length}</p>
+                            <p className="text-xs text-slate-600">Completed Tasks</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-white rounded-xl border border-slate-200/60 p-4">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-purple-50 rounded-lg">
+                            <User className="w-5 h-5 text-purple-600" />
+                        </div>
+                        <div>
+                            <p className="text-2xl font-bold text-slate-900">{userProfile?.role || 'Staff'}</p>
+                            <p className="text-xs text-slate-600">Your Role</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-white rounded-xl border border-slate-200/60 p-4">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-amber-50 rounded-lg">
+                            <Clock className="w-5 h-5 text-amber-600" />
+                        </div>
+                        <div>
+                            <p className="text-2xl font-bold text-slate-900">
+                                {pendingTasks.filter((t: any) => t.priority === 'Urgent').length}
+                            </p>
+                            <p className="text-xs text-slate-600">Urgent Tasks</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Quick Actions */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <button
+                    onClick={() => router.push("/leads")}
+                    className="bg-white rounded-xl border border-slate-200/60 p-4 hover:shadow-md transition-all flex items-center gap-3"
+                >
+                    <div className="p-2 bg-purple-50 rounded-lg">
+                        <User className="w-5 h-5 text-purple-600" />
+                    </div>
+                    <div className="text-left">
+                        <p className="font-medium text-slate-900">My Leads</p>
+                        <p className="text-xs text-slate-500">View assigned leads</p>
+                    </div>
+                </button>
+
+                <button
+                    onClick={() => router.push("/tasks")}
+                    className="bg-white rounded-xl border border-slate-200/60 p-4 hover:shadow-md transition-all flex items-center gap-3"
+                >
+                    <div className="p-2 bg-blue-50 rounded-lg">
+                        <CheckCircle className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <div className="text-left">
+                        <p className="font-medium text-slate-900">My Tasks</p>
+                        <p className="text-xs text-slate-500">View all tasks</p>
+                    </div>
+                </button>
+
+                <button
+                    onClick={() => router.push("/customers")}
+                    className="bg-white rounded-xl border border-slate-200/60 p-4 hover:shadow-md transition-all flex items-center gap-3"
+                >
+                    <div className="p-2 bg-green-50 rounded-lg">
+                        <Users className="w-5 h-5 text-green-600" />
+                    </div>
+                    <div className="text-left">
+                        <p className="font-medium text-slate-900">Customers</p>
+                        <p className="text-xs text-slate-500">View customers</p>
+                    </div>
+                </button>
+
+                <button
+                    onClick={() => router.push("/tools")}
+                    className="bg-white rounded-xl border border-slate-200/60 p-4 hover:shadow-md transition-all flex items-center gap-3"
+                >
+                    <div className="p-2 bg-amber-50 rounded-lg">
+                        <Briefcase className="w-5 h-5 text-amber-600" />
+                    </div>
+                    <div className="text-left">
+                        <p className="font-medium text-slate-900">Tools</p>
+                        <p className="text-xs text-slate-500">VIN lookup, OCR</p>
+                    </div>
+                </button>
+            </div>
+
+            {/* My Tasks Section */}
+            <div className="bg-white rounded-xl border border-slate-200/60 overflow-hidden">
+                <div className="p-4 border-b border-slate-200/60 flex items-center justify-between">
+                    <div>
+                        <h3 className="font-semibold text-slate-900">My Tasks</h3>
+                        <p className="text-xs text-slate-600">Your pending and recent tasks</p>
+                    </div>
+                    <button
+                        onClick={() => router.push("/tasks")}
+                        className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+                    >
+                        View All
+                        <ArrowUpRight className="w-3 h-3" />
+                    </button>
+                </div>
+                <div className="divide-y divide-slate-200/60 max-h-[400px] overflow-y-auto">
+                    {myTasks.length === 0 ? (
+                        <div className="p-8 text-center text-slate-500">
+                            <CheckCircle className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                            <p className="text-sm">No tasks assigned to you</p>
+                        </div>
+                    ) : (
+                        myTasks.slice(0, 10).map((task: any) => (
+                            <div key={task.id} className="p-4 hover:bg-slate-50 transition-colors">
+                                <div className="flex items-start justify-between">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <p className="font-medium text-slate-900 truncate">{task.title}</p>
+                                            <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getStatusColor(task.status)}`}>
+                                                {task.status}
+                                            </span>
+                                            <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getPriorityColor(task.priority)}`}>
+                                                {task.priority}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-3 mt-1 text-xs text-slate-600 flex-wrap">
+                                            {task.due_date && (
+                                                <span className="flex items-center gap-1">
+                                                    <Calendar className="w-3 h-3" />
+                                                    Due: {new Date(task.due_date).toLocaleDateString()}
+                                                </span>
+                                            )}
+                                            {task.assigned_user && (
+                                                <span className="flex items-center gap-1">
+                                                    <User className="w-3 h-3" />
+                                                    {task.assigned_user.full_name}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// =============================================================================
+// PLATFORM ADMIN DASHBOARD
+// =============================================================================
+function PlatformAdminDashboard({ userProfile }: { userProfile: UserProfile | null }) {
+    const router = useRouter();
+    const [analytics, setAnalytics] = useState<any>(null);
+    const [loadingAnalytics, setLoadingAnalytics] = useState(true);
+
+    useEffect(() => {
+        async function fetchPlatformAnalytics() {
+            try {
+                const token = localStorage.getItem("access_token");
+                if (!token) return;
+
+                const res = await fetch("/api/platform/analytics", { headers: { Authorization: `Bearer ${token}` } });
+                if (res.ok) {
+                    const data = await res.json();
+                    setAnalytics(data);
+                }
+            } catch (err) {
+                console.error("Error fetching platform analytics:", err);
+            } finally {
+                setLoadingAnalytics(false);
+            }
+        }
+        fetchPlatformAnalytics();
+    }, []);
+
+    if (loadingAnalytics) {
+        return (
+            <div className="flex items-center justify-center min-h-[400px]">
+                <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            {/* Page Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold text-slate-900">Platform Dashboard</h1>
+                    <p className="text-sm text-slate-600 mt-1">
+                        Welcome back, {userProfile?.full_name || 'Platform Admin'}!
+                    </p>
+                </div>
+            </div>
+
+            {/* Platform Stats */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+                <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl p-5 text-white">
+                    <div className="flex items-center gap-3">
+                        <Building2 className="w-8 h-8 text-white/80" />
+                        <div>
+                            <p className="text-3xl font-bold">{analytics?.dealerships?.total || 0}</p>
+                            <p className="text-sm text-white/80">Total Dealerships</p>
+                        </div>
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                        <span className="px-2 py-1 bg-white/20 rounded text-xs">
+                            {analytics?.dealerships?.active || 0} Active
+                        </span>
+                        <span className="px-2 py-1 bg-white/20 rounded text-xs">
+                            {analytics?.dealerships?.suspended || 0} Suspended
+                        </span>
+                    </div>
+                </div>
+
+                <div className="bg-white rounded-xl border border-slate-200/60 p-5">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-green-50 rounded-lg">
+                            <Users className="w-6 h-6 text-green-600" />
+                        </div>
+                        <div>
+                            <p className="text-2xl font-bold text-slate-900">{analytics?.users?.total || 0}</p>
+                            <p className="text-sm text-slate-600">Total Users</p>
+                        </div>
+                    </div>
+                    <div className="mt-2">
+                        <span className="text-xs text-green-600 font-medium">
+                            {analytics?.users?.active || 0} Active
+                        </span>
+                    </div>
+                </div>
+
+                <div className="bg-white rounded-xl border border-slate-200/60 p-5">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-purple-50 rounded-lg">
+                            <UserCheck className="w-6 h-6 text-purple-600" />
+                        </div>
+                        <div>
+                            <p className="text-2xl font-bold text-slate-900">{analytics?.logins?.today || 0}</p>
+                            <p className="text-sm text-slate-600">Logins Today</p>
+                        </div>
+                    </div>
+                    <div className="mt-2">
+                        <span className="text-xs text-slate-500">
+                            {analytics?.logins?.this_period || 0} this month
+                        </span>
+                    </div>
+                </div>
+
+                <div className="bg-white rounded-xl border border-slate-200/60 p-5">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-amber-50 rounded-lg">
+                            <DollarSign className="w-6 h-6 text-amber-600" />
+                        </div>
+                        <div>
+                            <p className="text-2xl font-bold text-slate-900">
+                                ${((analytics?.revenue?.total_monthly || 0)).toLocaleString()}
+                            </p>
+                            <p className="text-sm text-slate-600">Monthly Revenue</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-white rounded-xl border border-slate-200/60 p-5">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-red-50 rounded-lg">
+                            <AlertTriangle className="w-6 h-6 text-red-600" />
+                        </div>
+                        <div>
+                            <p className="text-2xl font-bold text-slate-900">{analytics?.dealerships?.trial || 0}</p>
+                            <p className="text-sm text-slate-600">On Trial</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Quick Links */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
+                <button
+                    onClick={() => router.push("/platform/audit-logs")}
+                    className="bg-white rounded-xl border border-slate-200/60 p-4 hover:shadow-md transition-all flex flex-col items-center gap-2"
+                >
+                    <div className="p-2 bg-blue-50 rounded-lg">
+                        <FileText className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <p className="text-sm font-medium text-slate-900">Audit Logs</p>
+                </button>
+
+                <button
+                    onClick={() => router.push("/platform/login-history")}
+                    className="bg-white rounded-xl border border-slate-200/60 p-4 hover:shadow-md transition-all flex flex-col items-center gap-2"
+                >
+                    <div className="p-2 bg-green-50 rounded-lg">
+                        <Clock className="w-5 h-5 text-green-600" />
+                    </div>
+                    <p className="text-sm font-medium text-slate-900">Login History</p>
+                </button>
+
+                <button
+                    onClick={() => router.push("/platform/analytics")}
+                    className="bg-white rounded-xl border border-slate-200/60 p-4 hover:shadow-md transition-all flex flex-col items-center gap-2"
+                >
+                    <div className="p-2 bg-purple-50 rounded-lg">
+                        <TrendingUp className="w-5 h-5 text-purple-600" />
+                    </div>
+                    <p className="text-sm font-medium text-slate-900">Analytics</p>
+                </button>
+
+                <button
+                    onClick={() => router.push("/platform/impersonate")}
+                    className="bg-white rounded-xl border border-slate-200/60 p-4 hover:shadow-md transition-all flex flex-col items-center gap-2"
+                >
+                    <div className="p-2 bg-amber-50 rounded-lg">
+                        <UserCheck className="w-5 h-5 text-amber-600" />
+                    </div>
+                    <p className="text-sm font-medium text-slate-900">Impersonate</p>
+                </button>
+
+                <button
+                    onClick={() => router.push("/platform/subscriptions")}
+                    className="bg-white rounded-xl border border-slate-200/60 p-4 hover:shadow-md transition-all flex flex-col items-center gap-2"
+                >
+                    <div className="p-2 bg-red-50 rounded-lg">
+                        <DollarSign className="w-5 h-5 text-red-600" />
+                    </div>
+                    <p className="text-sm font-medium text-slate-900">Subscriptions</p>
+                </button>
+
+                <button
+                    onClick={() => router.push("/platform/reset-password")}
+                    className="bg-white rounded-xl border border-slate-200/60 p-4 hover:shadow-md transition-all flex flex-col items-center gap-2"
+                >
+                    <div className="p-2 bg-gray-50 rounded-lg">
+                        <User className="w-5 h-5 text-gray-600" />
+                    </div>
+                    <p className="text-sm font-medium text-slate-900">Reset Password</p>
+                </button>
+            </div>
+
+            {/* Top Dealerships */}
+            <div className="bg-white rounded-xl border border-slate-200/60 overflow-hidden">
+                <div className="p-4 border-b border-slate-200/60 flex items-center justify-between">
+                    <div>
+                        <h3 className="font-semibold text-slate-900">Top Dealerships</h3>
+                        <p className="text-xs text-slate-600">By users and deals closed</p>
+                    </div>
+                    <button
+                        onClick={() => router.push("/dealerships")}
+                        className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+                    >
+                        View All
+                        <ArrowUpRight className="w-3 h-3" />
+                    </button>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="w-full">
+                        <thead className="bg-gray-50 border-b border-slate-200/60">
+                            <tr>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Dealership</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Users</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Deals Closed</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200/60">
+                            {(analytics?.top_dealerships || []).map((d: any) => (
+                                <tr key={d.id} className="hover:bg-slate-50">
+                                    <td className="px-4 py-3">
+                                        <p className="font-medium text-slate-900">{d.name}</p>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                            d.status === 'Active' ? 'bg-green-100 text-green-800' :
+                                            d.status === 'Suspended' ? 'bg-red-100 text-red-800' :
+                                            'bg-yellow-100 text-yellow-800'
+                                        }`}>
+                                            {d.status}
+                                        </span>
+                                    </td>
+                                    <td className="px-4 py-3 text-slate-600">{d.user_count}</td>
+                                    <td className="px-4 py-3 text-slate-600">{d.deals_closed}</td>
+                                </tr>
+                            ))}
+                            {(!analytics?.top_dealerships || analytics.top_dealerships.length === 0) && (
+                                <tr>
+                                    <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                                        No dealership data available
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>

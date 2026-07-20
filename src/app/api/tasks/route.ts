@@ -1,8 +1,8 @@
-// Enhanced Tasks API Route with full CRUD and filtering
+// Enhanced Tasks API Route with full CRUD, filtering, and scoping
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
 
-// GET all tasks with filtering
+// GET all tasks with filtering and scoping
 export async function GET(req: NextRequest) {
     try {
         let supabase;
@@ -20,6 +20,21 @@ export async function GET(req: NextRequest) {
         if (authError || !user) {
             return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
         }
+
+        // Get user profile
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("role, dealership_id, is_platform_admin, user_permissions")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        }
+
+        const userRole = currentUser.role;
+        const userPermissions = currentUser.user_permissions || [];
+        const isPlatformAdmin = currentUser.is_platform_admin;
 
         const url = new URL(req.url);
         const limit = parseInt(url.searchParams.get("limit") || "50");
@@ -45,13 +60,38 @@ export async function GET(req: NextRequest) {
             .order("due_date", { ascending: true, nullsFirst: false })
             .range(offset, offset + limit - 1);
 
-        // Sort by priority in JavaScript (Urgent > High > Medium > Low)
-        // After fetching, we'll sort the results
+        // Platform admin sees all - no dealership filter needed
+        // Others: filter by dealership
+        if (!isPlatformAdmin) {
+            if (!currentUser.dealership_id) {
+                return NextResponse.json({ error: "No dealership context" }, { status: 403 });
+            }
+            query = query.eq("dealership_id", currentUser.dealership_id);
+
+            // Admin/Manager roles always have full view access (role-based, not permission-based)
+            const isAdminOrManager = userRole === "Admin" || userRole === "Manager";
+
+            // Scope to assigned tasks for Salesperson/Staff only
+            const scopedToAssigned = userRole === "Salesperson" || userRole === "Staff";
+
+            // viewAll = true if user has * wildcard OR has tasks:read without :assigned restriction
+            // Also true if user is Admin/Manager (role-based fallback)
+            const viewAll = isAdminOrManager ||
+                userPermissions.includes("*") ||
+                (userPermissions.includes("tasks:read") && !userPermissions.includes("tasks:read:assigned"));
+
+            // If explicit my_tasks=true OR user is scoped, only show assigned tasks
+            if (my_tasks || scopedToAssigned || !viewAll) {
+                query = query.eq("assigned_to", user.id);
+            }
+        }
 
         if (status) query = query.eq("status", status);
         if (priority) query = query.eq("priority", priority);
-        if (assigned_to) query = query.eq("assigned_to", assigned_to);
-        if (my_tasks) query = query.eq("assigned_to", user.id);
+        // Only allow assigned_to filter for Admin/Manager
+        if (assigned_to && !my_tasks && (currentUser.role === "Admin" || currentUser.role === "Manager" || isPlatformAdmin)) {
+            query = query.eq("assigned_to", assigned_to);
+        }
         if (overdue) {
             query = query.eq("status", "Pending").or(`due_date.lt.${new Date().toISOString()},and(status.eq.In Progress,due_date.lt.${new Date().toISOString()})`);
         }
@@ -87,7 +127,6 @@ export async function GET(req: NextRequest) {
             const aPriority = priorityOrder[a.priority as keyof typeof priorityOrder] || 5;
             const bPriority = priorityOrder[b.priority as keyof typeof priorityOrder] || 5;
             if (aPriority !== bPriority) return aPriority - bPriority;
-            // If same priority, sort by due_date
             if (!a.due_date && !b.due_date) return 0;
             if (!a.due_date) return 1;
             if (!b.due_date) return -1;
@@ -125,6 +164,26 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
         }
 
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("role, dealership_id, is_platform_admin, user_permissions")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        }
+
+        // Check permission
+        const canCreate = currentUser.is_platform_admin ||
+            currentUser.role === "Admin" ||
+            currentUser.role === "Manager" ||
+            (currentUser.user_permissions || []).includes("tasks:write");
+
+        if (!canCreate) {
+            return NextResponse.json({ error: "Forbidden - You cannot create tasks" }, { status: 403 });
+        }
+
         const payload = await req.json();
 
         if (!payload.title) {
@@ -156,6 +215,7 @@ export async function POST(req: NextRequest) {
             source_type: payload.source_type || 'manual',
             source_id: payload.source_id || null,
             completed_at: payload.status === 'Completed' ? new Date().toISOString() : null,
+            dealership_id: currentUser.dealership_id,
         };
 
         const { data: task, error: dbError } = await supabase

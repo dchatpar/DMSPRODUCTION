@@ -111,6 +111,53 @@ CREATE TABLE IF NOT EXISTS billing_information (
 );
 
 -- ============================================================================
+-- PLATFORM SETTINGS TABLES
+-- ============================================================================
+
+-- Feature Flags table (platform-wide feature toggles)
+CREATE TABLE IF NOT EXISTS feature_flags (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    key TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    enabled BOOLEAN DEFAULT true,
+    value_type TEXT DEFAULT 'boolean' CHECK (value_type IN ('boolean', 'string', 'number', 'json')),
+    value TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Default feature flags
+INSERT INTO feature_flags (key, name, description, enabled, value_type) VALUES
+    ('ai_receptionist', 'AI Receptionist', 'Enable AI-powered receptionist for handling customer inquiries', true, 'boolean'),
+    ('ai_marketplace', 'AI Marketplace Posting', 'Enable AI-generated marketplace listings', true, 'boolean'),
+    ('ai_content', 'AI Content Generator', 'Enable AI-powered content generation', true, 'boolean'),
+    ('ai_reports', 'AI Reports', 'Enable AI-powered analytics and insights', true, 'boolean'),
+    ('support_tickets', 'Support Tickets', 'Enable customer support ticket system', false, 'boolean'),
+    ('export_csv', 'CSV Export', 'Enable CSV export functionality', true, 'boolean'),
+    ('export_pdf', 'PDF Export', 'Enable PDF export functionality', true, 'boolean'),
+    ('ocr_scan', 'OCR Document Scanning', 'Enable OCR document scanning feature', true, 'boolean'),
+    ('vin_lookup', 'VIN Lookup', 'Enable VIN lookup feature', true, 'boolean'),
+    ('finance_calculator', 'Finance Calculator', 'Enable finance calculator tool', true, 'boolean')
+ON CONFLICT (key) DO NOTHING;
+
+-- Platform Announcements table
+CREATE TABLE IF NOT EXISTS announcements (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    type TEXT DEFAULT 'info' CHECK (type IN ('info', 'warning', 'success', 'error')),
+    priority TEXT DEFAULT 'normal' CHECK (priority IN ('low', 'normal', 'high', 'urgent')),
+    target_audience TEXT DEFAULT 'all' CHECK (target_audience IN ('all', 'admins', 'platform')),
+    is_active BOOLEAN DEFAULT true,
+    starts_at TIMESTAMPTZ,
+    ends_at TIMESTAMPTZ,
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================================
 -- CORE TABLES (UPDATED WITH DEALERSHIP_ID)
 -- ============================================================================
 
@@ -193,6 +240,7 @@ CREATE TABLE IF NOT EXISTS customers (
     status TEXT DEFAULT 'Active' CHECK (status IN ('Active', 'Inactive')),
     source TEXT,
     notes TEXT,
+    assigned_to UUID REFERENCES users(id) ON DELETE SET NULL,
     dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -733,6 +781,7 @@ CREATE INDEX IF NOT EXISTS idx_billing_information_dealership_id ON billing_info
 
 CREATE INDEX IF NOT EXISTS idx_vehicles_dealership_id ON vehicles(dealership_id);
 CREATE INDEX IF NOT EXISTS idx_customers_dealership_id ON customers(dealership_id);
+CREATE INDEX IF NOT EXISTS idx_customers_assigned_to ON customers(assigned_to);
 CREATE INDEX IF NOT EXISTS idx_sales_deals_dealership_id ON sales_deals(dealership_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_dealership_id ON invoices(dealership_id);
 CREATE INDEX IF NOT EXISTS idx_leads_dealership_id ON leads(dealership_id);
@@ -1424,6 +1473,185 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'finance_calculations_all_policy' AND polrelid = 'finance_calculations'::regclass) THEN
         CREATE POLICY finance_calculations_all_policy ON finance_calculations FOR ALL USING (true);
+    END IF;
+END $$;
+
+-- ============================================================================
+-- AUDIT LOGS TABLE (Platform Admin tracking)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    action TEXT NOT NULL, -- e.g., 'user.suspend', 'dealership.create', 'deal.close'
+    entity_type TEXT NOT NULL, -- e.g., 'user', 'dealership', 'deal', 'vehicle'
+    entity_id UUID,
+    actor_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    actor_email TEXT,
+    actor_role TEXT,
+    target_id UUID,
+    target_email TEXT,
+    metadata JSONB DEFAULT '{}',
+    ip_address TEXT,
+    user_agent TEXT,
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(actor_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_target ON audit_logs(target_id);
+
+-- ============================================================================
+-- LOGIN HISTORY TABLE (Security tracking)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS login_history (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    email TEXT NOT NULL,
+    login_at TIMESTAMPTZ DEFAULT NOW(),
+    ip_address TEXT,
+    user_agent TEXT,
+    device_type TEXT DEFAULT 'Desktop',
+    success BOOLEAN DEFAULT true,
+    failure_reason TEXT,
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_login_history_user ON login_history(user_id, login_at DESC);
+CREATE INDEX IF NOT EXISTS idx_login_history_ip ON login_history(ip_address);
+CREATE INDEX IF NOT EXISTS idx_login_history_time ON login_history(login_at DESC);
+CREATE INDEX IF NOT EXISTS idx_login_history_success ON login_history(success);
+
+-- ============================================================================
+-- AUDIT LOGGING HELPER FUNCTION
+-- ============================================================================
+CREATE OR REPLACE FUNCTION log_audit_action(
+    p_action TEXT,
+    p_entity_type TEXT,
+    p_entity_id UUID DEFAULT NULL,
+    p_actor_id UUID DEFAULT NULL,
+    p_target_id UUID DEFAULT NULL,
+    p_metadata JSONB DEFAULT '{}'::JSONB,
+    p_ip_address TEXT DEFAULT NULL,
+    p_user_agent TEXT DEFAULT NULL
+) RETURNS UUID AS $$
+DECLARE
+    v_audit_id UUID;
+    v_actor_email TEXT;
+    v_actor_role TEXT;
+    v_target_email TEXT;
+    v_dealership_id UUID;
+BEGIN
+    -- Get actor info
+    IF p_actor_id IS NOT NULL THEN
+        SELECT email, role, dealership_id INTO v_actor_email, v_actor_role, v_dealership_id
+        FROM users WHERE id = p_actor_id;
+    END IF;
+
+    -- Get target email
+    IF p_target_id IS NOT NULL THEN
+        SELECT email INTO v_target_email FROM users WHERE id = p_target_id;
+    END IF;
+
+    INSERT INTO audit_logs (
+        action, entity_type, entity_id, actor_id, actor_email, actor_role,
+        target_id, target_email, metadata, ip_address, user_agent, dealership_id
+    ) VALUES (
+        p_action, p_entity_type, p_entity_id, p_actor_id, v_actor_email, v_actor_role,
+        p_target_id, v_target_email, p_metadata, p_ip_address, p_user_agent, v_dealership_id
+    ) RETURNING id INTO v_audit_id;
+
+    RETURN v_audit_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ============================================================================
+-- LOGIN HISTORY LOGGING HELPER FUNCTION
+-- ============================================================================
+CREATE OR REPLACE FUNCTION log_user_login(
+    p_user_id UUID,
+    p_email TEXT,
+    p_success BOOLEAN DEFAULT true,
+    p_failure_reason TEXT DEFAULT NULL,
+    p_ip_address TEXT DEFAULT NULL,
+    p_user_agent TEXT DEFAULT NULL,
+    p_dealership_id UUID DEFAULT NULL
+) RETURNS UUID AS $$
+DECLARE
+    v_login_id UUID;
+    v_device_type TEXT;
+BEGIN
+    -- Determine device type from user agent
+    IF p_user_agent ILIKE '%mobile%' OR p_user_agent ILIKE '%android%' OR p_user_agent ILIKE '%iphone%' THEN
+        v_device_type := 'Mobile';
+    ELSIF p_user_agent ILIKE '%tablet%' OR p_user_agent ILIKE '%ipad%' THEN
+        v_device_type := 'Tablet';
+    ELSE
+        v_device_type := 'Desktop';
+    END IF;
+
+    INSERT INTO login_history (user_id, email, success, failure_reason, ip_address, user_agent, device_type, dealership_id)
+    VALUES (p_user_id, p_email, p_success, p_failure_reason, p_ip_address, p_user_agent, v_device_type, p_dealership_id)
+    RETURNING id INTO v_login_id;
+
+    RETURN v_login_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ============================================================================
+-- RLS POLICIES FOR PLATFORM SETTINGS
+-- ============================================================================
+ALTER TABLE feature_flags ENABLE ROW LEVEL SECURITY;
+ALTER TABLE announcements ENABLE ROW LEVEL SECURITY;
+
+-- Feature flags: only platform admins can manage, everyone can read
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'feature_flags_all_policy' AND polrelid = 'feature_flags'::regclass) THEN
+        CREATE POLICY feature_flags_all_policy ON feature_flags FOR ALL
+            USING (is_platform_admin() = true)
+            WITH CHECK (is_platform_admin() = true);
+    END IF;
+END $$;
+
+-- Announcements: only platform admins can manage, everyone can read
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'announcements_all_policy' AND polrelid = 'announcements'::regclass) THEN
+        CREATE POLICY announcements_all_policy ON announcements FOR ALL
+            USING (is_platform_admin() = true)
+            WITH CHECK (is_platform_admin() = true);
+    END IF;
+END $$;
+
+-- ============================================================================
+-- RLS POLICIES FOR AUDIT LOGS AND LOGIN HISTORY
+-- ============================================================================
+ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE login_history ENABLE ROW LEVEL SECURITY;
+
+-- Audit logs: only platform admins can see all, others see nothing
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'audit_logs_platform_admin_policy' AND polrelid = 'audit_logs'::regclass) THEN
+        CREATE POLICY audit_logs_platform_admin_policy ON audit_logs FOR ALL
+            USING (is_platform_admin() = true)
+            WITH CHECK (is_platform_admin() = true);
+    END IF;
+END $$;
+
+-- Login history: only platform admins can see all, users can see their own
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'login_history_platform_admin_policy' AND polrelid = 'login_history'::regclass) THEN
+        CREATE POLICY login_history_platform_admin_policy ON login_history FOR SELECT
+            USING (is_platform_admin() = true OR user_id = auth.uid());
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'login_history_insert_policy' AND polrelid = 'login_history'::regclass) THEN
+        CREATE POLICY login_history_insert_policy ON login_history FOR INSERT
+            WITH CHECK (true); -- Allow anyone to insert (for login tracking)
     END IF;
 END $$;
 

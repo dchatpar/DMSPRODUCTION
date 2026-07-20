@@ -28,6 +28,21 @@ export async function GET(req: NextRequest) {
             );
         }
 
+        // Get user profile
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("role, dealership_id, is_platform_admin, user_permissions")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        }
+
+        const userRole = currentUser.role;
+        const userPermissions = currentUser.user_permissions || [];
+        const isPlatformAdmin = currentUser.is_platform_admin;
+
         const url = new URL(req.url);
         const limit = parseInt(url.searchParams.get("limit") || "50");
         const offset = parseInt(url.searchParams.get("offset") || "0");
@@ -48,9 +63,29 @@ export async function GET(req: NextRequest) {
             .order("created_at", { ascending: false })
             .range(offset, offset + limit - 1);
 
+        // Platform admin sees all
+        // Others: filter by dealership
+        if (!isPlatformAdmin) {
+            if (!currentUser.dealership_id) {
+                return NextResponse.json({ error: "No dealership context" }, { status: 403 });
+            }
+            query = query.eq("dealership_id", currentUser.dealership_id);
+
+            // Scope to assigned tickets for Salesperson/Staff
+            const scopedToAssigned = userRole === "Salesperson" || userRole === "Staff";
+            const viewAll = userPermissions.includes("*") ||
+                (userPermissions.includes("tickets:read") && !userPermissions.includes("tickets:read:assigned"));
+
+            if (scopedToAssigned || !viewAll) {
+                query = query.eq("assigned_to", user.id);
+            }
+        }
+
         if (status) query = query.eq("status", status);
         if (priority) query = query.eq("priority", priority);
-        if (assigned_to) query = query.eq("assigned_to", assigned_to);
+        if (assigned_to && (currentUser.role === "Admin" || currentUser.role === "Manager" || isPlatformAdmin)) {
+            query = query.eq("assigned_to", assigned_to);
+        }
         if (createdAtFrom) query = query.gte("created_at", createdAtFrom);
         if (createdAtTo) query = query.lte("created_at", createdAtTo);
         if (q) {
@@ -104,6 +139,26 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("role, dealership_id, is_platform_admin, user_permissions")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        }
+
+        // Check permission
+        const canCreate = currentUser.is_platform_admin ||
+            currentUser.role === "Admin" ||
+            currentUser.role === "Manager" ||
+            (currentUser.user_permissions || []).includes("tickets:write");
+
+        if (!canCreate) {
+            return NextResponse.json({ error: "Forbidden - You cannot create tickets" }, { status: 403 });
+        }
+
         const payload = await req.json();
 
         if (!payload.subject) {
@@ -137,6 +192,7 @@ export async function POST(req: NextRequest) {
             priority: payload.priority || 'Medium',
             status: payload.status || 'Open',
             resolved_at: payload.status === 'Resolved' ? new Date().toISOString() : null,
+            dealership_id: currentUser.dealership_id,
         };
 
         const { data, error: dbError } = await supabase

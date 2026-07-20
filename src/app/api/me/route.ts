@@ -61,6 +61,7 @@ export async function GET(req: NextRequest) {
             dealership_id: null,
             is_active: true,
             user_permissions: [],
+            effective_permissions: [],
           }
         },
         { status: 200 }
@@ -78,6 +79,35 @@ export async function GET(req: NextRequest) {
       dealership_name = dealership?.name || null;
     }
 
+    // Fetch role's permissions and merge with user_permissions
+    let effectivePermissions: string[] = profile.user_permissions || [];
+    if (profile.role && profile.dealership_id && !profile.is_platform_admin) {
+      const { data: roleData } = await supabase
+        .from("roles")
+        .select("permissions")
+        .eq("name", profile.role)
+        .eq("dealership_id", profile.dealership_id)
+        .single();
+
+      if (roleData?.permissions && Array.isArray(roleData.permissions)) {
+        // Merge: user_permissions override/add to role permissions
+        const rolePerms = roleData.permissions as string[];
+        if (rolePerms.includes("*")) {
+          // Role has full access, use that
+          effectivePermissions = ["*"];
+        } else {
+          // Merge: start with role perms, add any extra user perms
+          const rolePermSet = new Set(rolePerms);
+          for (const perm of effectivePermissions) {
+            if (!rolePermSet.has(perm)) {
+              rolePerms.push(perm);
+            }
+          }
+          effectivePermissions = rolePerms;
+        }
+      }
+    }
+
     // Return full profile data with platform admin and dealership info
     return NextResponse.json(
       {
@@ -92,6 +122,7 @@ export async function GET(req: NextRequest) {
           dealership_name: dealership_name,
           is_active: profile.is_active,
           user_permissions: profile.user_permissions || [],
+          effective_permissions: effectivePermissions,
         }
       },
       { status: 200 }

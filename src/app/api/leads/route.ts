@@ -2,7 +2,27 @@
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
 
-// GET all leads
+// Helper: Check if user should be scoped to assigned records only
+function shouldScopeToAssigned(role: string, permissions: string[]): boolean {
+    // Salesperson and Staff are always scoped to their own records
+    if (role === "Salesperson" || role === "Staff") return true;
+    // If user has :assigned permission but not :all, scope to assigned
+    // (currently we treat :assigned-only as scope filter, not separate permission)
+    return false;
+}
+
+// Helper: Check if user can view all records (not just assigned)
+function canViewAll(role: string, permissions: string[]): boolean {
+    // Admin or Manager can view all
+    if (role === "Admin" || role === "Manager") return true;
+    // Has * (full access)
+    if (permissions.includes("*")) return true;
+    // Has :read without :assigned restriction
+    // If they have :read AND :read:assigned, we treat :read as "view all"
+    if (permissions.includes("leads:read") && !permissions.includes("leads:read:assigned")) return true;
+    return false;
+}
+
 export async function GET(req: NextRequest) {
     try {
         let supabase;
@@ -19,7 +39,6 @@ export async function GET(req: NextRequest) {
             throw error;
         }
 
-        // Verify user is authenticated
         const { data: { user }, error: authError } = await supabase.auth.getUser();
 
         if (authError || !user) {
@@ -28,6 +47,28 @@ export async function GET(req: NextRequest) {
                 { status: 401 }
             );
         }
+
+        // Get user's profile with role and permissions
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("role, dealership_id, is_platform_admin, user_permissions")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json(
+                { error: "User profile not found" },
+                { status: 404 }
+            );
+        }
+
+        const userRole = currentUser.role;
+        const userPermissions = currentUser.user_permissions || [];
+        const isPlatformAdmin = currentUser.is_platform_admin;
+
+        // Platform admin sees all leads across all dealerships
+        // Admin/Manager sees all leads within their dealership
+        // Salesperson/Staff sees only assigned leads
 
         const url = new URL(req.url);
         const limit = parseInt(url.searchParams.get("limit") || "50");
@@ -50,9 +91,34 @@ export async function GET(req: NextRequest) {
             .order("created_at", { ascending: false })
             .range(offset, offset + limit - 1);
 
+        // Platform admin sees all - no dealership filter needed
+        if (!isPlatformAdmin) {
+            // Filter by dealership
+            if (currentUser.dealership_id) {
+                query = query.eq("dealership_id", currentUser.dealership_id);
+            } else {
+                return NextResponse.json(
+                    { error: "No dealership context" },
+                    { status: 403 }
+                );
+            }
+
+            // Scope to assigned records for Salesperson/Staff
+            const scopedToAssigned = shouldScopeToAssigned(userRole, userPermissions);
+            const viewAll = canViewAll(userRole, userPermissions);
+
+            if (scopedToAssigned || !viewAll) {
+                // Salesperson/Staff: only see leads assigned to them
+                query = query.eq("assigned_to", user.id);
+            }
+        }
+
         if (status) query = query.eq("status", status);
         if (source) query = query.eq("source", source);
-        if (assigned_to) query = query.eq("assigned_to", assigned_to);
+        if (assigned_to && (userRole === "Admin" || userRole === "Manager" || isPlatformAdmin)) {
+            // Only Admin/Manager/PlatformAdmin can filter by assigned_to explicitly
+            query = query.eq("assigned_to", assigned_to);
+        }
         if (createdAtFrom) query = query.gte("created_at", createdAtFrom);
         if (createdAtTo) query = query.lte("created_at", createdAtTo);
         if (q) {
@@ -117,13 +183,43 @@ export async function POST(req: NextRequest) {
             throw error;
         }
 
-        // Verify user is authenticated
         const { data: { user }, error: authError } = await supabase.auth.getUser();
 
         if (authError || !user) {
             return NextResponse.json(
                 { error: "Invalid or expired token" },
                 { status: 401 }
+            );
+        }
+
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("role, dealership_id, is_platform_admin, user_permissions")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json(
+                { error: "User profile not found" },
+                { status: 404 }
+            );
+        }
+
+        const userRole = currentUser.role;
+        const userPermissions = currentUser.user_permissions || [];
+
+        // Check if user can create leads - ALL roles can create (Admin, Manager, Salesperson, Staff)
+        const canCreate = userPermissions.includes("*") ||
+            userPermissions.includes("leads:write") ||
+            userRole === "Admin" ||
+            userRole === "Manager" ||
+            userRole === "Salesperson" ||
+            userRole === "Staff";
+
+        if (!canCreate) {
+            return NextResponse.json(
+                { error: "Forbidden - You cannot create leads" },
+                { status: 403 }
             );
         }
 
@@ -169,6 +265,7 @@ export async function POST(req: NextRequest) {
             notes: payload.notes || null,
             lead_creation_date: now,
             last_engagement: now,
+            dealership_id: currentUser.dealership_id,
         };
 
         const { data, error: dbError } = await supabase

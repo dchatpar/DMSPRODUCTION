@@ -42,38 +42,110 @@ interface UserFormModalProps {
     onSuccess: () => void;
 }
 
+// Default permissions by role (used to auto-populate)
+const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
+    Admin: ["*"],
+    Manager: [
+        "dashboard:read", "dashboard:write",
+        "leads:read", "leads:write", "leads:delete", "leads:assign",
+        "test_drives:read", "test_drives:write", "test_drives:delete",
+        "deals:read", "deals:write", "deals:delete",
+        "follow_ups:read", "follow_ups:write", "follow_ups:delete",
+        "vehicles:read", "vehicles:write", "vehicles:delete", "vehicles:pricing", "vehicles:photos", "vehicles:carfax",
+        "customers:read", "customers:write", "customers:delete",
+        "invoices:read", "invoices:write", "invoices:delete",
+        "expenses:read", "expenses:write", "expenses:delete",
+        "vendors:read", "vendors:write",
+        "reports:read", "reports:write", "reports:export",
+        "users:read", "users:write",
+        "tasks:read", "tasks:write", "tasks:delete", "tasks:assign",
+        "tickets:read", "tickets:write", "tickets:delete",
+        "tools:read", "tools:write",
+        "settings:read", "settings:write",
+        "profile:read", "profile:write",
+    ],
+    Salesperson: [
+        "dashboard:read",
+        "leads:read:assigned", "leads:write",
+        "test_drives:read:assigned", "test_drives:write",
+        "deals:read:assigned",
+        "follow_ups:read:assigned", "follow_ups:write",
+        "vehicles:read",
+        "customers:read:assigned", "customers:write",
+        "tasks:read:assigned", "tasks:write",
+        "tools:read",
+        "profile:read", "profile:write",
+    ],
+    Staff: [
+        "dashboard:read",
+        "leads:read:assigned", "leads:write",
+        "test_drives:read:assigned", "test_drives:write",
+        "deals:read:assigned",
+        "follow_ups:read:assigned", "follow_ups:write",
+        "vehicles:read",
+        "customers:read:assigned", "customers:write",
+        "tasks:read:assigned", "tasks:write",
+        "tools:read",
+        "profile:read", "profile:write",
+    ],
+};
+
 // Available permissions grouped by category
 const PERMISSIONS = {
-    vehicles: {
-        label: "Vehicles",
+    dashboard: {
+        label: "Dashboard",
         permissions: [
-            { key: "vehicles:read", label: "View Vehicles" },
-            { key: "vehicles:write", label: "Add/Edit Vehicles" },
-            { key: "vehicles:delete", label: "Delete Vehicles" },
-        ]
-    },
-    customers: {
-        label: "Customers",
-        permissions: [
-            { key: "customers:read", label: "View Customers" },
-            { key: "customers:write", label: "Add/Edit Customers" },
-            { key: "customers:delete", label: "Delete Customers" },
+            { key: "dashboard:read", label: "View Dashboard" },
+            { key: "dashboard:write", label: "Edit Dashboard" },
         ]
     },
     leads: {
         label: "Leads",
         permissions: [
-            { key: "leads:read", label: "View Leads" },
+            { key: "leads:read", label: "View All Leads" },
+            { key: "leads:read:assigned", label: "View Assigned Leads Only" },
             { key: "leads:write", label: "Add/Edit Leads" },
             { key: "leads:delete", label: "Delete Leads" },
+            { key: "leads:assign", label: "Assign Leads" },
+        ]
+    },
+    test_drives: {
+        label: "Test Drives",
+        permissions: [
+            { key: "test_drives:read", label: "View All Test Drives" },
+            { key: "test_drives:read:assigned", label: "View Assigned Test Drives Only" },
+            { key: "test_drives:write", label: "Schedule/Edit Test Drives" },
+            { key: "test_drives:delete", label: "Delete Test Drives" },
         ]
     },
     deals: {
         label: "Deals",
         permissions: [
-            { key: "deals:read", label: "View Deals" },
+            { key: "deals:read", label: "View All Deals" },
+            { key: "deals:read:assigned", label: "View Assigned Deals Only" },
             { key: "deals:write", label: "Add/Edit Deals" },
             { key: "deals:delete", label: "Delete Deals" },
+            { key: "deals:close", label: "Close/Cancel Deals" },
+        ]
+    },
+    customers: {
+        label: "Customers",
+        permissions: [
+            { key: "customers:read", label: "View All Customers" },
+            { key: "customers:read:assigned", label: "View Assigned Customers Only" },
+            { key: "customers:write", label: "Add/Edit Customers" },
+            { key: "customers:delete", label: "Delete Customers" },
+        ]
+    },
+    vehicles: {
+        label: "Vehicles / Inventory",
+        permissions: [
+            { key: "vehicles:read", label: "View Vehicles" },
+            { key: "vehicles:write", label: "Add/Edit Vehicles" },
+            { key: "vehicles:delete", label: "Delete Vehicles" },
+            { key: "vehicles:pricing", label: "Manage Pricing" },
+            { key: "vehicles:photos", label: "Manage Photos" },
+            { key: "vehicles:carfax", label: "Upload Carfax" },
         ]
     },
     invoices: {
@@ -84,11 +156,84 @@ const PERMISSIONS = {
             { key: "invoices:delete", label: "Delete Invoices" },
         ]
     },
+    expenses: {
+        label: "Expenses",
+        permissions: [
+            { key: "expenses:read", label: "View Expenses" },
+            { key: "expenses:write", label: "Create/Edit Expenses" },
+            { key: "expenses:delete", label: "Delete Expenses" },
+        ]
+    },
+    vendors: {
+        label: "Vendors",
+        permissions: [
+            { key: "vendors:read", label: "View Vendors" },
+            { key: "vendors:write", label: "Create/Edit Vendors" },
+        ]
+    },
     reports: {
         label: "Reports",
         permissions: [
             { key: "reports:read", label: "View Reports" },
+            { key: "reports:write", label: "Create Reports" },
             { key: "reports:export", label: "Export Reports" },
+        ]
+    },
+    users: {
+        label: "Users",
+        permissions: [
+            { key: "users:read", label: "View Users" },
+            { key: "users:write", label: "Create/Edit Users" },
+            { key: "users:delete", label: "Delete Users" },
+        ]
+    },
+    tasks: {
+        label: "Tasks",
+        permissions: [
+            { key: "tasks:read", label: "View All Tasks" },
+            { key: "tasks:read:assigned", label: "View Assigned Tasks Only" },
+            { key: "tasks:write", label: "Create/Edit Tasks" },
+            { key: "tasks:delete", label: "Delete Tasks" },
+            { key: "tasks:assign", label: "Assign Tasks" },
+        ]
+    },
+    tickets: {
+        label: "Support Tickets",
+        permissions: [
+            { key: "tickets:read", label: "View All Tickets" },
+            { key: "tickets:read:assigned", label: "View Assigned Tickets Only" },
+            { key: "tickets:write", label: "Create/Edit Tickets" },
+            { key: "tickets:delete", label: "Delete Tickets" },
+        ]
+    },
+    follow_ups: {
+        label: "Follow-ups",
+        permissions: [
+            { key: "follow_ups:read", label: "View All Follow-ups" },
+            { key: "follow_ups:read:assigned", label: "View Assigned Follow-ups Only" },
+            { key: "follow_ups:write", label: "Create/Edit Follow-ups" },
+            { key: "follow_ups:delete", label: "Delete Follow-ups" },
+        ]
+    },
+    tools: {
+        label: "Tools",
+        permissions: [
+            { key: "tools:read", label: "Access Tools" },
+            { key: "tools:write", label: "Configure Tools" },
+        ]
+    },
+    settings: {
+        label: "Settings",
+        permissions: [
+            { key: "settings:read", label: "View Settings" },
+            { key: "settings:write", label: "Edit Settings" },
+        ]
+    },
+    profile: {
+        label: "Profile",
+        permissions: [
+            { key: "profile:read", label: "View Profile" },
+            { key: "profile:write", label: "Edit Profile" },
         ]
     },
 };
@@ -104,7 +249,7 @@ export default function UserFormModal({
     const [error, setError] = useState<string | null>(null);
     const [showPassword, setShowPassword] = useState(false);
     const [showPermissions, setShowPermissions] = useState(false);
-    const [expandedCategories, setExpandedCategories] = useState<string[]>(["vehicles", "customers", "leads", "deals"]);
+    const [expandedCategories, setExpandedCategories] = useState<string[]>(["leads", "deals", "customers", "tasks"]);
     const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
     const [formData, setFormData] = useState({
         full_name: "",
@@ -137,6 +282,12 @@ export default function UserFormModal({
             ...prev,
             [name]: value,
         }));
+
+        // Auto-populate permissions when role changes in add mode
+        if (name === "role" && mode === "add") {
+            const defaultPerms = ROLE_DEFAULT_PERMISSIONS[value] || [];
+            setSelectedPermissions(defaultPerms);
+        }
     };
 
     const togglePermission = (permissionKey: string) => {
@@ -448,7 +599,7 @@ export default function UserFormModal({
                                 {showPermissions && (
                                     <div className="p-4 space-y-3">
                                         <p className="text-xs text-gray-500 mb-3">
-                                            Grant specific permissions beyond the role. Role permissions are applied automatically.
+                                            Grant specific permissions beyond the role defaults. Role permissions are auto-populated when you select a role. Use this to add or remove specific permissions.
                                         </p>
 
                                         {Object.entries(PERMISSIONS).map(([categoryKey, category]) => {

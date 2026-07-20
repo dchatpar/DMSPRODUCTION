@@ -246,6 +246,26 @@ export async function POST(req: NextRequest) {
             throw profileError;
         }
 
+        // Also insert into user_roles junction table
+        if (profile) {
+            // Find the role_id for the role being assigned
+            const { data: roleData } = await supabase
+                .from("roles")
+                .select("id")
+                .eq("name", role)
+                .eq("dealership_id", assignedDealershipId)
+                .single();
+
+            if (roleData) {
+                await supabase
+                    .from("user_roles")
+                    .insert({
+                        user_id: profile.id,
+                        role_id: roleData.id,
+                    });
+            }
+        }
+
         return NextResponse.json(
             {
                 data: profile,
