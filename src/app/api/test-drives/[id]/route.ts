@@ -69,10 +69,10 @@ export async function GET(
 
         const { id } = await params;
 
-        // Narrow fetch first to assert ownership
+        // Narrow fetch first to assert ownership (assignee lives on user_id, not assigned_to)
         const { data: existing, error: existingError } = await supabase
             .from("test_drives")
-            .select("id, dealership_id")
+            .select("id, dealership_id, user_id")
             .eq("id", id)
             .single();
 
@@ -86,7 +86,10 @@ export async function GET(
             throw existingError;
         }
 
-        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        const deny = assertOwnershipOrDeny(
+            { dealership_id: existing.dealership_id, assigned_to: existing.user_id },
+            auth.profile
+        );
         if (deny) return deny;
 
         // Re-fetch the full row
@@ -181,7 +184,7 @@ export async function PUT(
         // Assert ownership before any write
         const { data: existing, error: existingError } = await supabase
             .from("test_drives")
-            .select("id, dealership_id")
+            .select("id, dealership_id, user_id")
             .eq("id", id)
             .single();
 
@@ -195,7 +198,10 @@ export async function PUT(
             throw existingError;
         }
 
-        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        const deny = assertOwnershipOrDeny(
+            { dealership_id: existing.dealership_id, assigned_to: existing.user_id },
+            auth.profile
+        );
         if (deny) return deny;
 
         // Build update data - use actual schema column names
@@ -283,7 +289,7 @@ export async function PATCH(
         // Assert ownership before any write
         const { data: existing, error: existingError } = await supabase
             .from("test_drives")
-            .select("id, dealership_id")
+            .select("id, dealership_id, user_id")
             .eq("id", id)
             .single();
 
@@ -297,7 +303,10 @@ export async function PATCH(
             throw existingError;
         }
 
-        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        const deny = assertOwnershipOrDeny(
+            { dealership_id: existing.dealership_id, assigned_to: existing.user_id },
+            auth.profile
+        );
         if (deny) return deny;
 
         // Whitelist the update payload and block dealership_id changes
@@ -391,7 +400,7 @@ export async function DELETE(
         // Assert ownership before any write
         const { data: existing, error: existingError } = await supabase
             .from("test_drives")
-            .select("id, dealership_id")
+            .select("id, dealership_id, user_id")
             .eq("id", id)
             .single();
 
@@ -405,7 +414,10 @@ export async function DELETE(
             throw existingError;
         }
 
-        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        const deny = assertOwnershipOrDeny(
+            { dealership_id: existing.dealership_id, assigned_to: existing.user_id },
+            auth.profile
+        );
         if (deny) return deny;
 
         const { error: dbError } = await supabase

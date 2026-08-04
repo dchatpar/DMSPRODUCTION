@@ -5,11 +5,11 @@ import { applyConsentTimestamps } from "@/src/lib/customer-consent";
 import { pickAllowed } from "@/src/lib/auth-helpers";
 import { clientIp } from "@/src/lib/trial";
 
+// Consent timestamps / IPs are server-stamped via applyConsentTimestamps — never client-writable.
 const CUSTOMER_CREATE_FIELDS = [
     "name", "email", "phone", "address", "city", "province", "postal_code",
     "status", "source", "notes", "company", "assigned_to",
     "marketing_consent", "sms_consent",
-    "marketing_consent_at", "sms_consent_at",
 ] as const;
 
 // GET all customers (filtered by dealership + scoping for Salesperson/Staff)

@@ -80,9 +80,11 @@ export async function GET(req: NextRequest) {
                 userPermissions.includes("*") ||
                 (userPermissions.includes("tasks:read") && !userPermissions.includes("tasks:read:assigned"));
 
-            // If explicit my_tasks=true OR user is scoped, only show assigned tasks
-            if (my_tasks || scopedToAssigned || !viewAll) {
+            // If explicit my_tasks=true OR user is scoped, only show assigned (+ unassigned pool)
+            if (my_tasks) {
                 query = query.eq("assigned_to", user.id);
+            } else if (scopedToAssigned || !viewAll) {
+                query = query.or(`assigned_to.eq.${user.id},assigned_to.is.null`);
             }
         }
 
@@ -93,7 +95,11 @@ export async function GET(req: NextRequest) {
             query = query.eq("assigned_to", assigned_to);
         }
         if (overdue) {
-            query = query.eq("status", "Pending").or(`due_date.lt.${new Date().toISOString()},and(status.eq.In Progress,due_date.lt.${new Date().toISOString()})`);
+            const nowIso = new Date().toISOString();
+            // Open tasks past due (Pending or In Progress)
+            query = query
+                .in("status", ["Pending", "In Progress"])
+                .lt("due_date", nowIso);
         }
         if (due_date_from) query = query.gte("due_date", due_date_from);
         if (due_date_to) query = query.lte("due_date", due_date_to + "T23:59:59");

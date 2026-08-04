@@ -181,6 +181,10 @@ export async function PATCH(
 
         if (updateData.status === 'Completed') {
             updateData.completed_at = new Date().toISOString();
+            updateData.completed_by = auth.user?.id ?? null;
+        } else if (updateData.status === 'Pending' || updateData.status === 'Cancelled') {
+            updateData.completed_at = null;
+            updateData.completed_by = null;
         }
 
         const { data, error: dbError } = await supabase
@@ -276,6 +280,23 @@ export async function DELETE(
         }
 
         const { id } = await params;
+
+        const userRole = auth.profile.role;
+        const userPerms = (auth.profile as any).user_permissions || [];
+        const isPlatformAdmin = auth.profile.is_platform_admin;
+
+        const canDelete = isPlatformAdmin ||
+            userRole === "Admin" ||
+            userRole === "Manager" ||
+            userPerms.includes("follow_ups:delete") ||
+            userPerms.includes("*");
+
+        if (!canDelete) {
+            return NextResponse.json(
+                { error: "Forbidden - You need follow_ups:delete permission to delete follow-ups" },
+                { status: 403 }
+            );
+        }
 
         // Assert ownership before any write
         const { data: existing, error: existingError } = await supabase

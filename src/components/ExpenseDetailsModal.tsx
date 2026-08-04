@@ -16,7 +16,7 @@ import { Badge } from "@/src/components/ui/Badge";
 
 interface Vendor {
     id: string;
-    name: string;
+    vendor_name: string;
     contact_name: string | null;
     contact_email: string | null;
     contact_phone: string | null;
@@ -165,7 +165,7 @@ export default function ExpenseDetailsModal({
                         {expense.due_date ? formatDate(expense.due_date) : <PropertyEmpty />}
                     </PropertyRow>
                     <PropertyRow label="Vendor">
-                        {expense.vendor?.name?.trim() ? expense.vendor.name : <PropertyEmpty label="—" />}
+                        {expense.vendor?.vendor_name?.trim() ? expense.vendor.vendor_name : <PropertyEmpty label="—" />}
                     </PropertyRow>
                     <PropertyRow label="Vehicle">
                         {expense.vehicle

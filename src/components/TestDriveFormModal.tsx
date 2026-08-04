@@ -30,14 +30,15 @@ interface TestDrive {
     customer_id: string | null;
     lead_id: string | null;
     vehicle_id: string;
-    driver_license_number: string;
-    driver_license_expiry: string;
-    driver_license_image_url: string | null;
-    signature_image_url: string | null;
+    user_id?: string | null;
+    driver_license_number?: string | null;
+    driver_license_expiry?: string | null;
+    driver_license_image_url?: string | null;
+    signature_image_url?: string | null;
     start_time: string | null;
     scheduled_date?: string | null;
     end_time: string | null;
-    salesperson_id: string | null;
+    salesperson_id?: string | null;
     notes: string | null;
     status: string;
     outcome?: string | null;
@@ -114,13 +115,15 @@ export default function TestDriveFormModal({
                 customer_id: testDrive.customer_id || "",
                 lead_id: testDrive.lead_id || "",
                 vehicle_id: testDrive.vehicle_id,
-                driver_license_number: testDrive.driver_license_number,
-                driver_license_expiry: testDrive.driver_license_expiry,
+                driver_license_number: testDrive.driver_license_number || "",
+                driver_license_expiry: testDrive.driver_license_expiry || "",
                 driver_license_image_url: testDrive.driver_license_image_url || "",
                 signature_image_url: testDrive.signature_image_url || "",
-                start_time: testDrive.start_time ? testDrive.start_time.slice(0, 16) : "",
+                start_time: (testDrive.start_time || testDrive.scheduled_date)
+                    ? String(testDrive.start_time || testDrive.scheduled_date).slice(0, 16)
+                    : "",
                 end_time: testDrive.end_time ? testDrive.end_time.slice(0, 16) : "",
-                salesperson_id: testDrive.salesperson_id || "",
+                salesperson_id: testDrive.user_id || testDrive.salesperson_id || "",
                 notes: testDrive.notes || "",
                 status: testDrive.status || "Scheduled"
             });
@@ -285,11 +288,10 @@ export default function TestDriveFormModal({
             const url = mode === "add" ? "/api/test-drives" : `/api/test-drives/${testDrive?.id}`;
             const method = mode === "add" ? "POST" : "PUT";
 
-            // Build payload only with required fields and non-empty optional fields
+            // Build payload only with schema-backed fields
             const payload: Record<string, any> = {
                 vehicle_id: formData.vehicle_id,
-                driver_license_number: formData.driver_license_number,
-                driver_license_expiry: formData.driver_license_expiry,
+                scheduled_date: formData.start_time,
                 start_time: formData.start_time,
                 status: formData.status || "Scheduled"
             };
@@ -304,9 +306,6 @@ export default function TestDriveFormModal({
             if (formData.end_time) {
                 payload.end_time = formData.end_time;
             }
-            if (formData.driver_license_image_url) {
-                payload.driver_license_image_url = formData.driver_license_image_url;
-            }
             if (formData.signature_image_url) {
                 payload.signature_image_url = formData.signature_image_url;
             }
@@ -314,7 +313,20 @@ export default function TestDriveFormModal({
                 payload.notes = formData.notes;
             }
             if (formData.salesperson_id) {
-                payload.salesperson_id = formData.salesperson_id;
+                payload.user_id = formData.salesperson_id;
+            }
+
+            // License fields are not persisted columns — keep them in notes for audit honesty
+            const licenseBits: string[] = [];
+            if (formData.driver_license_number) {
+                licenseBits.push(`DL#: ${formData.driver_license_number}`);
+            }
+            if (formData.driver_license_expiry) {
+                licenseBits.push(`DL expiry: ${formData.driver_license_expiry}`);
+            }
+            if (licenseBits.length > 0) {
+                const block = `License:\n${licenseBits.join("\n")}`;
+                payload.notes = payload.notes ? `${payload.notes}\n\n${block}` : block;
             }
 
             const checkedItems = [...PRE_DRIVE, ...POST_DRIVE]

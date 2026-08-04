@@ -69,6 +69,10 @@ interface BillOfSale {
     buyer_name?: string;
     vehicle_description?: string;
     sale_type?: string;
+    vin?: string;
+    year?: number;
+    make?: string;
+    model?: string;
 
     // Section B: Pricing
     price_vehicle?: number;
@@ -488,6 +492,11 @@ export default function BillOfSaleModal({
                 ...formData,
                 customer_id: formData.customer_id || deal?.customer_id || customer?.id,
                 buyer_name: customer?.name || deal?.customer?.name || formData.buyer_name,
+                vehicle_id: formData.vehicle_id || deal?.vehicle_id || vehicle?.id,
+                vin: formData.vin || vehicle?.vin,
+                year: formData.year || vehicle?.year,
+                make: formData.make || vehicle?.make,
+                model: formData.model || vehicle?.model,
                 subtotal: totals.subtotal,
                 net_difference: totals.netDifference,
                 gst_amount: totals.gstAmount,
@@ -504,34 +513,23 @@ export default function BillOfSaleModal({
                 payments: payments
             };
 
-            const response = await fetch(url, {
-                method,
-                headers: {
-                    "Content-Type": "application/json" },
-                body: JSON.stringify(payload)
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || "Failed to save bill of sale");
-            }
+            await apiFetch(url, { method, body: payload });
 
             // If sold, update the deal status and vehicle status
             if (asSold && deal) {
-                const dealRes = await fetch(`/api/deals/${deal.id}`, {
-                    method: "PATCH",
-                    headers: {
-                        "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        deal_status: "Paid Off",
-                        close_deal: true,
-                    })
-                });
-                if (!dealRes.ok) {
-                    const dealErr = await dealRes.json().catch(() => ({}));
+                try {
+                    await apiFetch(`/api/deals/${deal.id}`, {
+                        method: "PATCH",
+                        body: {
+                            deal_status: "Paid Off",
+                            close_deal: true,
+                        },
+                    });
+                } catch (dealErr) {
                     throw new Error(
-                        (dealErr as { error?: string }).error ||
-                            "Bill of sale saved, but deal/vehicle could not be marked Sold. Check deals:close permission."
+                        dealErr instanceof Error
+                            ? dealErr.message
+                            : "Bill of sale saved, but deal/vehicle could not be marked Sold. Check deals:close permission."
                     );
                 }
             }

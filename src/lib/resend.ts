@@ -7,6 +7,8 @@ export type SendEmailInput = {
   subject: string;
   html: string;
   text?: string;
+  /** Absolute unsubscribe URL — adds List-Unsubscribe (+ One-Click) headers when set. */
+  listUnsubscribeUrl?: string;
 };
 
 export type SendEmailResult =
@@ -46,6 +48,13 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
   }
 
   try {
+    const emailHeaders: Record<string, string> | undefined = input.listUnsubscribeUrl
+      ? {
+          "List-Unsubscribe": `<${input.listUnsubscribeUrl}>`,
+          "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+        }
+      : undefined;
+
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -58,6 +67,7 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
         subject: input.subject,
         html: input.html,
         text: input.text,
+        ...(emailHeaders ? { headers: emailHeaders } : {}),
       }),
     });
 

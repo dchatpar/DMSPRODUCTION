@@ -109,8 +109,14 @@ export default function DealershipsPage() {
             const response = await fetch(url, { headers: {} });
 
             if (!response.ok) {
-                if (response.status === 401 || response.status === 403) {
+                // 401 → session gone; 403 → authenticated but not platform admin
+                // (never bounce a valid dealer session to /login — that looked like a logout bug)
+                if (response.status === 401) {
                     window.location.href = "/login";
+                    return;
+                }
+                if (response.status === 403) {
+                    router.replace("/dashboard");
                     return;
                 }
                 throw new Error("Failed to fetch dealerships");

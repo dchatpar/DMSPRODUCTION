@@ -21,6 +21,7 @@ export default function ForgotPasswordPage() {
       const res = await apiFetch<{ ok: boolean; warning?: string }>("/api/auth/forgot-password", {
         method: "POST",
         body: { email: email.trim().toLowerCase() },
+        silent: true,
       });
       setDone(true);
       if (res.warning) {

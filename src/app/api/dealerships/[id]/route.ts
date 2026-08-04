@@ -10,7 +10,7 @@ const DEALERSHIP_ALLOWED_FIELDS = [
     "business_email", "status",
 ] as const;
 
-// GET single dealership (platform admin only)
+// GET single dealership — platform admin (any) or member of that dealership
 export async function GET(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -24,9 +24,13 @@ export async function GET(
             );
         }
 
-        if (!auth.profile.is_platform_admin) {
+        const { id } = await params;
+        const isPlatformAdmin = Boolean(auth.profile.is_platform_admin);
+        const ownDealership = auth.profile.dealership_id === id;
+
+        if (!isPlatformAdmin && !ownDealership) {
             return NextResponse.json(
-                { error: "Unauthorized - Platform admin access required" },
+                { error: "Unauthorized - Platform admin or own dealership access required" },
                 { status: 403 }
             );
         }
@@ -43,8 +47,6 @@ export async function GET(
             }
             throw error;
         }
-
-        const { id } = await params;
 
         const { data: dealership, error: dbError } = await supabase
             .from("dealerships")
@@ -66,12 +68,16 @@ export async function GET(
             .eq("dealership_id", id)
             .single();
 
-        // Get billing information
-        const { data: billingInformation } = await supabase
-            .from("billing_information")
-            .select("*")
-            .eq("dealership_id", id)
-            .single();
+        // Billing details: platform admin only (tenant UI uses /settings/billing)
+        let billingInformation = null;
+        if (isPlatformAdmin) {
+            const { data } = await supabase
+                .from("billing_information")
+                .select("*")
+                .eq("dealership_id", id)
+                .single();
+            billingInformation = data;
+        }
 
         // Get user count
         const { count: userCount } = await supabase

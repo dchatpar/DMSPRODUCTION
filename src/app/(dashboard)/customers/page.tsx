@@ -147,7 +147,12 @@ export default function CustomersPage() {
             const exportData = data.data || [];
 
             // Prepare data for Excel
-            const worksheetData = exportData.map((customer: Customer) => ({
+            const worksheetData = exportData.map((customer: Customer & {
+                marketing_consent?: boolean | null;
+                sms_consent?: boolean | null;
+                marketing_consent_at?: string | null;
+                sms_consent_at?: string | null;
+            }) => ({
                 "Customer Name": customer.name || "",
                 "Email": customer.email || "",
                 "Phone": customer.phone || "",
@@ -156,6 +161,14 @@ export default function CustomersPage() {
                 "Province": customer.province || "",
                 "Postal Code": customer.postal_code || "",
                 "Status": customer.status || "",
+                "Marketing Consent": customer.marketing_consent ? "Yes" : "No",
+                "Marketing Consent At": customer.marketing_consent_at
+                    ? new Date(customer.marketing_consent_at).toLocaleString()
+                    : "",
+                "SMS Consent": customer.sms_consent ? "Yes" : "No",
+                "SMS Consent At": customer.sms_consent_at
+                    ? new Date(customer.sms_consent_at).toLocaleString()
+                    : "",
                 "Notes": customer.notes || "",
                 "Created At": customer.created_at ? new Date(customer.created_at).toLocaleDateString() : ""
             }));

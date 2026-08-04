@@ -48,6 +48,11 @@ interface ApiResponse {
     count: number;
     limit: number;
     offset: number;
+    totals?: {
+        dealerCount: number;
+        financeCount: number;
+        withPhoneCount: number;
+    };
 }
 
 const VENDOR_TYPES = [
@@ -78,6 +83,11 @@ export default function VendorsPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [totalItems, setTotalItems] = useState(0);
     const [itemsPerPage] = useState(10);
+    const [vendorTotals, setVendorTotals] = useState({
+        dealerCount: 0,
+        financeCount: 0,
+        withPhoneCount: 0,
+    });
 
     // Modal states
     const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -120,6 +130,13 @@ export default function VendorsPage() {
             const data: ApiResponse = await response.json();
             setVendors(data.data);
             setTotalItems(data.count);
+            if (data.totals) {
+                setVendorTotals({
+                    dealerCount: data.totals.dealerCount || 0,
+                    financeCount: data.totals.financeCount || 0,
+                    withPhoneCount: data.totals.withPhoneCount || 0,
+                });
+            }
         } catch (err) {
             setError(err instanceof Error ? err.message : "An error occurred");
         } finally {
@@ -182,17 +199,18 @@ export default function VendorsPage() {
     };
 
     const getTypeColor = (type: string) => {
+        const key = (type || "").toLowerCase();
         const colors: Record<string, string> = {
-            "Dealer": "bg-purple-100 text-purple-700",
-            "Auction": "bg-blue-100 text-blue-700",
-            "Finance": "bg-green-100 text-green-700",
-            "Insurance": "bg-yellow-100 text-yellow-700",
-            "Service Provider": "bg-orange-100 text-orange-700",
-            "Parts Supplier": "bg-cyan-100 text-cyan-700",
-            "General": "bg-gray-100 text-gray-700",
-            "Other": "bg-slate-100 text-slate-700"
+            "dealer": "bg-purple-100 text-purple-700",
+            "auction": "bg-blue-100 text-blue-700",
+            "finance": "bg-green-100 text-green-700",
+            "insurance": "bg-yellow-100 text-yellow-700",
+            "service provider": "bg-orange-100 text-orange-700",
+            "parts supplier": "bg-cyan-100 text-cyan-700",
+            "general": "bg-gray-100 text-gray-700",
+            "other": "bg-slate-100 text-slate-700"
         };
-        return colors[type] || "bg-gray-100 text-gray-700";
+        return colors[key] || "bg-gray-100 text-gray-700";
     };
 
     const formatDate = (date: string) => {
@@ -254,7 +272,7 @@ export default function VendorsPage() {
                         <div>
                             <p className="text-xs text-gray-500">Dealers</p>
                             <p className="text-xl font-bold text-purple-600">
-                                {vendors.filter((v) => v.vendor_type === "Dealer").length}
+                                {vendorTotals.dealerCount}
                             </p>
                         </div>
                     </div>
@@ -267,7 +285,7 @@ export default function VendorsPage() {
                         <div>
                             <p className="text-xs text-gray-500">Finance</p>
                             <p className="text-xl font-bold text-green-600">
-                                {vendors.filter((v) => v.vendor_type === "Finance").length}
+                                {vendorTotals.financeCount}
                             </p>
                         </div>
                     </div>
@@ -280,7 +298,7 @@ export default function VendorsPage() {
                         <div>
                             <p className="text-xs text-gray-500">With Phone</p>
                             <p className="text-xl font-bold text-orange-600">
-                                {vendors.filter((v) => v.phone).length}
+                                {vendorTotals.withPhoneCount}
                             </p>
                         </div>
                     </div>
@@ -341,7 +359,10 @@ export default function VendorsPage() {
                                                 <input
                                                     type="date"
                                                     value={createdAtFrom}
-                                                    onChange={(e) => setCreatedAtFrom(e.target.value)}
+                                                    onChange={(e) => {
+                                                        setCreatedAtFrom(e.target.value);
+                                                        setCurrentPage(1);
+                                                    }}
                                                     className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                 />
                                             </div>
@@ -350,7 +371,10 @@ export default function VendorsPage() {
                                                 <input
                                                     type="date"
                                                     value={createdAtTo}
-                                                    onChange={(e) => setCreatedAtTo(e.target.value)}
+                                                    onChange={(e) => {
+                                                        setCreatedAtTo(e.target.value);
+                                                        setCurrentPage(1);
+                                                    }}
                                                     className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                 />
                                             </div>

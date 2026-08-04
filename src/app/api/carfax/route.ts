@@ -1,10 +1,21 @@
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
 import { getCarfaxEnv, fetchCarfaxReportForVin } from "@/src/lib/carfax";
-import { requireDealershipAccess } from "@/src/lib/auth-helpers";
+import {
+    requireDealershipAccess,
+    assertOwnershipOrDeny,
+} from "@/src/lib/auth-helpers";
 
 export async function GET(req: NextRequest) {
     try {
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
+
         let supabase;
         try {
             supabase = createTokenClient(req);
@@ -24,6 +35,14 @@ export async function GET(req: NextRequest) {
             .from("carfax_reports")
             .select("*")
             .order("created_at", { ascending: false });
+
+        // Tenant isolation — never return other dealerships' reports.
+        if (!auth.profile.is_platform_admin) {
+            if (!auth.profile.dealership_id) {
+                return NextResponse.json({ error: "No dealership context" }, { status: 403 });
+            }
+            query = query.eq("dealership_id", auth.profile.dealership_id);
+        }
 
         if (vehicleId) {
             query = query.eq("vehicle_id", vehicleId);
@@ -78,6 +97,20 @@ export async function POST(req: NextRequest) {
 
         if (!vin) {
             return NextResponse.json({ error: "vin is required" }, { status: 400 });
+        }
+
+        // Verify vehicle ownership before mirroring URL onto vehicles row.
+        if (vehicleId) {
+            const { data: vehicle, error: vErr } = await supabase
+                .from("vehicles")
+                .select("id, dealership_id, vin")
+                .eq("id", vehicleId)
+                .maybeSingle();
+            if (vErr || !vehicle) {
+                return NextResponse.json({ error: "Vehicle not found" }, { status: 404 });
+            }
+            const deny = assertOwnershipOrDeny(vehicle, auth.profile);
+            if (deny) return deny;
         }
 
         let reportUrl: string | null =
@@ -141,7 +174,7 @@ export async function POST(req: NextRequest) {
 
         if (error) throw error;
 
-        // Mirror primary URL onto vehicle when we have an id
+        // Mirror primary URL onto vehicle when we have an id (ownership already checked)
         if (vehicleId) {
             await supabase
                 .from("vehicles")

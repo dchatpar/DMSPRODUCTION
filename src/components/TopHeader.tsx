@@ -250,7 +250,7 @@ export function TopHeader() {
                             <div className="border-b border-border px-3 py-2.5">
                                 <p className="text-sm font-semibold text-foreground">Notifications</p>
                                 <p className="text-xs text-muted-foreground">
-                                    Due follow-ups and overdue tasks
+                                    Due follow-ups, tasks, and overdue invoices
                                 </p>
                             </div>
                             {notifLoading ? (

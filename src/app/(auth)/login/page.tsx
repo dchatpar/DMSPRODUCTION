@@ -83,15 +83,35 @@ function LoginForm() {
             await apiFetch("/api/auth/login", {
                 method: "POST",
                 body: { email: email.trim(), password, rememberMe },
+                // Login owns its error UX (incl. EMAIL_NOT_VERIFIED → verify page)
+                silent: true,
+                noAutoRedirect: true,
             });
             toast.success("Welcome back", "Loading your dashboard…");
             router.push(nextPath);
             router.refresh();
-        } catch (err: any) {
+        } catch (err: unknown) {
+            const apiErr = err as {
+                data?: { error?: string; code?: string };
+                message?: string;
+            };
+            const code = apiErr?.data?.code;
             const message =
-                err?.data?.error ||
-                err?.message ||
+                apiErr?.data?.error ||
+                apiErr?.message ||
                 "Sign in failed — check your email and password";
+
+            if (code === "EMAIL_NOT_VERIFIED") {
+                setError("Email not verified. Check your inbox for the verification code.");
+                toast.info("Verify your email", "Enter the code we sent, then sign in.");
+                const q = new URLSearchParams({
+                    email: email.trim().toLowerCase(),
+                    purpose: "signup",
+                });
+                router.push(`/verify-email?${q.toString()}`);
+                return;
+            }
+
             if (
                 message.toLowerCase().includes("invalid") ||
                 message.toLowerCase().includes("credentials")

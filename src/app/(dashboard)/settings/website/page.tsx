@@ -126,7 +126,7 @@ export default function WebsiteEmbedSettingsPage() {
                         <p className="font-medium">Could not load embed settings</p>
                         <p className="mt-0.5 text-destructive/80">{error}</p>
                         <p className="mt-2 text-muted-foreground">
-                            Dealership Admin or platform admin access is required.
+                            Dealership Admin/Manager or platform admin access is required.
                         </p>
                     </div>
                 </div>
@@ -211,8 +211,12 @@ export default function WebsiteEmbedSettingsPage() {
                             Without <code className="rounded bg-muted px-1 text-xs">dealership_id</code>,{" "}
                             <code className="rounded bg-muted px-1 text-xs">slug</code>, or{" "}
                             <code className="rounded bg-muted px-1 text-xs">token</code> the API returns{" "}
-                            <strong>400</strong>. Native WordPress pages fed by this API remain best for SEO;
-                            the widget adds optional JSON-LD on cards.
+                            <strong>400</strong>. When an embed token exists, prefer including it in
+                            the snippet. Locking to token-only requires operator{" "}
+                            <code className="rounded bg-muted px-1 text-xs">embed_token_required</code>{" "}
+                            in dealership settings (not self-serve yet). Native WordPress pages fed
+                            by this API remain best for SEO; the widget adds optional JSON-LD on
+                            cards.
                         </p>
                     </section>
                 </div>

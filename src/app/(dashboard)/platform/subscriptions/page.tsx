@@ -3,13 +3,11 @@
 import { useState, useEffect } from "react";
 import {
     CreditCard,
-    Search,
     RefreshCw,
     Loader2,
     AlertCircle,
     CheckCircle
 } from "lucide-react";
-import { apiFetch } from "@/src/lib/fetch";
 
 interface Subscription {
     id: string;

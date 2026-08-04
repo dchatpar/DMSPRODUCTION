@@ -49,10 +49,18 @@ export async function GET(req: NextRequest) {
         }
 
         const url = new URL(req.url);
+        const adminDealership = url.searchParams.get("dealership_id");
         const target =
-            auth.profile.is_platform_admin && url.searchParams.get("dealership_id")
-                ? url.searchParams.get("dealership_id")!
-                : dealershipId!;
+            auth.profile.is_platform_admin && adminDealership
+                ? adminDealership
+                : dealershipId;
+
+        if (!target) {
+            return NextResponse.json(
+                { error: "dealership_id is required for platform admin duplicate scan" },
+                { status: 400 }
+            );
+        }
 
         const includeInactive = url.searchParams.get("include_inactive") === "1";
 

@@ -37,7 +37,12 @@ export class ApiError extends Error {
     }
 }
 
-function dispatchApiError(detail: { status: number; url: string; message?: string }) {
+function dispatchApiError(detail: {
+    status: number;
+    url: string;
+    message?: string;
+    code?: string;
+}) {
     if (typeof window === "undefined") return;
     try {
         window.dispatchEvent(new CustomEvent("api-error", { detail }));
@@ -89,11 +94,15 @@ export async function apiFetch<T = any>(
         const message =
             (data && typeof data === "object" && (data.error || data.message)) ||
             `Request failed (${res.status})`;
+        const code =
+            data && typeof data === "object" && typeof data.code === "string"
+                ? data.code
+                : undefined;
 
         // 401 -> delegate redirect to the bridge (debounced)
         if (res.status === 401) {
             if (!noAutoRedirect) {
-                dispatchApiError({ status: 401, url: input, message });
+                dispatchApiError({ status: 401, url: input, message, code });
             }
             throw new ApiError(401, message, data);
         }
@@ -103,9 +112,14 @@ export async function apiFetch<T = any>(
             toast.error("Server error", message);
         }
 
-        // 4xx (403, 404, 422, etc) -> delegate to bridge for toasting
-        if (res.status >= 400 && res.status < 500 && res.status !== 401) {
-            dispatchApiError({ status: res.status, url: input, message });
+        // 4xx (403, 402, 404, 422, etc) -> bridge unless caller opted silent
+        if (
+            res.status >= 400 &&
+            res.status < 500 &&
+            res.status !== 401 &&
+            !silent
+        ) {
+            dispatchApiError({ status: res.status, url: input, message, code });
         }
 
         throw new ApiError(res.status, message, data);

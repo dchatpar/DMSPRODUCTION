@@ -43,6 +43,12 @@ interface LightboxState {
 }
 
 const STATUS_OPTIONS = ["All", "Active", "Sold", "Inactive", "Coming Soon"];
+const PHOTO_OPTIONS = [
+    { id: "with", label: "With photos" },
+    { id: "missing", label: "Missing photos" },
+    { id: "all", label: "All units" },
+] as const;
+type PhotoFilter = (typeof PHOTO_OPTIONS)[number]["id"];
 
 const ASPECTS = ["aspect-[4/3]", "aspect-[3/4]", "aspect-square", "aspect-[4/5]", "aspect-[16/10]"];
 
@@ -53,6 +59,7 @@ export default function ImageLibraryPage() {
 
     const [status, setStatus] = useState<string>("Active");
     const [makeFilter, setMakeFilter] = useState<string>("All");
+    const [photoFilter, setPhotoFilter] = useState<PhotoFilter>("with");
     const [search, setSearch] = useState<string>("");
     const [lightbox, setLightbox] = useState<LightboxState | null>(null);
 
@@ -101,6 +108,9 @@ export default function ImageLibraryPage() {
         return vehicles.filter((v) => {
             if (status !== "All" && v.status !== status) return false;
             if (makeFilter !== "All" && v.make !== makeFilter) return false;
+            const imageCount = resolveGallery(v.image_gallery, v.images).length;
+            if (photoFilter === "with" && imageCount === 0) return false;
+            if (photoFilter === "missing" && imageCount > 0) return false;
             if (!q) return true;
             return (
                 v.vin.toLowerCase().includes(q) ||
@@ -108,11 +118,20 @@ export default function ImageLibraryPage() {
                 String(v.stock_number ?? "").toLowerCase().includes(q)
             );
         });
-    }, [vehicles, status, makeFilter, search]);
+    }, [vehicles, status, makeFilter, photoFilter, search]);
 
     const totalImages = useMemo(
         () => filtered.reduce((acc, v) => acc + resolveGallery(v.image_gallery, v.images).length, 0),
         [filtered]
+    );
+
+    const missingPhotoCount = useMemo(
+        () =>
+            vehicles.filter((v) => {
+                if (status !== "All" && v.status !== status) return false;
+                return resolveGallery(v.image_gallery, v.images).length === 0;
+            }).length,
+        [vehicles, status]
     );
 
     const openLightbox = (vehicle: Vehicle, images: VehicleImageT[], startIndex: number) => {
@@ -154,7 +173,13 @@ export default function ImageLibraryPage() {
                         <div>
                             <h1 className="text-xl sm:text-2xl font-bold text-foreground">Image Library</h1>
                             <p className="text-sm text-muted-foreground">
-                                {loading ? "Loading gallery…" : `${filtered.length} vehicles · ${totalImages} photos`}
+                                {loading
+                                    ? "Loading gallery…"
+                                    : `${filtered.length} vehicles · ${totalImages} photos${
+                                          missingPhotoCount > 0 && photoFilter !== "missing"
+                                              ? ` · ${missingPhotoCount} missing photos`
+                                              : ""
+                                      }`}
                             </p>
                         </div>
                     </div>
@@ -189,6 +214,26 @@ export default function ImageLibraryPage() {
                             </button>
                         ))}
                     </div>
+                    {/* Photo presence filter */}
+                    <div className="flex items-center gap-1 bg-background border border-border rounded-lg p-1">
+                        {PHOTO_OPTIONS.map((opt) => (
+                            <button
+                                key={opt.id}
+                                type="button"
+                                onClick={() => setPhotoFilter(opt.id)}
+                                className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                                    photoFilter === opt.id
+                                        ? "bg-indigo-600 text-white shadow-sm"
+                                        : "text-muted-foreground hover:bg-muted"
+                                }`}
+                            >
+                                {opt.label}
+                                {opt.id === "missing" && missingPhotoCount > 0
+                                    ? ` (${missingPhotoCount})`
+                                    : ""}
+                            </button>
+                        ))}
+                    </div>
                     {/* Make filter */}
                     <select
                         value={makeFilter}
@@ -216,20 +261,43 @@ export default function ImageLibraryPage() {
             ) : filtered.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-32 gap-3">
                     <Images className="w-12 h-12 text-muted-foreground/40" />
-                    <p className="text-sm text-muted-foreground">No vehicles match your filters.</p>
+                    <p className="text-sm text-muted-foreground">
+                        {photoFilter === "missing"
+                            ? "No vehicles are missing photos for these filters."
+                            : "No vehicles match your filters."}
+                    </p>
                 </div>
             ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
                     {filtered.map((v) => {
                         const images = resolveGallery(v.image_gallery, v.images);
-                        if (images.length === 0) return null;
                         const cover = images.find((i) => i.is_cover) ?? images[0];
                         const aspect = ASPECTS[v.vin.length % ASPECTS.length];
+                        const missing = images.length === 0;
                         return (
                             <div
                                 key={v.vin}
                                 className="group relative rounded-2xl overflow-hidden border border-border bg-background hover:shadow-xl hover:shadow-indigo-500/10 hover:-translate-y-0.5 transition-all duration-300"
                             >
+                                {missing ? (
+                                    <Link
+                                        href={`/inventory/${encodeURIComponent(v.vin)}/edit`}
+                                        className={`relative w-full ${aspect} overflow-hidden bg-muted flex flex-col items-center justify-center gap-2 text-muted-foreground`}
+                                        aria-label={`Add photos for ${v.year} ${v.make} ${v.model}`}
+                                    >
+                                        <Images className="w-8 h-8 opacity-40" />
+                                        <span className="text-xs font-medium">Add photos</span>
+                                        <div className={`absolute top-2 left-2 px-2 py-0.5 text-[10px] font-semibold rounded-full backdrop-blur-sm ${
+                                            v.status === "Active"
+                                                ? "bg-emerald-500/90 text-white"
+                                                : v.status === "Sold"
+                                                    ? "bg-blue-600/90 text-white"
+                                                    : "bg-gray-700/90 text-white"
+                                        }`}>
+                                            {v.status}
+                                        </div>
+                                    </Link>
+                                ) : (
                                 <button
                                     type="button"
                                     onClick={() => openLightbox(v, images, 0)}
@@ -237,7 +305,7 @@ export default function ImageLibraryPage() {
                                     aria-label={`View ${v.year} ${v.make} ${v.model} photos`}
                                 >
                                     <Image
-                                        src={cover.url}
+                                        src={cover!.url}
                                         alt={`${v.year} ${v.make} ${v.model}`}
                                         fill
                                         sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
@@ -252,7 +320,7 @@ export default function ImageLibraryPage() {
                                         <Images className="w-3 h-3" />
                                         <span>{images.length}</span>
                                     </div>
-                                    {cover.is_cover && (
+                                    {cover?.is_cover && (
                                         <div className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-full bg-amber-500/95 px-2 py-0.5 text-[10px] font-semibold text-white">
                                             <Star className="h-2.5 w-2.5 fill-current" />
                                             Cover
@@ -286,6 +354,7 @@ export default function ImageLibraryPage() {
                                         </div>
                                     </div>
                                 </button>
+                                )}
                                 {/* Card footer */}
                                 <div className="flex items-center justify-between px-3 py-2.5">
                                     <Link

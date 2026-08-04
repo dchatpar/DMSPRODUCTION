@@ -35,7 +35,7 @@ import { cn } from "@/src/lib/utils";
 
 interface Vendor {
     id: string;
-    name: string;
+    vendor_name: string;
     contact_name: string | null;
     contact_email: string | null;
     contact_phone: string | null;
@@ -192,8 +192,14 @@ export default function ExpensesPage() {
         setExportLoading(true);
         try {
 
-            const response = await fetch("/api/expenses?limit=10000", {
-            });
+            let exportUrl = "/api/expenses?limit=10000&offset=0";
+            if (categoryFilter) exportUrl += `&category=${encodeURIComponent(categoryFilter)}`;
+            if (statusFilter) exportUrl += `&status=${encodeURIComponent(statusFilter)}`;
+            if (debouncedSearch) exportUrl += `&q=${encodeURIComponent(debouncedSearch)}`;
+            if (expenseDateFrom) exportUrl += `&expense_date_from=${expenseDateFrom}`;
+            if (expenseDateTo) exportUrl += `&expense_date_to=${expenseDateTo}`;
+
+            const response = await fetch(exportUrl);
 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
@@ -516,7 +522,10 @@ export default function ExpensesPage() {
                                                     <input
                                                         type="date"
                                                         value={expenseDateFrom}
-                                                        onChange={(e) => setExpenseDateFrom(e.target.value)}
+                                                        onChange={(e) => {
+                                                            setExpenseDateFrom(e.target.value);
+                                                            setCurrentPage(1);
+                                                        }}
                                                         className="flex-1 rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
                                                     />
                                                 </div>
@@ -525,7 +534,10 @@ export default function ExpensesPage() {
                                                     <input
                                                         type="date"
                                                         value={expenseDateTo}
-                                                        onChange={(e) => setExpenseDateTo(e.target.value)}
+                                                        onChange={(e) => {
+                                                            setExpenseDateTo(e.target.value);
+                                                            setCurrentPage(1);
+                                                        }}
                                                         className="flex-1 rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
                                                     />
                                                 </div>
@@ -608,17 +620,19 @@ export default function ExpensesPage() {
                                         </button>
                                     </td>
                                 </tr>
-                            ) : expenses.length === 0 ? (
+                                            ) : expenses.length === 0 ? (
                                 <tr>
                                     <td colSpan={7} className="px-4 py-12 text-center">
                                         <Receipt className="w-12 h-12 text-muted-foreground/50 mx-auto" />
                                         <p className="mt-2 text-sm text-muted-foreground">No expenses found</p>
-                                        <button
-                                            onClick={handleAdd}
-                                            className="mt-3 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary-600"
-                                        >
-                                            Record Your First Expense
-                                        </button>
+                                        {canWrite("expenses") && (
+                                            <button
+                                                onClick={handleAdd}
+                                                className="mt-3 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary-600"
+                                            >
+                                                Record Your First Expense
+                                            </button>
+                                        )}
                                     </td>
                                 </tr>
                             ) : (
@@ -660,8 +674,8 @@ export default function ExpensesPage() {
                                                 ) : null}
                                             </td>
                                             <td className="px-4 py-3">
-                                                <span className="text-sm text-foreground/80">
-                                                    {expense.vendor?.name || "—"}
+                                                    <span className="text-sm text-foreground/80">
+                                                    {expense.vendor?.vendor_name || "—"}
                                                 </span>
                                             </td>
                                             <td className="px-4 py-3">
@@ -752,12 +766,14 @@ export default function ExpensesPage() {
                         <div className="px-4 py-12 text-center">
                             <Receipt className="w-12 h-12 text-muted-foreground/50 mx-auto" />
                             <p className="mt-2 text-sm text-muted-foreground">No expenses found</p>
-                            <button
-                                onClick={handleAdd}
-                                className="mt-3 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary-600"
-                            >
-                                Record Your First Expense
-                            </button>
+                            {canWrite("expenses") && (
+                                <button
+                                    onClick={handleAdd}
+                                    className="mt-3 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary-600"
+                                >
+                                    Record Your First Expense
+                                </button>
+                            )}
                         </div>
                     ) : (
                         expenses.map((expense) => {
@@ -820,7 +836,7 @@ export default function ExpensesPage() {
                                             </span>
                                         </div>
                                         <div>
-                                            <span className="font-medium text-muted-foreground">Vendor:</span> {expense.vendor?.name || "-"}
+                                            <span className="font-medium text-muted-foreground">Vendor:</span> {expense.vendor?.vendor_name || "-"}
                                         </div>
                                         {isOverdue && <p className="text-xs text-red-500">Overdue</p>}
                                     </div>

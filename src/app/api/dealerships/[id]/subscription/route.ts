@@ -3,7 +3,7 @@ import { createTokenClient } from "@/src/lib/server-token";
 import { supabaseAdmin } from "@/src/lib/supabase-admin";
 import { NextRequest, NextResponse } from "next/server";
 
-// GET subscription for a dealership (platform admin only)
+// GET subscription for a dealership — platform admin or own dealership member
 export async function GET(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -34,16 +34,18 @@ export async function GET(
             );
         }
 
-        // Check if user is platform admin
         const { data: currentUser } = await supabase
             .from("users")
-            .select("is_platform_admin")
+            .select("is_platform_admin, dealership_id")
             .eq("id", user.id)
             .single();
 
-        if (!currentUser?.is_platform_admin) {
+        const isPlatformAdmin = Boolean(currentUser?.is_platform_admin);
+        const ownDealership = currentUser?.dealership_id === id;
+
+        if (!isPlatformAdmin && !ownDealership) {
             return NextResponse.json(
-                { error: "Unauthorized - Platform admin access required" },
+                { error: "Unauthorized - Platform admin or own dealership access required" },
                 { status: 403 }
             );
         }

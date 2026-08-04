@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-    requireDealershipAccess,
-    pickSupabaseClient,
-} from "@/src/lib/auth-helpers";
+import { requireDealershipAccess } from "@/src/lib/auth-helpers";
+import { supabaseAdmin } from "@/src/lib/supabase-admin";
 import {
     autoTraderRowsToCsv,
     autoTraderRowsToPipeFeed,
@@ -41,21 +39,9 @@ export async function GET(req: NextRequest) {
             );
         }
 
-        let supabase;
-        try {
-            supabase = pickSupabaseClient(req, auth.profile).supabase;
-        } catch (error: unknown) {
-            if (
-                error instanceof Error &&
-                error.message === "MISSING_BEARER_TOKEN"
-            ) {
-                return NextResponse.json(
-                    { error: "Authorization token required" },
-                    { status: 401 }
-                );
-            }
-            throw error;
-        }
+        // Same pattern as GET /api/vehicles: service-role + app-layer dealership scope
+        // so image_gallery / pricing are not dropped by incomplete RLS mappings.
+        const supabase = supabaseAdmin;
 
         const url = new URL(req.url);
         const board = (url.searchParams.get("board") || "autotrader").toLowerCase();
@@ -126,10 +112,26 @@ export async function GET(req: NextRequest) {
         const okRows = rows.filter((r) => r.ok);
 
         if (okRows.length === 0) {
+            const errorFields = new Map<string, number>();
+            for (const row of rows) {
+                for (const issue of row.issues) {
+                    if (issue.severity !== "error") continue;
+                    errorFields.set(
+                        issue.field,
+                        (errorFields.get(issue.field) || 0) + 1
+                    );
+                }
+            }
+            const top = [...errorFields.entries()]
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 3)
+                .map(([field, n]) => `${field}×${n}`)
+                .join(", ");
             return NextResponse.json(
                 {
-                    error:
-                        "Every matched vehicle is missing required AutoTrader fields (VIN, price, photos, year/make/model)",
+                    error: top
+                        ? `No vehicles qualified for AT.ca feed (${meta.skipped} skipped: ${top}). Need VIN, positive retail price, and public http(s) photos.`
+                        : "Every matched vehicle is missing required AutoTrader fields (VIN, price, photos, year/make/model)",
                     meta,
                 },
                 { status: 422 }

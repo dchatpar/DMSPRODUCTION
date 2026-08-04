@@ -6,7 +6,7 @@ import {
     canViewAll,
     canCreate,
 } from "@/src/lib/permission-middleware";
-import { scoreLead } from "@/src/lib/business/lead-score";
+import { scoreLead, resolveLeadScore } from "@/src/lib/business/lead-score";
 
 export async function GET(req: NextRequest) {
     try {
@@ -79,6 +79,74 @@ export async function GET(req: NextRequest) {
         const q = url.searchParams.get("q");
         const createdAtFrom = url.searchParams.get("created_at_from");
         const createdAtTo = url.searchParams.get("created_at_to");
+        const tempFilter =
+            temperature === "Hot" || temperature === "Warm" || temperature === "Cold"
+                ? temperature
+                : null;
+
+        let temperatureIds: string[] | null = null;
+
+        // Temperature may be null on legacy rows — resolve via scoreLead so filters match UI.
+        if (tempFilter) {
+            let scoreQuery = supabase
+                .from("leads")
+                .select(
+                    "id, source, status, last_engagement, lead_creation_date, created_at, interest_vehicle_id, notes, score, temperature"
+                );
+
+            if (!isPlatformAdmin) {
+                if (currentUser.dealership_id) {
+                    scoreQuery = scoreQuery.eq(
+                        "dealership_id",
+                        currentUser.dealership_id
+                    );
+                } else {
+                    return NextResponse.json(
+                        { error: "No dealership context" },
+                        { status: 403 }
+                    );
+                }
+                const scopedToAssigned = shouldScopeToAssigned(
+                    userRole,
+                    userPermissions
+                );
+                const viewAll = canViewAll(userRole, userPermissions);
+                if (scopedToAssigned || !viewAll) {
+                    scoreQuery = scoreQuery.eq("assigned_to", user.id);
+                }
+            }
+            if (status) scoreQuery = scoreQuery.eq("status", status);
+            if (source) scoreQuery = scoreQuery.eq("source", source);
+            if (
+                assigned_to &&
+                (userRole === "Admin" ||
+                    userRole === "Manager" ||
+                    isPlatformAdmin)
+            ) {
+                scoreQuery = scoreQuery.eq("assigned_to", assigned_to);
+            }
+            if (createdAtFrom) scoreQuery = scoreQuery.gte("created_at", createdAtFrom);
+            if (createdAtTo) scoreQuery = scoreQuery.lte("created_at", createdAtTo);
+
+            const { data: scoreRows, error: scoreErr } = await scoreQuery;
+            if (scoreErr) throw scoreErr;
+
+            const matchingIds = (scoreRows || [])
+                .filter((row) => resolveLeadScore(row).temperature === tempFilter)
+                .map((row) => row.id);
+
+            if (matchingIds.length === 0) {
+                return NextResponse.json({
+                    data: [],
+                    count: 0,
+                    limit,
+                    offset,
+                });
+            }
+
+            // Nova lead volume is small (~140); .in() is fine.
+            temperatureIds = matchingIds;
+        }
 
         let query = supabase
             .from("leads")
@@ -115,11 +183,8 @@ export async function GET(req: NextRequest) {
 
         if (status) query = query.eq("status", status);
         if (source) query = query.eq("source", source);
-        if (
-            temperature &&
-            (temperature === "Hot" || temperature === "Warm" || temperature === "Cold")
-        ) {
-            query = query.eq("temperature", temperature);
+        if (temperatureIds) {
+            query = query.in("id", temperatureIds);
         }
         if (assigned_to && (userRole === "Admin" || userRole === "Manager" || isPlatformAdmin)) {
             // Only Admin/Manager/PlatformAdmin can filter by assigned_to explicitly
@@ -157,8 +222,17 @@ export async function GET(req: NextRequest) {
 
         if (dbError) throw dbError;
 
+        const enriched = (data || []).map((lead) => {
+            const scored = resolveLeadScore(lead);
+            return {
+                ...lead,
+                score: scored.score,
+                temperature: scored.temperature,
+            };
+        });
+
         return NextResponse.json({
-            data: data || [],
+            data: enriched,
             count: count || 0,
             limit,
             offset,

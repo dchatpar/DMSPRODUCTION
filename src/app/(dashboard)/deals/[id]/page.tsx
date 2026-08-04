@@ -115,6 +115,16 @@ export default function DealDetailPage() {
     const [bosData, setBosData] = useState<Record<string, unknown> | null>(null);
     const [bosMode, setBosMode] = useState<"add" | "edit" | "view">("add");
     const [bosLoading, setBosLoading] = useState(false);
+    const [statusSaving, setStatusSaving] = useState(false);
+
+    const STATUS_CHIP_OPTIONS = [
+        "Negotiation",
+        "Down Payment",
+        "Finance",
+        "Paid Off",
+        "Closed",
+        "Cancelled",
+    ] as const;
 
     const load = async () => {
         if (!id) return;
@@ -182,6 +192,28 @@ export default function DealDetailPage() {
             setShowBos(true);
         } finally {
             setBosLoading(false);
+        }
+    };
+
+    const setDealStatus = async (next: string) => {
+        if (!deal || next === deal.deal_status || statusSaving) return;
+        setStatusSaving(true);
+        const prev = deal.deal_status;
+        setDeal({ ...deal, deal_status: next });
+        try {
+            await apiFetch(`/api/deals/${deal.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ deal_status: next }),
+            });
+            toast.success(`Status → ${next}`);
+            void load();
+        } catch (err) {
+            setDeal({ ...deal, deal_status: prev });
+            toast.error(
+                err instanceof Error ? err.message : "Failed to update status"
+            );
+        } finally {
+            setStatusSaving(false);
         }
     };
 
@@ -352,12 +384,49 @@ export default function DealDetailPage() {
                     )}
 
                     <PropertyList title="Deal">
+                        <PropertyRow label="Status">
+                            {canEdit ? (
+                                <div className="flex flex-wrap gap-1.5">
+                                    {STATUS_CHIP_OPTIONS.map((s) => {
+                                        const active = deal.deal_status === s;
+                                        return (
+                                            <button
+                                                key={s}
+                                                type="button"
+                                                disabled={statusSaving}
+                                                onClick={() => void setDealStatus(s)}
+                                                className={
+                                                    active
+                                                        ? "rounded-md bg-primary px-2 py-0.5 text-[11px] font-semibold text-white"
+                                                        : "rounded-md border border-border bg-card px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                                                }
+                                            >
+                                                {s}
+                                            </button>
+                                        );
+                                    })}
+                                    {!STATUS_CHIP_OPTIONS.includes(
+                                        deal.deal_status as (typeof STATUS_CHIP_OPTIONS)[number]
+                                    ) ? (
+                                        <StatusBadge
+                                            status={deal.deal_status}
+                                            resource="deal"
+                                        />
+                                    ) : null}
+                                </div>
+                            ) : (
+                                <StatusBadge
+                                    status={deal.deal_status}
+                                    resource="deal"
+                                />
+                            )}
+                        </PropertyRow>
                         <PropertyRow label="Customer">
                             {deal.customer ? (
                                 <RelationChip
                                     customerId={deal.customer.id}
                                     name={deal.customer.name}
-                                    avatarUrl={deal.customer.avatar}
+                                    avatarUrl={deal.customer.avatar ?? null}
                                 />
                             ) : (
                                 <PropertyEmpty label="Cash / unlinked" />

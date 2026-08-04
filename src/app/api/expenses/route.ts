@@ -187,6 +187,13 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        if (!currentUser.dealership_id) {
+            return NextResponse.json(
+                { error: "Dealership context required to create an expense" },
+                { status: 400 }
+            );
+        }
+
         const payload = await req.json();
 
         // Validate required fields
@@ -242,6 +249,42 @@ export async function POST(req: NextRequest) {
                 { error: `Invalid category. Must be one of: ${validCategories.join(', ')}` },
                 { status: 400 }
             );
+        }
+
+        // Reject cross-tenant vendor / vehicle links
+        if (payload.vendor_id) {
+            const { data: vendorRow } = await supabase
+                .from("vendors")
+                .select("id, dealership_id")
+                .eq("id", payload.vendor_id)
+                .maybeSingle();
+            if (
+                !vendorRow ||
+                (vendorRow.dealership_id &&
+                    vendorRow.dealership_id !== currentUser.dealership_id)
+            ) {
+                return NextResponse.json(
+                    { error: "Vendor not found in this dealership" },
+                    { status: 400 }
+                );
+            }
+        }
+        if (payload.vehicle_id) {
+            const { data: vehicleRow } = await supabase
+                .from("vehicles")
+                .select("id, dealership_id")
+                .eq("id", payload.vehicle_id)
+                .maybeSingle();
+            if (
+                !vehicleRow ||
+                (vehicleRow.dealership_id &&
+                    vehicleRow.dealership_id !== currentUser.dealership_id)
+            ) {
+                return NextResponse.json(
+                    { error: "Vehicle not found in this dealership" },
+                    { status: 400 }
+                );
+            }
         }
 
         const expenseData = {

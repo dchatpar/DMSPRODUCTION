@@ -107,7 +107,17 @@ export default function UsersPage() {
             });
             if (response.ok) {
                 const data = await response.json();
-                setUserData(data.data);
+                const me = data.data;
+                // Defense in depth with middleware: non-Admin dealers leave this shell
+                if (
+                    me &&
+                    !me.is_platform_admin &&
+                    me.role !== "Admin"
+                ) {
+                    window.location.href = "/dashboard";
+                    return;
+                }
+                setUserData(me);
             }
         } catch (err) {
             console.error("Error fetching user:", err);

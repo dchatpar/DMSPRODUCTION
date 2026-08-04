@@ -38,6 +38,7 @@ import { toast } from "@/src/lib/toast";
 import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
 import {
     disclosureDraftWarning,
+    isActiveInventoryStatus,
     MVDA_ACTIVE_CLEAR_BLOCKED,
 } from "@/src/lib/mvda-damage";
 
@@ -215,6 +216,12 @@ function InlineImageManager({
             if (!res.ok) {
                 const body = await res.json().catch(() => ({}));
                 throw new Error(body?.error || `Delete failed (${res.status})`);
+            }
+            const body = await res.json().catch(() => ({}));
+            if ((body as { removed?: number }).removed === 0) {
+                // Fallback: rich gallery entries may have failed exact-match deletes on older servers
+                const next = images.filter((img) => img.url !== url);
+                await persistGallery(next);
             }
             toast.success("Image removed");
             await onChange();
@@ -431,7 +438,11 @@ export default function VehicleDetailPage() {
     const heroRef = useRef<HTMLDivElement>(null);
     const railRef = useRef<HTMLDivElement>(null);
 
-    const canEdit = userRole === "Admin" || userPermissions.includes("vehicles:write");
+    const canEdit =
+        userRole === "Admin" ||
+        userRole === "Manager" ||
+        userPermissions.includes("vehicles:write") ||
+        userPermissions.includes("vehicles:photos");
     const canDelete = userRole === "Admin" || userPermissions.includes("vehicles:delete");
 
     // Fetch the vehicle
@@ -554,7 +565,7 @@ export default function VehicleDetailPage() {
             disclosure: disclosureDraft,
         });
         if (
-            vehicle.status === "Active" &&
+            isActiveInventoryStatus(vehicle.status) &&
             vehicle.known_damage &&
             !disclosureDraft.trim()
         ) {

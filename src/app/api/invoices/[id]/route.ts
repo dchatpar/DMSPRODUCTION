@@ -2,12 +2,43 @@
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
 import { assertOwnershipOrDeny, pickAllowed, requireDealershipAccess } from "@/src/lib/auth-helpers";
+import { canDelete, canEdit } from "@/src/lib/permission-middleware";
 
 const INVOICE_ALLOWED_FIELDS = [
     "customer_id", "deal_id", "package_name", "tax_rate", "status",
     "due_date", "notes", "line_items", "invoice_number", "invoice_date",
     "payment_amount",
 ] as const;
+
+async function assertCustomerInDealership(
+    supabase: ReturnType<typeof createTokenClient>,
+    customerId: string,
+    dealershipId: string | null | undefined,
+    isPlatformAdmin: boolean | null | undefined
+): Promise<NextResponse | null> {
+    if (!customerId) {
+        return NextResponse.json(
+            { error: "Missing required field: customer_id" },
+            { status: 400 }
+        );
+    }
+    let q = supabase
+        .from("customers")
+        .select("id, dealership_id")
+        .eq("id", customerId);
+    if (!isPlatformAdmin && dealershipId) {
+        q = q.eq("dealership_id", dealershipId);
+    }
+    const { data, error } = await q.maybeSingle();
+    if (error) throw error;
+    if (!data) {
+        return NextResponse.json(
+            { error: "Customer not found in this dealership" },
+            { status: 400 }
+        );
+    }
+    return null;
+}
 
 // GET single invoice
 export async function GET(
@@ -118,6 +149,19 @@ export async function PUT(
         const { id } = await params;
         const payload = await req.json();
 
+        if (
+            !canEdit(
+                auth.profile.role,
+                auth.profile.user_permissions || [],
+                "invoices"
+            )
+        ) {
+            return NextResponse.json(
+                { error: "Forbidden - You cannot edit invoices" },
+                { status: 403 }
+            );
+        }
+
         // Validate required fields
         const required = ["invoice_number", "customer_id", "payment_amount"];
         for (const field of required) {
@@ -157,6 +201,14 @@ export async function PUT(
 
         const deny = assertOwnershipOrDeny(existing, auth.profile);
         if (deny) return deny;
+
+        const customerDeny = await assertCustomerInDealership(
+            supabase,
+            payload.customer_id,
+            auth.profile.dealership_id || existing.dealership_id,
+            auth.profile.is_platform_admin
+        );
+        if (customerDeny) return customerDeny;
 
         // Recalculate tax and total
         const taxRate = payload.tax_rate ?? 13;
@@ -234,6 +286,19 @@ export async function PATCH(
         const { id } = await params;
         const payload = await req.json();
 
+        if (
+            !canEdit(
+                auth.profile.role,
+                auth.profile.user_permissions || [],
+                "invoices"
+            )
+        ) {
+            return NextResponse.json(
+                { error: "Forbidden - You cannot edit invoices" },
+                { status: 403 }
+            );
+        }
+
         // Validate status if being updated
         if (payload.status) {
             const validStatuses = ['Pending', 'Paid', 'Overdue', 'Cancelled'];
@@ -264,6 +329,16 @@ export async function PATCH(
 
         const deny = assertOwnershipOrDeny(existing, auth.profile);
         if (deny) return deny;
+
+        if (payload.customer_id) {
+            const customerDeny = await assertCustomerInDealership(
+                supabase,
+                payload.customer_id,
+                auth.profile.dealership_id || existing.dealership_id,
+                auth.profile.is_platform_admin
+            );
+            if (customerDeny) return customerDeny;
+        }
 
         // Whitelist the update payload and block dealership_id changes
         const safePayload = pickAllowed(payload, INVOICE_ALLOWED_FIELDS);
@@ -347,6 +422,19 @@ export async function DELETE(
         }
 
         const { id } = await params;
+
+        if (
+            !canDelete(
+                auth.profile.role,
+                auth.profile.user_permissions || [],
+                "invoices"
+            )
+        ) {
+            return NextResponse.json(
+                { error: "Forbidden - You cannot delete invoices" },
+                { status: 403 }
+            );
+        }
 
         // Assert ownership before any write
         const { data: existing, error: existingError } = await supabase

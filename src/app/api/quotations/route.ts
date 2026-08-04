@@ -126,6 +126,16 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "No dealership context" }, { status: 403 });
         }
 
+        if (!currentUser.dealership_id) {
+            return NextResponse.json(
+                {
+                    error:
+                        "No dealership context — cannot create a quotation without a dealership.",
+                },
+                { status: 403 }
+            );
+        }
+
         const payload = await req.json();
         if (payload.sale_price === undefined || payload.sale_price === null) {
             return NextResponse.json({ error: "Missing required field: sale_price" }, { status: 400 });

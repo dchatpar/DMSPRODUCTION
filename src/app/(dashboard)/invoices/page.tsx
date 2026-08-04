@@ -48,7 +48,7 @@ interface Customer {
     name: string;
     email: string | null;
     phone: string | null;
-    avatar: string | null;
+    avatar?: string | null;
     address: string | null;
     city: string | null;
     province: string | null;
@@ -91,6 +91,11 @@ export default function InvoicesPage() {
     const [searchTerm, setSearchTerm] = useState("");
     const [debouncedSearch, setDebouncedSearch] = useState("");
     const [statusFilter, setStatusFilter] = useState<string>("");
+    // Honor dashboard deep link `/invoices?status=Pending` after mount (avoid SSR mismatch).
+    useEffect(() => {
+        const fromUrl = new URLSearchParams(window.location.search).get("status");
+        if (fromUrl) setStatusFilter(fromUrl);
+    }, []);
     // More Filters
     const [showMoreFilters, setShowMoreFilters] = useState(false);
     const [invoiceDateFrom, setInvoiceDateFrom] = useState("");
@@ -124,12 +129,15 @@ export default function InvoicesPage() {
 
     // Permission helpers
     const canWrite = (resource: string): boolean => {
-        if (userRole === "Admin") return true;
+        if (userRole === "Admin" || userRole === "Manager") return true;
+        if (userPermissions.includes("*")) return true;
         return userPermissions.includes(`${resource}:write`);
     };
 
     const canDelete = (resource: string): boolean => {
         if (userRole === "Admin") return true;
+        if (userRole === "Manager" && resource !== "users") return true;
+        if (userPermissions.includes("*")) return true;
         return userPermissions.includes(`${resource}:delete`);
     };
 
@@ -180,19 +188,25 @@ export default function InvoicesPage() {
                 throw new Error("No invoices found to export");
             }
 
-            const worksheetData = exportData.map((invoice: Invoice) => ({
-                "Invoice Number": invoice.invoice_number || "",
-                "Customer": invoice.customer?.name || (invoice.customer_id ? "Unlinked" : "Unlinked"),
-                "Package": invoice.package_name || "",
-                "Status": invoice.status || "",
-                "Payment Amount": invoice.payment_amount || 0,
-                "Tax Rate": invoice.tax_rate || 0,
-                "Tax Amount": invoice.tax_amount || 0,
-                "Total": invoice.total || 0,
-                "Invoice Date": invoice.invoice_date ? new Date(invoice.invoice_date).toLocaleDateString() : "",
-                "Due Date": invoice.due_date ? new Date(invoice.due_date).toLocaleDateString() : "",
-                "Notes": invoice.notes || ""
-            }));
+            const worksheetData = exportData.map((invoice: Invoice) => {
+                const paid = Number(invoice.amount_paid) || 0;
+                const total = Number(invoice.total) || 0;
+                return {
+                    "Invoice Number": invoice.invoice_number || "",
+                    "Customer": invoice.customer?.name || (invoice.customer_id ? "Unlinked" : "Unlinked"),
+                    "Package": invoice.package_name || "",
+                    "Status": invoice.status || "",
+                    "Subtotal": invoice.payment_amount || 0,
+                    "Tax Rate": invoice.tax_rate || 0,
+                    "Tax Amount": invoice.tax_amount || 0,
+                    "Total": total,
+                    "Amount Paid": paid,
+                    "Balance Due": Math.max(0, total - paid),
+                    "Invoice Date": invoice.invoice_date ? new Date(invoice.invoice_date).toLocaleDateString() : "",
+                    "Due Date": invoice.due_date ? new Date(invoice.due_date).toLocaleDateString() : "",
+                    "Notes": invoice.notes || ""
+                };
+            });
 
             const worksheet = XLSX.utils.json_to_sheet(worksheetData);
             const workbook = XLSX.utils.book_new();

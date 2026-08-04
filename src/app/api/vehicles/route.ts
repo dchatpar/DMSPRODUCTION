@@ -85,20 +85,39 @@ export async function GET(req: NextRequest) {
         const minDays = url.searchParams.get("minDays") || url.searchParams.get("days_min");
         const maxDays = url.searchParams.get("maxDays") || url.searchParams.get("days_max");
         // sort=year or sort=-year or sortBy=year&sortDir=desc
-        // days → created_at (older = more days in stock); retail → retail_price
+        // days → created_at (older = more days in stock); retail → retail_price; cost → purchase_price
         const sortFieldRaw = url.searchParams.get("sort") || url.searchParams.get("sortBy") || "created_at";
         const sortDir = url.searchParams.get("sortDir") || (url.searchParams.get("sort")?.startsWith("-") ? "desc" : "desc");
         const isDesc = sortDir.toLowerCase() === "desc";
         let cleanSortField = sortFieldRaw.replace(/^-/, "");
-        if (cleanSortField === "days" || cleanSortField === "days_in_stock") {
+        const daysSort =
+            cleanSortField === "days" || cleanSortField === "days_in_stock";
+        if (daysSort) {
             cleanSortField = "created_at";
         } else if (cleanSortField === "retail" || cleanSortField === "price") {
             cleanSortField = "retail_price";
         } else if (cleanSortField === "cost") {
             cleanSortField = "purchase_price";
         }
+        // Whitelist — unknown columns previously 500'd PostgREST ("column does not exist").
+        const ALLOWED_SORT = new Set([
+            "created_at",
+            "updated_at",
+            "year",
+            "make",
+            "model",
+            "vin",
+            "stock_number",
+            "status",
+            "condition",
+            "odometer",
+            "retail_price",
+            "purchase_price",
+        ]);
+        if (!ALLOWED_SORT.has(cleanSortField)) {
+            cleanSortField = "created_at";
+        }
         // Days ascending = newest first (fewer days); Days desc = oldest first
-        const daysSort = sortFieldRaw.replace(/^-/, "") === "days" || sortFieldRaw.replace(/^-/, "") === "days_in_stock";
         const orderAsc = daysSort ? isDesc : !isDesc;
 
         let query = vehiclesClient

@@ -3,14 +3,16 @@
 import { useEffect, useMemo, useState } from "react";
 import {
     Calculator,
+    ClipboardCopy,
     FileText,
-    Link2,
     Loader2,
+    Mail,
     Plus,
     RefreshCw,
     Search,
     Trash2,
     ArrowRightCircle,
+    CheckCircle2,
 } from "lucide-react";
 import { apiFetch } from "@/src/lib/fetch";
 import { toast } from "@/src/lib/toast";
@@ -20,6 +22,8 @@ import { EntityLink } from "@/src/components/ui/EntityLink";
 import { RelationChip } from "@/src/components/ui/RelationChip";
 import { cn } from "@/src/lib/utils";
 import { useRouter } from "next/navigation";
+import { buildQuotationShareText } from "@/src/lib/quotation-share";
+import { computePayment } from "@/src/lib/finance-calc";
 
 interface Vehicle {
     id: string;
@@ -63,26 +67,13 @@ interface Quotation {
 
 const STATUSES = ["Draft", "Sent", "Accepted", "Expired", "Converted", "Cancelled"] as const;
 
-function estimatePayment(
-    salePrice: number,
-    downPayment: number,
-    tradeIn: number,
-    termMonths: number,
-    ratePct: number,
-    taxRate: number,
-    adminFee: number
-): number {
-    const tax = salePrice * (taxRate / 100);
-    const financed = Math.max(0, salePrice + tax + adminFee - tradeIn - downPayment);
-    if (termMonths <= 0) return 0;
-    const r = ratePct / 100 / 12;
-    if (r <= 0) return financed / termMonths;
-    const factor = Math.pow(1 + r, termMonths);
-    return (financed * r * factor) / (factor - 1);
-}
-
 function formatCurrency(amount: number) {
     return new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }).format(amount || 0);
+}
+
+function quoteVehicleLabel(quote: Quotation): string | null {
+    if (!quote.vehicle) return null;
+    return `${quote.vehicle.year} ${quote.vehicle.make} ${quote.vehicle.model}`;
 }
 
 export default function QuotationsPage() {
@@ -94,6 +85,7 @@ export default function QuotationsPage() {
     const [showForm, setShowForm] = useState(false);
     const [saving, setSaving] = useState(false);
     const [convertingId, setConvertingId] = useState<string | null>(null);
+    const [emailingId, setEmailingId] = useState<string | null>(null);
     const [vehicles, setVehicles] = useState<Vehicle[]>([]);
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [form, setForm] = useState({
@@ -112,15 +104,16 @@ export default function QuotationsPage() {
     });
 
     const monthlyPreview = useMemo(() => {
-        return estimatePayment(
-            parseFloat(form.sale_price) || 0,
-            parseFloat(form.down_payment) || 0,
-            parseFloat(form.trade_in_value) || 0,
-            parseInt(form.finance_term, 10) || 0,
-            parseFloat(form.interest_rate) || 0,
-            parseFloat(form.tax_rate) || 0,
-            parseFloat(form.admin_fee) || 0
-        );
+        return computePayment({
+            sale_price: parseFloat(form.sale_price) || 0,
+            down_payment: parseFloat(form.down_payment) || 0,
+            trade_in_value: parseFloat(form.trade_in_value) || 0,
+            interest_rate: parseFloat(form.interest_rate) || 0,
+            term_months: parseInt(form.finance_term, 10) || 0,
+            tax_rate: parseFloat(form.tax_rate) || 0,
+            admin_fee: parseFloat(form.admin_fee) || 0,
+            payment_type: "monthly",
+        }).payment_amount;
     }, [form]);
 
     const fetchQuotes = async () => {
@@ -217,6 +210,13 @@ export default function QuotationsPage() {
             toast.error("Link a customer and vehicle before converting");
             return;
         }
+        if (
+            !confirm(
+                `Convert ${quote.quote_number || "this quote"} to a deal? This creates a new sales deal.`
+            )
+        ) {
+            return;
+        }
         setConvertingId(quote.id);
         try {
             const result = await apiFetch<{ data: { deal: { id: string } } }>(
@@ -226,7 +226,7 @@ export default function QuotationsPage() {
             toast.success("Converted to deal");
             await fetchQuotes();
             if (result?.data?.deal?.id) {
-                router.push("/deals");
+                router.push(`/deals/${result.data.deal.id}`);
             }
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "Convert failed");
@@ -246,16 +246,67 @@ export default function QuotationsPage() {
         }
     };
 
+    /** Status-only — does not email. Use Email when Resend is configured. */
     const handleMarkSent = async (id: string) => {
         try {
             await apiFetch(`/api/quotations/${id}`, {
                 method: "PATCH",
                 body: { status: "Sent" },
             });
-            toast.success("Marked as Sent");
+            toast.success("Marked as Sent (status only — no email was sent)");
             await fetchQuotes();
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "Update failed");
+        }
+    };
+
+    const handleCopyQuote = async (quote: Quotation) => {
+        const text = buildQuotationShareText({
+            quoteNumber: quote.quote_number,
+            status: quote.status,
+            customerName: quote.customer?.name,
+            customerEmail: quote.customer?.email,
+            vehicleLabel: quoteVehicleLabel(quote),
+            salePrice: quote.sale_price,
+            downPayment: quote.down_payment,
+            tradeInValue: quote.trade_in_value,
+            financeTerm: quote.finance_term,
+            interestRate: quote.interest_rate,
+            taxRate: quote.tax_rate,
+            adminFee: quote.admin_fee,
+            monthlyPayment: quote.monthly_payment,
+            notes: quote.notes,
+            validUntil: quote.valid_until,
+        });
+        try {
+            await navigator.clipboard.writeText(text);
+            toast.success("Quote summary copied");
+        } catch {
+            toast.error("Copy failed");
+        }
+    };
+
+    const handleEmailQuote = async (quote: Quotation) => {
+        setEmailingId(quote.id);
+        try {
+            const res = await apiFetch<{
+                success?: boolean;
+                error?: string;
+                to?: string;
+                missingConfig?: boolean;
+            }>(`/api/quotations/${quote.id}/send`, {
+                method: "POST",
+                body: { mark_sent: true },
+                silent5xx: true,
+            });
+            if (res.error) throw new Error(res.error);
+            toast.success(`Quote emailed to ${res.to || "customer"}`);
+            await fetchQuotes();
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : "Failed to email quote";
+            toast.error(msg);
+        } finally {
+            setEmailingId(null);
         }
     };
 
@@ -263,7 +314,7 @@ export default function QuotationsPage() {
         <div className="space-y-4 pb-8">
             <PageHeader
                 title="Quotations"
-                description="Build shareable quotes and convert them into deals"
+                description="Build quotes, copy or email when Resend is configured, then convert to deals"
                 actions={
                     <div className="flex flex-wrap gap-2">
                         <Button variant="outline" size="sm" onClick={() => void fetchQuotes()} disabled={loading}>
@@ -278,6 +329,10 @@ export default function QuotationsPage() {
                 }
             />
 
+            <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-900 dark:text-amber-200/90">
+                Email requires Resend (Settings → Integrations). Without it, Email returns 503 — no fake send.
+                Mark as Sent only updates status after you delivered the quote yourself.
+            </p>
             {showForm && (
                 <form
                     onSubmit={handleCreate}
@@ -469,34 +524,18 @@ export default function QuotationsPage() {
                                 quotes.map((quote) => (
                                     <tr
                                         key={quote.id}
-                                        role="button"
-                                        tabIndex={0}
-                                        className="cursor-pointer border-l-2 border-l-transparent transition-colors hover:border-l-primary hover:bg-muted/50 focus-visible:border-l-primary focus-visible:bg-muted/50 focus-visible:outline-none"
-                                        onClick={() => {
-                                            if (quote.status !== "Converted" && quote.status !== "Cancelled") {
-                                                void handleConvert(quote);
-                                            }
-                                        }}
-                                        onKeyDown={(e) => {
-                                            if (
-                                                e.key === "Enter" &&
-                                                quote.status !== "Converted" &&
-                                                quote.status !== "Cancelled"
-                                            ) {
-                                                void handleConvert(quote);
-                                            }
-                                        }}
+                                        className="border-l-2 border-l-transparent transition-colors hover:border-l-primary hover:bg-muted/50"
                                     >
                                         <td className="px-3 py-2.5">
-                                            <EntityLink
-                                                onClick={() => {
-                                                    if (quote.status !== "Converted" && quote.status !== "Cancelled") {
-                                                        void handleConvert(quote);
-                                                    }
-                                                }}
-                                            >
-                                                {quote.quote_number || quote.id.slice(0, 8)}
-                                            </EntityLink>
+                                            {quote.converted_deal_id ? (
+                                                <EntityLink href={`/deals/${quote.converted_deal_id}`}>
+                                                    {quote.quote_number || quote.id.slice(0, 8)}
+                                                </EntityLink>
+                                            ) : (
+                                                <span className="font-medium text-foreground">
+                                                    {quote.quote_number || quote.id.slice(0, 8)}
+                                                </span>
+                                            )}
                                         </td>
                                         <td className="px-3 py-2.5">
                                             <RelationChip
@@ -524,18 +563,39 @@ export default function QuotationsPage() {
                                                 : "—"}
                                         </td>
                                         <td className="px-3 py-2.5">
-                                            <div
-                                                className="flex justify-end gap-1"
-                                                onClick={(e) => e.stopPropagation()}
-                                            >
+                                            <div className="flex justify-end gap-1">
+                                                <button
+                                                    type="button"
+                                                    title="Copy quote summary"
+                                                    className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                                                    onClick={() => void handleCopyQuote(quote)}
+                                                >
+                                                    <ClipboardCopy className="h-4 w-4" />
+                                                </button>
+                                                {quote.status !== "Converted" &&
+                                                    quote.status !== "Cancelled" && (
+                                                    <button
+                                                        type="button"
+                                                        title="Email quote (requires Resend)"
+                                                        className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                                                        disabled={emailingId === quote.id}
+                                                        onClick={() => void handleEmailQuote(quote)}
+                                                    >
+                                                        {emailingId === quote.id ? (
+                                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                                        ) : (
+                                                            <Mail className="h-4 w-4" />
+                                                        )}
+                                                    </button>
+                                                )}
                                                 {quote.status === "Draft" && (
                                                     <button
                                                         type="button"
-                                                        title="Mark sent"
+                                                        title="Mark as Sent (status only — does not email)"
                                                         className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
                                                         onClick={() => void handleMarkSent(quote.id)}
                                                     >
-                                                        <Link2 className="h-4 w-4" />
+                                                        <CheckCircle2 className="h-4 w-4" />
                                                     </button>
                                                 )}
                                                 {quote.status !== "Converted" && quote.status !== "Cancelled" && (

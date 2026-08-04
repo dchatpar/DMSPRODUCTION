@@ -1,6 +1,7 @@
 // app/api/invoices/route.ts
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
+import { canCreate } from "@/src/lib/permission-middleware";
 
 // GET all invoices
 export async function GET(req: NextRequest) {
@@ -206,6 +207,13 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "User profile not found" }, { status: 404 });
         }
 
+        if (!canCreate(currentUser.role, currentUser.user_permissions || [], "invoices")) {
+            return NextResponse.json(
+                { error: "Forbidden - You cannot create invoices" },
+                { status: 403 }
+            );
+        }
+
         const payload = await req.json();
 
         // Validate required fields
@@ -243,6 +251,37 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        // Tenant: customer must belong to the creating dealership (or platform may use customer's dealership).
+        let customerQuery = supabase
+            .from("customers")
+            .select("id, dealership_id")
+            .eq("id", payload.customer_id);
+        if (!currentUser.is_platform_admin && currentUser.dealership_id) {
+            customerQuery = customerQuery.eq(
+                "dealership_id",
+                currentUser.dealership_id
+            );
+        }
+        const { data: customerRow, error: customerError } = await customerQuery.maybeSingle();
+        if (customerError) throw customerError;
+        if (!customerRow) {
+            return NextResponse.json(
+                { error: "Customer not found in this dealership" },
+                { status: 400 }
+            );
+        }
+
+        const dealershipId =
+            currentUser.dealership_id ||
+            (customerRow.dealership_id as string | null) ||
+            null;
+        if (!dealershipId) {
+            return NextResponse.json(
+                { error: "No dealership context for invoice" },
+                { status: 403 }
+            );
+        }
+
         const insertRow: Record<string, unknown> = {
             invoice_number: payload.invoice_number,
             customer_id: payload.customer_id,
@@ -257,7 +296,7 @@ export async function POST(req: NextRequest) {
             status: payload.status || "Pending",
             notes: payload.notes || null,
             package_name: payload.package_name ?? null,
-            dealership_id: currentUser.dealership_id,
+            dealership_id: dealershipId,
         };
 
         // line_items allowed by schema (same as PUT whitelist on [id] route)

@@ -125,6 +125,36 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("dealership_id, is_platform_admin")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json(
+                { error: "User profile not found" },
+                { status: 404 }
+            );
+        }
+
+        if (!currentUser.dealership_id && !currentUser.is_platform_admin) {
+            return NextResponse.json(
+                { error: "Unauthorized - No dealership context" },
+                { status: 403 }
+            );
+        }
+
+        if (!currentUser.dealership_id) {
+            return NextResponse.json(
+                {
+                    error:
+                        "Bill of sale requires a dealership context. Switch to a dealership before creating.",
+                },
+                { status: 400 }
+            );
+        }
+
         const payload = await req.json();
 
         // Extract payments before insert
@@ -148,12 +178,15 @@ export async function POST(req: NextRequest) {
         }
 
         const safePayload = pickAllowed(cleanPayload, BILL_OF_SALE_ALLOWED_FIELDS);
+        // Never trust client dealership_id — RLS WITH CHECK requires tenant match
+        delete (safePayload as Record<string, unknown>).dealership_id;
         const mapped = mapBillOfSaleLegacyFields(safePayload, customerName);
 
         const billData = {
             ...mapped,
             pst_rate: mapped.pst_rate ?? 7.0,
             status: mapped.status ?? "Draft",
+            dealership_id: currentUser.dealership_id,
         };
 
         const { data, error: dbError } = await supabase
@@ -176,6 +209,7 @@ export async function POST(req: NextRequest) {
             const paymentInserts = payments.map((p: any) => ({
                 ...p,
                 bill_of_sale_id: data.id,
+                dealership_id: currentUser.dealership_id,
             }));
 
             const { error: paymentsError } = await supabase

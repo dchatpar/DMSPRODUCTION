@@ -23,8 +23,8 @@ export function ApiErrorBridge() {
         const onError = (e: Event) => {
             const detail = (e as CustomEvent).detail || {};
             const status = detail.status as number | undefined;
-            const url = detail.url as string | undefined;
             const message = detail.message as string | undefined;
+            const code = detail.code as string | undefined;
 
             if (status === 401) {
                 // Avoid redirect loops / spamming
@@ -41,6 +41,21 @@ export function ApiErrorBridge() {
                         2000
                     );
                 }, 250);
+                return;
+            }
+
+            // Soft-lock: trial ended — honest upgrade path, not a generic deny
+            if (status === 402 || code === "TRIAL_EXPIRED") {
+                toast.error(
+                    "Trial ended",
+                    message ||
+                        "Your 7-day trial has ended. Contact AdaptUs to upgrade. Your data is retained."
+                );
+                return;
+            }
+
+            // Login/register verify flow handles this; avoid "Permission denied"
+            if (code === "EMAIL_NOT_VERIFIED") {
                 return;
             }
 

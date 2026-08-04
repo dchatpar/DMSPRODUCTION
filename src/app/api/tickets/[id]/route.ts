@@ -224,6 +224,23 @@ export async function DELETE(
 
         const { id } = await params;
 
+        const userRole = auth.profile.role;
+        const userPerms = (auth.profile as any).user_permissions || [];
+        const isPlatformAdmin = auth.profile.is_platform_admin;
+
+        const canDelete = isPlatformAdmin ||
+            userRole === "Admin" ||
+            userRole === "Manager" ||
+            userPerms.includes("tickets:delete") ||
+            userPerms.includes("*");
+
+        if (!canDelete) {
+            return NextResponse.json(
+                { error: "Forbidden - You need tickets:delete permission to delete tickets" },
+                { status: 403 }
+            );
+        }
+
         // Assert ownership before any write
         const { data: existing, error: existingError } = await supabase
             .from("tickets")

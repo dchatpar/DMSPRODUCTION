@@ -4,6 +4,8 @@
  * Does NOT SFTP/auto-post; dealer downloads and uploads via their AT/HomeNet process.
  */
 
+import { parseGallery } from "@/src/lib/vehicle-image";
+
 export type AutoTraderVehicleInput = {
     id: string;
     vin: string;
@@ -104,10 +106,11 @@ function pipeSafe(value: string | number | null | undefined): string {
         .trim();
 }
 
+/** Resolve public http(s) URLs from plain or rich (JSON) image_gallery entries. */
 function httpImages(gallery: string[] | null | undefined): string[] {
-    return (gallery || []).filter(
-        (u) => typeof u === "string" && /^https?:\/\//i.test(u)
-    );
+    return parseGallery(gallery)
+        .map((img) => img.url)
+        .filter((u) => /^https?:\/\//i.test(u));
 }
 
 function mapStatus(status: string | null | undefined): string {

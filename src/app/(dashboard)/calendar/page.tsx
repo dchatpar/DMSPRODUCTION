@@ -59,7 +59,7 @@ const TYPE_META: Record<
         icon: FileText,
     },
     appointment: {
-        label: "Appointment",
+        label: "Task",
         color: "bg-violet-50 text-violet-800 border-violet-200",
         bar: "bg-violet-500",
         icon: UserCheck,
@@ -87,11 +87,12 @@ export default function CalendarPage() {
             setLoading(true);
             setError(null);
             try {
-                const [td, fu, deals, invoices] = await Promise.all([
+                const [td, fu, deals, invoices, tasks] = await Promise.all([
                     apiFetch<{ data: any[] }>("/api/test-drives?limit=80", { silent: true }).catch(() => ({ data: [] })),
                     apiFetch<{ data: any[] }>("/api/follow-ups?limit=80", { silent: true }).catch(() => ({ data: [] })),
                     apiFetch<{ data: any[] }>("/api/deals?limit=80", { silent: true }).catch(() => ({ data: [] })),
                     apiFetch<{ data: any[] }>("/api/invoices?limit=80&status=Pending", { silent: true }).catch(() => ({ data: [] })),
+                    apiFetch<{ data: any[] }>("/api/tasks?limit=80", { silent: true }).catch(() => ({ data: [] })),
                 ]);
                 if (cancelled) return;
 
@@ -119,11 +120,25 @@ export default function CalendarPage() {
                     next.push({
                         id: `fu-${row.id}`,
                         type: "follow_up",
-                        title: row.customer?.name || row.subject || "Follow-up",
-                        subtitle: row.notes || row.type || undefined,
+                        title: row.customer?.name || row.title || "Follow-up",
+                        subtitle: row.notes || row.description || undefined,
                         date,
                         status: row.status,
                         href: "/follow-ups",
+                    });
+                }
+
+                for (const row of tasks?.data ?? []) {
+                    const date = parseDate(row.due_date, row.reminder_at);
+                    if (!date) continue;
+                    next.push({
+                        id: `task-${row.id}`,
+                        type: "appointment",
+                        title: row.title || "Task",
+                        subtitle: row.assigned_user?.full_name || row.priority || undefined,
+                        date,
+                        status: row.status,
+                        href: "/tasks",
                     });
                 }
 
@@ -189,16 +204,25 @@ export default function CalendarPage() {
         <div className="space-y-6 p-4 sm:p-6">
             <PageHeader
                 title="Calendar"
-                description="Test drives, follow-ups, deliveries, and invoice due dates"
+                description="Test drives, follow-ups, tasks, deliveries, and invoice due dates"
                 icon={CalendarDays}
                 actions={
-                    <Link
-                        href="/test-drives"
-                        className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-muted"
-                    >
-                        <TestTube className="h-4 w-4" />
-                        Test Drives
-                    </Link>
+                    <div className="flex flex-wrap gap-2">
+                        <Link
+                            href="/tasks"
+                            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-muted"
+                        >
+                            <UserCheck className="h-4 w-4" />
+                            Tasks
+                        </Link>
+                        <Link
+                            href="/test-drives"
+                            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-muted"
+                        >
+                            <TestTube className="h-4 w-4" />
+                            Test Drives
+                        </Link>
+                    </div>
                 }
             />
 
@@ -233,7 +257,7 @@ export default function CalendarPage() {
                     <Clock className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
                     <p className="text-sm font-medium text-foreground">No scheduled events</p>
                     <p className="mt-1 text-sm text-muted-foreground">
-                        Test drives, follow-ups, and due invoices will appear here.
+                        Test drives, follow-ups, tasks, and due invoices will appear here.
                     </p>
                 </div>
             ) : (

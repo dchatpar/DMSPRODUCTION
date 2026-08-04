@@ -5,6 +5,7 @@ import {
     assertOwnershipOrDeny,
     requireDealershipAccess,
 } from "@/src/lib/auth-helpers";
+import { canEdit } from "@/src/lib/permission-middleware";
 
 /**
  * GET — AR ledger rows for an invoice.
@@ -114,6 +115,19 @@ export async function POST(
             return NextResponse.json(
                 { error: auth.error || "Unauthorized" },
                 { status: auth.status || 401 }
+            );
+        }
+
+        if (
+            !canEdit(
+                auth.profile.role,
+                auth.profile.user_permissions || [],
+                "invoices"
+            )
+        ) {
+            return NextResponse.json(
+                { error: "Forbidden - You cannot record invoice payments" },
+                { status: 403 }
             );
         }
 
@@ -236,10 +250,21 @@ export async function POST(
                 status: nextStatus,
             })
             .eq("id", id)
-            .select(`*, customer:customers(id, name, email, phone, avatar)`)
+            .select(
+                `*, customer:customers(id, name, email, phone)`
+            )
             .single();
 
-        if (updError) throw updError;
+        if (updError) {
+            // Compensating delete — do not leave ledger rows without amount_paid update.
+            if (txn?.id) {
+                await supabase
+                    .from("financial_transactions")
+                    .delete()
+                    .eq("id", txn.id);
+            }
+            throw updError;
+        }
 
         return NextResponse.json(
             {
@@ -255,14 +280,15 @@ export async function POST(
         );
     } catch (error: unknown) {
         console.error("Error recording invoice payment:", error);
-        return NextResponse.json(
-            {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Internal server error",
-            },
-            { status: 500 }
-        );
+        const message =
+            error instanceof Error
+                ? error.message
+                : typeof error === "object" &&
+                    error !== null &&
+                    "message" in error &&
+                    typeof (error as { message: unknown }).message === "string"
+                  ? (error as { message: string }).message
+                  : "Internal server error";
+        return NextResponse.json({ error: message }, { status: 500 });
     }
 }

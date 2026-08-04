@@ -169,7 +169,13 @@ export type SendNextResult =
       ok: false;
       error: string;
       missingConfig?: boolean;
-      code?: "NOT_CONFIGURED" | "NO_EMAIL" | "STOPPED" | "NO_STEP" | "SEND_FAILED";
+      code?:
+        | "NOT_CONFIGURED"
+        | "NO_EMAIL"
+        | "NO_CONSENT"
+        | "STOPPED"
+        | "NO_STEP"
+        | "SEND_FAILED";
     };
 
 /**
@@ -252,6 +258,16 @@ export async function sendNextSequenceStep(
       status: "skipped",
       error: "No recipient email",
     });
+    // Stop so cron/send-due does not re-insert skipped rows every hour.
+    await supabase
+      .from("email_sequence_enrollments")
+      .update({
+        status: "stopped",
+        next_send_at: null,
+        stopped_at: new Date().toISOString(),
+        stop_reason: "no_email",
+      })
+      .eq("id", enrollment.id);
     return {
       ok: false,
       code: "NO_EMAIL",
@@ -269,8 +285,19 @@ export async function sendNextSequenceStep(
       status: "skipped",
       error: "marketing_consent=false",
     });
+    // Stop so due cron cannot spam skipped rows while consent stays false.
+    await supabase
+      .from("email_sequence_enrollments")
+      .update({
+        status: "stopped",
+        next_send_at: null,
+        stopped_at: new Date().toISOString(),
+        stop_reason: "marketing_consent_false",
+      })
+      .eq("id", enrollment.id);
     return {
       ok: false,
+      code: "NO_CONSENT",
       error:
         "Customer has not consented to marketing email. Enable marketing consent on the customer record first.",
     };
@@ -298,8 +325,10 @@ export async function sendNextSequenceStep(
     ? renderTemplate(step.body_text, vars)
     : undefined;
 
+  let listUnsubscribeUrl: string | undefined;
   try {
     const unsubUrl = await buildUnsubscribeUrl(opts.recipient.toEmail);
+    listUnsubscribeUrl = unsubUrl;
     html += `<hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0 12px"/><p style="font-size:12px;color:#6b7280;line-height:1.5">You received this because you consented to marketing email from ${vars.dealership || "your dealership"}. <a href="${unsubUrl}">Unsubscribe</a>.</p>`;
   } catch {
     /* footer best-effort */
@@ -310,6 +339,7 @@ export async function sendNextSequenceStep(
     subject,
     html,
     text,
+    listUnsubscribeUrl,
   });
 
   if (!sent.ok) {

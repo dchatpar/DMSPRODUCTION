@@ -94,10 +94,16 @@ export function LeadEmailSequencePanel({
             });
             setResendConfigured(Boolean(res.meta?.resend_configured));
             if (res.first_send && res.first_send.ok === false) {
-                toast.error(
-                    res.first_send.error ||
-                        "Enrolled, but first email was not sent"
-                );
+                if (res.first_send.missingConfig) {
+                    toast.error(
+                        "Enrolled — email not sent (Resend not configured). See Integrations."
+                    );
+                } else {
+                    toast.error(
+                        res.first_send.error ||
+                            "Enrolled, but first email was not sent"
+                    );
+                }
             } else if (res.first_send?.ok) {
                 toast.success("Enrolled — first email sent");
             } else {

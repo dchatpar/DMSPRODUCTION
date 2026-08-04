@@ -22,7 +22,7 @@ import { EmptyState } from "@/src/components/ui/EmptyState";
 import { Avatar } from "@/src/components/ui/Avatar";
 import { SkeletonTable } from "@/src/components/ui/Skeleton";
 import { cn, timeAgo } from "@/src/lib/utils";
-import { scoreLead, temperatureClass } from "@/src/lib/business/lead-score";
+import { resolveLeadScore, temperatureClass } from "@/src/lib/business/lead-score";
 
 interface Lead {
     id: string;
@@ -36,6 +36,8 @@ interface Lead {
     last_engagement: string;
     created_at: string;
     updated_at: string;
+    score?: number | null;
+    temperature?: string | null;
     customer: {
         id: string;
         name: string;
@@ -285,7 +287,7 @@ const LeadsKanban: React.FC<LeadsKanbanProps> = ({
                                         </div>
                                     ) : null}
                                     {columnLeads.map((lead) => {
-                                        const scored = scoreLead(lead);
+                                        const scored = resolveLeadScore(lead);
                                         return (
                                             <div
                                                 key={lead.id}
@@ -445,7 +447,7 @@ const LeadsKanban: React.FC<LeadsKanbanProps> = ({
                             ) : (
                                 <div className="divide-y divide-border">
                                     {columnLeads.map((lead) => {
-                                        const scored = scoreLead(lead);
+                                        const scored = resolveLeadScore(lead);
                                         return (
                                             <div key={lead.id} className="p-4 transition-colors hover:bg-muted/40">
                                                 <div className="mb-2 flex items-start justify-between">

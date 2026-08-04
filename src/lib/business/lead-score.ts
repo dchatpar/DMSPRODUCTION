@@ -69,6 +69,7 @@ function statusBoost(status: string | null | undefined): number {
             return 20;
         case "new":
         case "open":
+        case "not started":
             return 10;
         case "closed":
         case "won":
@@ -125,6 +126,25 @@ export function scoreLead(input: LeadScoreInput): LeadScoreResult {
     else temperature = "Cold";
 
     return { score, temperature, label: temperature };
+}
+
+/** Prefer persisted score/temperature (matches API filters); else compute. */
+export function resolveLeadScore(lead: {
+    score?: number | null;
+    temperature?: string | null;
+} & LeadScoreInput): LeadScoreResult {
+    const storedTemp = lead.temperature;
+    if (
+        lead.score != null &&
+        (storedTemp === "Hot" || storedTemp === "Warm" || storedTemp === "Cold")
+    ) {
+        return {
+            score: lead.score,
+            temperature: storedTemp,
+            label: storedTemp,
+        };
+    }
+    return scoreLead(lead);
 }
 
 export function temperatureClass(temp: LeadTemperature): string {

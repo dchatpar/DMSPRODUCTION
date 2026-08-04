@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
             updated: count,
             message:
                 count > 0
-                    ? "You have been unsubscribed from marketing email. Transactional messages may still be sent when required."
+                    ? "You have been unsubscribed from marketing email and SMS marketing. Transactional messages may still be sent when required. (SMS transport is not active in this product yet.)"
                     : "If this email is on file, marketing preferences have been updated.",
         });
     } catch (error: unknown) {

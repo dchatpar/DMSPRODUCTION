@@ -106,7 +106,11 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; border: string }
     "Down Payment": { bg: "bg-primary-50", text: "text-primary", border: "border-blue-200" },
     "Finance": { bg: "bg-indigo-50", text: "text-indigo-700", border: "border-indigo-200" },
     "Paid Off": { bg: "bg-success-50", text: "text-success", border: "border-green-200" },
-    "Cancelled": { bg: "bg-destructive-50", text: "text-destructive", border: "border-red-200" }
+    "Closed": { bg: "bg-success-50", text: "text-success", border: "border-green-200" },
+    "Cancelled": { bg: "bg-destructive-50", text: "text-destructive", border: "border-red-200" },
+    "Lost": { bg: "bg-destructive-50", text: "text-destructive", border: "border-red-200" },
+    "Open": { bg: "bg-warning-50", text: "text-warning", border: "border-yellow-200" },
+    "Pending": { bg: "bg-warning-50", text: "text-warning", border: "border-yellow-200" },
 };
 
 export default function DealsPage() {
@@ -133,15 +137,18 @@ function DealsPageInner() {
     // User permissions
     const [userPermissions, setUserPermissions] = useState<string[]>([]);
     const [userRole, setUserRole] = useState<string>("");
+    const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
 
     // Permission helpers
     const canWrite = (resource: string): boolean => {
-        if (userRole === "Admin") return true;
+        if (isPlatformAdmin || userRole === "Admin") return true;
+        if (userPermissions.includes("*")) return true;
         return userPermissions.includes(`${resource}:write`);
     };
 
     const canDelete = (resource: string): boolean => {
-        if (userRole === "Admin") return true;
+        if (isPlatformAdmin || userRole === "Admin") return true;
+        if (userPermissions.includes("*")) return true;
         return userPermissions.includes(`${resource}:delete`);
     };
 
@@ -171,7 +178,8 @@ function DealsPageInner() {
         fetchDeals();
         fetchUserPermissions();
         fetchUnlinkedCount();
-    }, [currentPage, statusFilter, searchTerm]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentPage, statusFilter, searchTerm, viewMode]);
 
     // Deep-link: /deals?unlinked=true opens the link queue
     useEffect(() => {
@@ -199,8 +207,13 @@ function DealsPageInner() {
             });
             if (response.ok) {
                 const data = await response.json();
-                setUserPermissions(data.data.user_permissions || []);
+                const perms =
+                    data.data.effective_permissions ||
+                    data.data.user_permissions ||
+                    [];
+                setUserPermissions(perms);
                 setUserRole(data.data.role || "");
+                setIsPlatformAdmin(Boolean(data.data.is_platform_admin));
             }
         } catch (error) {
             console.error("Error fetching user permissions:", error);
@@ -211,9 +224,11 @@ function DealsPageInner() {
         try {
             setLoading(true);
             setError(null);
-            const offset = (currentPage - 1) * itemsPerPage;
+            // Kanban needs the full pipeline; table stays paginated.
+            const limit = viewMode === "kanban" ? 500 : itemsPerPage;
+            const offset = viewMode === "kanban" ? 0 : (currentPage - 1) * itemsPerPage;
 
-            let url = `/api/deals?limit=${itemsPerPage}&offset=${offset}`;
+            let url = `/api/deals?limit=${limit}&offset=${offset}`;
             if (statusFilter) url += `&status=${encodeURIComponent(statusFilter)}`;
             if (searchTerm) url += `&q=${encodeURIComponent(searchTerm)}`;
 
@@ -423,7 +438,7 @@ function DealsPageInner() {
     };
 
     const formatDate = (date: string | null | undefined) => {
-        if (!date) return "â€”";
+        if (!date) return "—";
         return new Date(date).toLocaleDateString("en-US", {
             year: "numeric",
             month: "short",
@@ -433,9 +448,21 @@ function DealsPageInner() {
 
     const totalPages = Math.ceil(totalItems / itemsPerPage);
 
-    // Group deals by status for kanban view
+    // Group deals by kanban column (Closed → Paid Off, etc.)
     const dealsByStatus = DEAL_STAGES.reduce((acc, stage) => {
-        acc[stage] = deals.filter((d) => d.deal_status === stage);
+        acc[stage] = deals.filter((d) => {
+            if (stage === "Paid Off")
+                return d.deal_status === "Paid Off" || d.deal_status === "Closed";
+            if (stage === "Negotiation")
+                return (
+                    d.deal_status === "Negotiation" ||
+                    d.deal_status === "Open" ||
+                    d.deal_status === "Pending"
+                );
+            if (stage === "Cancelled")
+                return d.deal_status === "Cancelled" || d.deal_status === "Lost";
+            return d.deal_status === stage;
+        });
         return acc;
     }, {} as Record<string, Deal[]>);
 
@@ -452,7 +479,7 @@ function DealsPageInner() {
                 !loading && !error ? (
                     <span className="text-sm text-muted-foreground">
                         {totalItems.toLocaleString()} deal{totalItems === 1 ? "" : "s"}
-                        {statusFilter ? ` Â· ${statusFilter}` : ""}
+                        {statusFilter ? ` · ${statusFilter}` : ""}
                     </span>
                 ) : undefined
             }
@@ -497,7 +524,7 @@ function DealsPageInner() {
             }
             toolbar={
                 <ListToolbar
-                    searchPlaceholder="Search vehicle, customer, notesâ€¦"
+                    searchPlaceholder="Search vehicle, customer, notes…"
                     searchValue={searchTerm}
                     onSearchChange={setSearchTerm}
                     filters={[
@@ -510,6 +537,7 @@ function DealsPageInner() {
                                 { value: "Down Payment", label: "Down Payment" },
                                 { value: "Finance", label: "Finance" },
                                 { value: "Paid Off", label: "Paid Off" },
+                                { value: "Closed", label: "Closed" },
                                 { value: "Cancelled", label: "Cancelled" },
                             ],
                             allLabel: "All status",
@@ -606,7 +634,7 @@ function DealsPageInner() {
                                                                 : "Unlinked vehicle"}
                                                         </EntityLink>
                                                         <p className="mt-0.5 font-mono text-[11px] tracking-tight text-muted-foreground">
-                                                            {deal.vehicle?.vin || "â€”"}
+                                                            {deal.vehicle?.vin || "—"}
                                                         </p>
                                                     </div>
                                                 </div>

@@ -131,8 +131,8 @@ export async function PUT(
         const { id } = await params;
         const payload = await req.json();
 
-        // Validate required fields
-        const required = ["vehicle_id", "customer_id", "sale_price"];
+        // Validate required fields (customer optional — cash / walk-in)
+        const required = ["vehicle_id", "sale_price"];
         for (const field of required) {
             if (!payload[field]) {
                 return NextResponse.json(

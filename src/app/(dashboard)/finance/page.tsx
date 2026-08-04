@@ -253,10 +253,10 @@ function FinancePageInner() {
                     <div className="flex flex-wrap gap-2">
                         {dealId && (
                             <Link
-                                href="/deals"
+                                href={`/deals/${dealId}`}
                                 className="inline-flex items-center rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted"
                             >
-                                Back to deals
+                                Back to deal
                             </Link>
                         )}
                         <Button
@@ -273,6 +273,10 @@ function FinancePageInner() {
                 }
             />
 
+            <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-900 dark:text-amber-200/90">
+                Estimate only — not lender approval, e-contract, or Ontario disclosure paperwork.
+                Figures are for desk math; save stores your inputs for this dealership.
+            </p>
             {(vehicleLabel || customerName) && (
                 <div className="rounded-lg border border-[#2563EB]/20 bg-[#2563EB]/5 px-4 py-2 text-sm text-[#2563EB]">
                     {vehicleLabel && <span className="font-medium">{vehicleLabel}</span>}

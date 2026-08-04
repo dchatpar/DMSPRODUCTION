@@ -73,10 +73,11 @@ export async function GET(req: NextRequest) {
         const requestedId = url.searchParams.get("dealership_id");
         const isPlatformAdmin = caller.profile.is_platform_admin === true;
         const isDealershipAdmin = caller.profile.role === "Admin";
+        const isDealershipManager = caller.profile.role === "Manager";
 
-        if (!isPlatformAdmin && !isDealershipAdmin) {
+        if (!isPlatformAdmin && !isDealershipAdmin && !isDealershipManager) {
             return NextResponse.json(
-                { error: "Unauthorized - Admin access required" },
+                { error: "Unauthorized - Admin or Manager access required" },
                 { status: 403 }
             );
         }
@@ -165,10 +166,11 @@ export async function POST(req: NextRequest) {
 
         const isPlatformAdmin = caller.profile.is_platform_admin === true;
         const isDealershipAdmin = caller.profile.role === "Admin";
+        const isDealershipManager = caller.profile.role === "Manager";
 
-        if (!isPlatformAdmin && !isDealershipAdmin) {
+        if (!isPlatformAdmin && !isDealershipAdmin && !isDealershipManager) {
             return NextResponse.json(
-                { error: "Unauthorized - Admin access required" },
+                { error: "Unauthorized - Admin or Manager access required" },
                 { status: 403 }
             );
         }

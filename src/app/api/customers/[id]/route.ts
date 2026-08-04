@@ -17,11 +17,11 @@ import {
 import { applyConsentTimestamps } from "@/src/lib/customer-consent";
 import { clientIp } from "@/src/lib/trial";
 
+// Consent timestamps / IPs are server-stamped via applyConsentTimestamps — never client-writable.
 const CUSTOMER_ALLOWED_FIELDS = [
     "name", "email", "phone", "address", "city", "province", "postal_code",
     "status", "source", "notes", "company", "assigned_to",
     "marketing_consent", "sms_consent",
-    "marketing_consent_at", "sms_consent_at",
 ] as const;
 
 // GET single customer
@@ -343,20 +343,36 @@ export async function DELETE(
             );
         }
 
-        // Check if customer has any related records (sales, leads, etc.)
-        const { count: salesCount, error: salesError } = await supabase
-            .from("sales_deals")
-            .select("*", { count: "exact", head: true })
-            .eq("customer_id", id);
-
-        if (salesError) {
-            console.error("Error checking sales:", salesError);
+        // Block hard-delete when any CRM money/activity FKs still point here.
+        // Prefer Merge duplicates to soft-delete + reassign.
+        const relatedChecks: Array<{ table: string; label: string }> = [
+            { table: "sales_deals", label: "sales deals" },
+            { table: "invoices", label: "invoices" },
+            { table: "leads", label: "leads" },
+            { table: "quotations", label: "quotations" },
+            { table: "test_drives", label: "test drives" },
+            { table: "follow_ups", label: "follow-ups" },
+            { table: "bill_of_sale", label: "bills of sale" },
+        ];
+        const blocking: string[] = [];
+        for (const { table, label } of relatedChecks) {
+            const { count, error: relErr } = await supabase
+                .from(table)
+                .select("*", { count: "exact", head: true })
+                .eq("customer_id", id);
+            if (relErr) {
+                if (/relation|does not exist|Could not find/i.test(relErr.message || "")) {
+                    continue;
+                }
+                console.error(`Error checking ${table}:`, relErr);
+                continue;
+            }
+            if (count && count > 0) blocking.push(`${label} (${count})`);
         }
-
-        if (salesCount && salesCount > 0) {
+        if (blocking.length > 0) {
             return NextResponse.json(
                 {
-                    error: "Cannot delete customer with existing sales. Please reassign or delete sales first."
+                    error: `Cannot delete customer with existing ${blocking.join(", ")}. Use Merge duplicates or reassign first.`,
                 },
                 { status: 400 }
             );

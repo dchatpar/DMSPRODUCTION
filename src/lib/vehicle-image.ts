@@ -31,8 +31,7 @@ function isRichObject(v: unknown): v is VehicleImage {
     return (
         typeof v === "object" &&
         v !== null &&
-        typeof (v as VehicleImage).url === "string" &&
-        typeof (v as VehicleImage).is_cover === "boolean"
+        typeof (v as VehicleImage).url === "string"
     );
 }
 
@@ -41,10 +40,21 @@ function isRichObject(v: unknown): v is VehicleImage {
  * Handles: rich objects, JSON-stringified rich objects, and legacy URL strings.
  */
 export function parseGallery(raw: unknown): VehicleImage[] {
-    if (!Array.isArray(raw)) return [];
+    let list: unknown = raw;
+    // Some drivers/serializers return text[] as a JSON array string.
+    if (typeof list === "string") {
+        const trimmed = list.trim();
+        if (!trimmed) return [];
+        try {
+            list = JSON.parse(trimmed);
+        } catch {
+            return [];
+        }
+    }
+    if (!Array.isArray(list)) return [];
     const out: VehicleImage[] = [];
-    for (let i = 0; i < raw.length; i++) {
-        const entry = raw[i];
+    for (let i = 0; i < list.length; i++) {
+        const entry = list[i];
         if (typeof entry === "string") {
             // Try to parse as JSON first
             try {

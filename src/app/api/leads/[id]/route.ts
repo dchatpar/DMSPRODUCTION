@@ -6,7 +6,7 @@ import { scoreLead } from "@/src/lib/business/lead-score";
 
 const LEAD_ALLOWED_FIELDS = [
     "source", "status", "notes", "assigned_to", "interest_vehicle_id", "last_engagement",
-    "score", "temperature",
+    "score", "temperature", "converted_deal_id",
 ] as const;
 
 // GET single lead

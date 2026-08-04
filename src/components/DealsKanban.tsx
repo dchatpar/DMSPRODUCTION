@@ -32,12 +32,38 @@ export interface DealKanbanItem {
 
 const DEAL_STAGES = ["Negotiation", "Down Payment", "Finance", "Paid Off", "Cancelled"] as const;
 
+/** Map imported / legacy statuses into kanban columns (Hillz used "Closed"). */
+export function kanbanColumnForStatus(status: string): (typeof DEAL_STAGES)[number] | null {
+    switch (status) {
+        case "Negotiation":
+        case "Open":
+        case "Pending":
+            return "Negotiation";
+        case "Down Payment":
+            return "Down Payment";
+        case "Finance":
+            return "Finance";
+        case "Paid Off":
+        case "Closed":
+            return "Paid Off";
+        case "Cancelled":
+        case "Lost":
+            return "Cancelled";
+        default:
+            return null;
+    }
+}
+
 const STATUS_COLORS: Record<string, { bg: string; text: string; border: string }> = {
     Negotiation: { bg: "bg-warning-50", text: "text-warning", border: "border-yellow-200" },
     "Down Payment": { bg: "bg-primary-50", text: "text-primary", border: "border-blue-200" },
     Finance: { bg: "bg-indigo-50", text: "text-indigo-700", border: "border-indigo-200" },
     "Paid Off": { bg: "bg-success-50", text: "text-success", border: "border-green-200" },
+    Closed: { bg: "bg-success-50", text: "text-success", border: "border-green-200" },
     Cancelled: { bg: "bg-destructive-50", text: "text-destructive", border: "border-red-200" },
+    Lost: { bg: "bg-destructive-50", text: "text-destructive", border: "border-red-200" },
+    Open: { bg: "bg-warning-50", text: "text-warning", border: "border-yellow-200" },
+    Pending: { bg: "bg-warning-50", text: "text-warning", border: "border-yellow-200" },
 };
 
 interface DealsKanbanProps {
@@ -65,17 +91,36 @@ export default function DealsKanban({
     const [dragged, setDragged] = useState<DealKanbanItem | null>(null);
     const [updating, setUpdating] = useState(false);
     const [optimistic, setOptimistic] = useState<DealKanbanItem[]>(deals);
+    const suppressClickRef = React.useRef(false);
 
     useEffect(() => {
         setOptimistic(deals);
     }, [deals]);
 
     const byStage = (stage: string) =>
-        optimistic.filter((d) => d.deal_status === stage);
+        optimistic.filter((d) => kanbanColumnForStatus(d.deal_status) === stage);
+
+    const orphans = optimistic.filter((d) => kanbanColumnForStatus(d.deal_status) === null);
 
     const handleDragStart = (e: React.DragEvent, deal: DealKanbanItem) => {
+        suppressClickRef.current = false;
         setDragged(deal);
         e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", deal.id);
+    };
+
+    const handleDragEnd = () => {
+        // Drop often fires click afterward — suppress card navigation once.
+        suppressClickRef.current = true;
+        window.setTimeout(() => {
+            suppressClickRef.current = false;
+        }, 150);
+        setDragged(null);
+    };
+
+    const openDeal = (dealId: string) => {
+        if (suppressClickRef.current) return;
+        router.push(`/deals/${dealId}`);
     };
 
     const handleDragOver = (e: React.DragEvent) => {
@@ -85,7 +130,15 @@ export default function DealsKanban({
 
     const handleDrop = async (e: React.DragEvent, targetStatus: string) => {
         e.preventDefault();
-        if (!dragged || dragged.deal_status === targetStatus) {
+        const current = dragged;
+        if (!current) return;
+        const fromCol = kanbanColumnForStatus(current.deal_status);
+        if (fromCol === targetStatus && current.deal_status === targetStatus) {
+            setDragged(null);
+            return;
+        }
+        // Already in this column under a legacy alias (e.g. Closed → Paid Off)
+        if (fromCol === targetStatus) {
             setDragged(null);
             return;
         }
@@ -98,14 +151,14 @@ export default function DealsKanban({
         const prev = optimistic;
         setOptimistic((list) =>
             list.map((d) =>
-                d.id === dragged.id ? { ...d, deal_status: targetStatus } : d
+                d.id === current.id ? { ...d, deal_status: targetStatus } : d
             )
         );
         setDragged(null);
         setUpdating(true);
 
         try {
-            await apiFetch(`/api/deals/${dragged.id}`, {
+            await apiFetch(`/api/deals/${current.id}`, {
                 method: "PATCH",
                 body: JSON.stringify({ deal_status: targetStatus }),
             });
@@ -199,10 +252,12 @@ export default function DealsKanban({
                                                 key={deal.id}
                                                 draggable={canWrite && !updating}
                                                 onDragStart={(e) => handleDragStart(e, deal)}
-                                                onClick={() => router.push(`/deals/${deal.id}`)}
+                                                onDragEnd={handleDragEnd}
+                                                onClick={() => openDeal(deal.id)}
                                                 className={cn(
                                                     "cursor-grab rounded-lg border border-border bg-card p-3 shadow-sm transition-shadow hover:shadow-md active:cursor-grabbing",
-                                                    stagnant && "ring-1 ring-amber-400/60"
+                                                    stagnant && "ring-1 ring-amber-400/60",
+                                                    dragged?.id === deal.id && "opacity-50"
                                                 )}
                                             >
                                                 <div className="mb-1.5 flex items-start gap-2">
@@ -210,6 +265,7 @@ export default function DealsKanban({
                                                         <GripVertical className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                                                     ) : null}
                                                     {firstImageUrl(deal.vehicle?.image_gallery) ? (
+                                                        // eslint-disable-next-line @next/next/no-img-element
                                                         <img
                                                             src={
                                                                 firstImageUrl(
@@ -236,6 +292,11 @@ export default function DealsKanban({
                                                                     ? "Unlinked"
                                                                     : "Cash")}
                                                         </p>
+                                                        {deal.deal_status !== stage ? (
+                                                            <p className="mt-0.5 text-[10px] font-medium text-muted-foreground">
+                                                                {deal.deal_status}
+                                                            </p>
+                                                        ) : null}
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center justify-between pt-2 text-xs">
@@ -259,6 +320,12 @@ export default function DealsKanban({
                         );
                     })}
                 </div>
+                {orphans.length > 0 ? (
+                    <p className="mt-3 text-xs text-amber-700">
+                        {orphans.length} deal{orphans.length === 1 ? "" : "s"} with unknown
+                        status not shown in columns — open from table view.
+                    </p>
+                ) : null}
             </div>
 
             {/* Mobile: stage list */}
@@ -279,7 +346,7 @@ export default function DealsKanban({
                         <button
                             key={deal.id}
                             type="button"
-                            onClick={() => router.push(`/deals/${deal.id}`)}
+                            onClick={() => openDeal(deal.id)}
                             className="w-full rounded-lg border border-border bg-card p-4 text-left shadow-sm"
                         >
                             <div className="mb-2 flex items-center justify-between gap-2">

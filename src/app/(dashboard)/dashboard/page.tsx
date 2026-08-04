@@ -137,7 +137,7 @@ function buildStatCards(stats: DashboardStats, changes: DashboardData["changes"]
         { title: "Open Leads", value: stats.totalLeads, icon: User, tint: "bg-status-sold-50 text-status-sold", delta: changes.leads, subtitle: "In pipeline", href: "/leads" },
         { title: "Sales Revenue", value: stats.totalRevenue ?? stats.totalSales, icon: DollarSign, tint: "bg-success-50 text-success", delta: changes.sales, subtitle: `${stats.totalSales} deals`, href: "/deals", format: "currency" as const },
         { title: "Customers", value: stats.totalCustomers, icon: Users, tint: "bg-info-50 text-info", delta: changes.customers, subtitle: "In directory", href: "/customers" },
-        { title: "Pending Invoices", value: stats.pendingInvoices, icon: FileText, tint: "bg-warning-50 text-warning", delta: changes.invoices, subtitle: `${stats.totalInvoices} total`, href: "/invoices" },
+        { title: "Pending Invoices", value: stats.pendingInvoices, icon: FileText, tint: "bg-warning-50 text-warning", delta: changes.invoices, subtitle: `${stats.totalInvoices} total`, href: "/invoices?status=Pending" },
     ];
 }
 
@@ -149,10 +149,11 @@ export default function DashboardPage() {
     const [inventoryData, setInventoryData] = useState<ChartData[]>([]);
     const [salesStatusData, setSalesStatusData] = useState<ChartData[]>([]);
     const [expensesData, setExpensesData] = useState<ChartData[]>([]);
-    const [topVehicles, setTopVehicles] = useState<{ name: string; price: number; days: number }[]>([]);
+    const [topVehicles, setTopVehicles] = useState<{ name: string; price: number; days: number; href?: string }[]>([]);
     const [upcomingFollowUps, setUpcomingFollowUps] = useState<any[]>([]);
     const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
     const [myTasks, setMyTasks] = useState<any[]>([]);
+    const [myLeadCount, setMyLeadCount] = useState(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -186,9 +187,18 @@ export default function DashboardPage() {
                         recentLeads: [],
                     });
                 } else if (userRole === "Salesperson" || userRole === "Staff") {
-                    const tasksRes = await apiFetch<{ data: any[] }>("/api/tasks?my_tasks=true&limit=20", { silent: true });
+                    const [tasksRes, leadsRes] = await Promise.all([
+                        apiFetch<{ data: any[] }>("/api/tasks?my_tasks=true&limit=20", { silent: true }),
+                        // Salesperson/Staff leads API auto-scopes to assigned_to
+                        apiFetch<{ data: any[]; count?: number }>("/api/leads?limit=1", { silent: true }).catch(() => ({ data: [] as any[] })),
+                    ]);
                     if (cancelled) return;
                     setMyTasks(tasksRes.data ?? []);
+                    const leadTotal =
+                        typeof (leadsRes as { count?: number }).count === "number"
+                            ? (leadsRes as { count: number }).count
+                            : (leadsRes.data ?? []).length;
+                    setMyLeadCount(leadTotal);
                 } else {
                     const [dash, leads, vehicles, deals, expenses, followUps] = await Promise.all([
                         apiFetch<DashboardData>("/api/dashboard", { silent: true }),
@@ -276,7 +286,7 @@ export default function DashboardPage() {
 
     // ── Personal dashboard for Salesperson/Staff ──
     if (userProfile && (userProfile.role === "Salesperson" || userProfile.role === "Staff")) {
-        return <PersonalDashboard userProfile={userProfile} myTasks={myTasks} />;
+        return <PersonalDashboard userProfile={userProfile} myTasks={myTasks} myLeadCount={myLeadCount} />;
     }
 
     // ── Platform admin ──
@@ -323,7 +333,7 @@ function ManagerDashboard({
     inventoryData: ChartData[];
     salesStatusData: ChartData[];
     expensesData: ChartData[];
-    topVehicles: { name: string; price: number; days: number }[];
+    topVehicles: { name: string; price: number; days: number; href?: string }[];
     upcomingFollowUps: any[];
 }) {
     const router = useRouter();
@@ -405,7 +415,7 @@ function ManagerDashboard({
                             tint="bg-warning-50 text-warning"
                             label="Pending invoices"
                             value={stats.pendingInvoices}
-                            href="/invoices"
+                            href="/invoices?status=Pending"
                         />
                         <TodayItem
                             icon={Target}
@@ -533,25 +543,30 @@ function ManagerDashboard({
                         ) : (
                             <ul className="divide-y divide-border">
                                 {recentSales.slice(0, 5).map((sale) => (
-                                    <li key={sale.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
-                                        <Avatar name={sale.customer?.name} src={sale.customer?.avatar} size="md" />
-                                        <div className="min-w-0 flex-1">
-                                            <p className="truncate text-sm font-medium text-foreground">
-                                                {sale.customer?.name ?? "Unknown customer"}
-                                            </p>
-                                            <p className="truncate text-xs text-muted-foreground">
-                                                {sale.vehicle?.year} {sale.vehicle?.make} {sale.vehicle?.model}
-                                            </p>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-sm font-semibold text-foreground tabular-nums">
-                                                {formatCurrency(sale.sale_price)}
-                                            </p>
-                                            <p className="text-xs text-muted-foreground">
-                                                {timeAgo(sale.deal_date)}
-                                            </p>
-                                        </div>
-                                        <StatusBadge status={sale.deal_status} resource="deal" />
+                                    <li key={sale.id} className="first:pt-0 last:pb-0">
+                                        <Link
+                                            href={`/deals/${sale.id}`}
+                                            className="flex items-center gap-3 py-3 transition-colors hover:bg-muted/40 -mx-1 px-1 rounded-lg"
+                                        >
+                                            <Avatar name={sale.customer?.name} src={sale.customer?.avatar} size="md" />
+                                            <div className="min-w-0 flex-1">
+                                                <p className="truncate text-sm font-medium text-foreground">
+                                                    {sale.customer?.name ?? "Unknown customer"}
+                                                </p>
+                                                <p className="truncate text-xs text-muted-foreground">
+                                                    {sale.vehicle?.year} {sale.vehicle?.make} {sale.vehicle?.model}
+                                                </p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-sm font-semibold text-foreground tabular-nums">
+                                                    {formatCurrency(sale.sale_price)}
+                                                </p>
+                                                <p className="text-xs text-muted-foreground">
+                                                    {timeAgo(sale.deal_date)}
+                                                </p>
+                                            </div>
+                                            <StatusBadge status={sale.deal_status} resource="deal" />
+                                        </Link>
                                     </li>
                                 ))}
                             </ul>
@@ -576,23 +591,28 @@ function ManagerDashboard({
                         ) : (
                             <ul className="divide-y divide-border">
                                 {recentLeads.slice(0, 5).map((lead) => (
-                                    <li key={lead.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
-                                        <Avatar name={lead.customer?.name} src={lead.customer?.avatar} size="md" />
-                                        <div className="min-w-0 flex-1">
-                                            <p className="truncate text-sm font-medium text-foreground">
-                                                {lead.customer?.name ?? "Unknown"}
-                                            </p>
-                                            <p className="truncate text-xs text-muted-foreground">
-                                                {lead.source} · {timeAgo(lead.lead_creation_date)}
-                                            </p>
-                                        </div>
-                                        {lead.assigned_user && (
-                                            <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground">
-                                                <Avatar name={lead.assigned_user.full_name} src={lead.assigned_user.avatar} size="xs" />
-                                                <span className="truncate max-w-[100px]">{lead.assigned_user.full_name}</span>
+                                    <li key={lead.id} className="first:pt-0 last:pb-0">
+                                        <Link
+                                            href="/leads"
+                                            className="flex items-center gap-3 py-3 transition-colors hover:bg-muted/40 -mx-1 px-1 rounded-lg"
+                                        >
+                                            <Avatar name={lead.customer?.name} src={lead.customer?.avatar} size="md" />
+                                            <div className="min-w-0 flex-1">
+                                                <p className="truncate text-sm font-medium text-foreground">
+                                                    {lead.customer?.name ?? "Unknown"}
+                                                </p>
+                                                <p className="truncate text-xs text-muted-foreground">
+                                                    {lead.source} · {timeAgo(lead.lead_creation_date)}
+                                                </p>
                                             </div>
-                                        )}
-                                        <StatusBadge status={lead.status} resource="lead" />
+                                            {lead.assigned_user && (
+                                                <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground">
+                                                    <Avatar name={lead.assigned_user.full_name} src={lead.assigned_user.avatar} size="xs" />
+                                                    <span className="truncate max-w-[100px]">{lead.assigned_user.full_name}</span>
+                                                </div>
+                                            )}
+                                            <StatusBadge status={lead.status} resource="lead" />
+                                        </Link>
                                     </li>
                                 ))}
                             </ul>
@@ -617,22 +637,27 @@ function ManagerDashboard({
                         ) : (
                             <ul className="divide-y divide-border">
                                 {upcomingFollowUps.map((fu: any) => (
-                                    <li key={fu.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
-                                        <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-warning-50 text-warning">
-                                            <Phone className="h-4 w-4" />
-                                        </div>
-                                        <div className="min-w-0 flex-1">
-                                            <p className="truncate text-sm font-medium text-foreground">
-                                                {fu.customer?.name || fu.subject || "Follow-up"}
-                                            </p>
-                                            <p className="truncate text-xs text-muted-foreground">
-                                                {fu.follow_up_date
-                                                    ? new Date(fu.follow_up_date).toLocaleDateString()
-                                                    : "No date"}
-                                                {fu.priority ? ` · ${fu.priority}` : ""}
-                                            </p>
-                                        </div>
-                                        <StatusBadge status={fu.status || "Pending"} resource="task" />
+                                    <li key={fu.id} className="first:pt-0 last:pb-0">
+                                        <Link
+                                            href="/follow-ups"
+                                            className="flex items-center gap-3 py-3 transition-colors hover:bg-muted/40 -mx-1 px-1 rounded-lg"
+                                        >
+                                            <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-warning-50 text-warning">
+                                                <Phone className="h-4 w-4" />
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <p className="truncate text-sm font-medium text-foreground">
+                                                    {fu.customer?.name || fu.subject || "Follow-up"}
+                                                </p>
+                                                <p className="truncate text-xs text-muted-foreground">
+                                                    {fu.follow_up_date
+                                                        ? new Date(fu.follow_up_date).toLocaleDateString()
+                                                        : "No date"}
+                                                    {fu.priority ? ` · ${fu.priority}` : ""}
+                                                </p>
+                                            </div>
+                                            <StatusBadge status={fu.status || "Pending"} resource="task" />
+                                        </Link>
                                     </li>
                                 ))}
                             </ul>
@@ -656,20 +681,36 @@ function ManagerDashboard({
                             <EmptyState kind="first-use" title="No active vehicles" description="Add inventory to see top units." action={{ label: "Add vehicle", href: "/inventory/new" }} className="py-8" />
                         ) : (
                             <ul className="divide-y divide-border">
-                                {topVehicles.map((v, idx) => (
-                                    <li key={`${v.name}-${idx}`} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
-                                        <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-primary-50 text-primary">
-                                            <Package className="h-4 w-4" />
-                                        </div>
-                                        <div className="min-w-0 flex-1">
-                                            <p className="truncate text-sm font-medium text-foreground">{v.name}</p>
-                                            <p className="text-xs text-muted-foreground">{v.days}d in stock</p>
-                                        </div>
-                                        <p className="text-sm font-semibold tabular-nums text-foreground">
-                                            {formatCurrency(v.price)}
-                                        </p>
-                                    </li>
-                                ))}
+                                {topVehicles.map((v, idx) => {
+                                    const row = (
+                                        <>
+                                            <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-primary-50 text-primary">
+                                                <Package className="h-4 w-4" />
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <p className="truncate text-sm font-medium text-foreground">{v.name}</p>
+                                                <p className="text-xs text-muted-foreground">{v.days}d in stock</p>
+                                            </div>
+                                            <p className="text-sm font-semibold tabular-nums text-foreground">
+                                                {formatCurrency(v.price)}
+                                            </p>
+                                        </>
+                                    );
+                                    return (
+                                        <li key={`${v.name}-${idx}`} className="first:pt-0 last:pb-0">
+                                            {v.href ? (
+                                                <Link
+                                                    href={v.href}
+                                                    className="flex items-center gap-3 py-3 transition-colors hover:bg-muted/40 -mx-1 px-1 rounded-lg"
+                                                >
+                                                    {row}
+                                                </Link>
+                                            ) : (
+                                                <div className="flex items-center gap-3 py-3">{row}</div>
+                                            )}
+                                        </li>
+                                    );
+                                })}
                             </ul>
                         )}
                     </CardContent>
@@ -680,7 +721,15 @@ function ManagerDashboard({
 }
 
 // ── Personal dashboard (Salesperson/Staff) ──────────────────────────
-function PersonalDashboard({ userProfile, myTasks }: { userProfile: UserProfile | null; myTasks: any[] }) {
+function PersonalDashboard({
+    userProfile,
+    myTasks,
+    myLeadCount,
+}: {
+    userProfile: UserProfile | null;
+    myTasks: any[];
+    myLeadCount: number;
+}) {
     const router = useRouter();
     const pendingTasks = myTasks.filter((t: any) => t.status !== "Completed" && t.status !== "Cancelled");
     const completedTasks = myTasks.filter((t: any) => t.status === "Completed");
@@ -702,7 +751,7 @@ function PersonalDashboard({ userProfile, myTasks }: { userProfile: UserProfile 
                 <StatCard label="My tasks" value={myTasks.length} icon={Briefcase} iconClassName="bg-primary-50 text-primary" deltaLabel={`${pendingTasks.length} pending`} href="/tasks" />
                 <StatCard label="Pending" value={pendingTasks.length} icon={Clock} iconClassName="bg-warning-50 text-warning" href="/tasks" />
                 <StatCard label="Completed" value={completedTasks.length} icon={TrendingUp} iconClassName="bg-success-50 text-success" href="/tasks" />
-                <StatCard label="My leads" value={0} icon={User} iconClassName="bg-info-50 text-info" href="/leads" />
+                <StatCard label="My leads" value={myLeadCount} icon={User} iconClassName="bg-info-50 text-info" href="/leads" />
             </div>
 
             <Card className="p-0">
@@ -847,17 +896,19 @@ function buildExpensesData(expenses: any[]): ChartData[] {
         .slice(0, 6);
 }
 
-function buildTopVehicles(vehicles: any[]): { name: string; price: number; days: number }[] {
+function buildTopVehicles(vehicles: any[]): { name: string; price: number; days: number; href?: string }[] {
     const now = Date.now();
     return vehicles
         .filter((v) => (v.status || "") === "Active")
         .map((v) => {
             const created = v.created_at ? new Date(v.created_at).getTime() : now;
             const days = Math.max(0, Math.floor((now - created) / (1000 * 60 * 60 * 24)));
+            const vin = typeof v.vin === "string" && v.vin.trim() ? v.vin.trim() : null;
             return {
                 name: `${v.year ?? ""} ${v.make ?? ""} ${v.model ?? ""}`.trim() || "Vehicle",
                 price: Number(v.retail_price) || 0,
                 days,
+                href: vin ? `/inventory/${encodeURIComponent(vin)}` : undefined,
             };
         })
         .sort((a, b) => b.price - a.price)

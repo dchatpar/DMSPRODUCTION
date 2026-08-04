@@ -64,15 +64,22 @@ function VerifyEmailForm() {
       await apiFetch("/api/auth/otp/send", {
         method: "POST",
         body: { email: email.trim().toLowerCase(), purpose },
+        // Page owns honesty toasts (503 missing Resend must not look like success)
+        silent: true,
+        silent5xx: true,
       });
       toast.success("Code sent", "Check your inbox");
     } catch (err: unknown) {
+      const data = (err as { data?: { error?: string; missing_config?: boolean } })?.data;
       const message =
-        (err as { data?: { error?: string }; message?: string })?.data?.error ||
+        data?.error ||
         (err as { message?: string })?.message ||
         "Could not send code";
-      setError(message);
-      toast.error("Resend failed", message);
+      const honest = data?.missing_config
+        ? "Not configured — add RESEND_API_KEY / EMAIL_FROM via wrangler when ready."
+        : message;
+      setError(honest);
+      toast.error("Resend failed", honest);
     } finally {
       setResending(false);
     }

@@ -387,10 +387,16 @@ export default function InventoryPage() {
             if (!res.ok) {
                 const body = (await res.json().catch(() => ({}))) as {
                     error?: string;
+                    meta?: { included?: number; skipped?: number };
                 };
-                throw new Error(
+                const skipped = body.meta?.skipped;
+                const detail =
                     body.error ||
-                        "AutoTrader feed export failed — check price/photos/VIN on Active units"
+                    "AutoTrader feed export failed — check price/photos/VIN on Active units";
+                throw new Error(
+                    skipped != null && skipped > 0
+                        ? `${detail} (${skipped} skipped)`
+                        : detail
                 );
             }
             const text = await res.text();
@@ -438,23 +444,34 @@ export default function InventoryPage() {
             }
 
             const worksheetData = exportData.map(
-                (vehicle: Vehicle & { exterior_color?: string; interior_color?: string; description?: string }) => ({
-                    VIN: vehicle.vin || "",
-                    "Stock #": vehicle.stock_number || "",
-                    Year: vehicle.year || "",
-                    Make: vehicle.make || "",
-                    Model: vehicle.model || "",
-                    Trim: vehicle.trim || "",
-                    Condition: vehicle.condition || "",
-                    Status: vehicle.status || "",
-                    Odometer: vehicle.odometer || 0,
-                    "Exterior Color": vehicle.exterior_color || "",
-                    "Interior Color": vehicle.interior_color || "",
-                    "Purchase Price": vehicle.purchase_price || 0,
-                    "Retail Price": vehicle.retail_price || 0,
-                    "Days in Stock": daysInStock(vehicle.created_at),
-                    Description: vehicle.description || "",
-                })
+                (vehicle: Vehicle & { exterior_color?: string; interior_color?: string; description?: string }) => {
+                    const days = daysInStock(vehicle.created_at);
+                    const estIncome = calcEstimatedIncome({
+                        retail: vehicle.retail_price,
+                        purchase: vehicle.purchase_price,
+                        extraCosts: vehicle.extra_costs,
+                        taxes: vehicle.taxes,
+                    });
+                    return {
+                        VIN: vehicle.vin || "",
+                        "Stock #": vehicle.stock_number || "",
+                        Year: vehicle.year || "",
+                        Make: vehicle.make || "",
+                        Model: vehicle.model || "",
+                        Trim: vehicle.trim || "",
+                        Condition: vehicle.condition || "",
+                        Status: vehicle.status || "",
+                        Odometer: vehicle.odometer || 0,
+                        "Exterior Color": vehicle.exterior_color || "",
+                        "Interior Color": vehicle.interior_color || "",
+                        "Purchase Price": vehicle.purchase_price || 0,
+                        "Extra Costs": vehicle.extra_costs || 0,
+                        "Retail Price": vehicle.retail_price || 0,
+                        "Est. Income": estIncome,
+                        "Days in Stock": days,
+                        Description: vehicle.description || "",
+                    };
+                }
             );
 
             const worksheet = XLSX.utils.json_to_sheet(worksheetData);
@@ -473,7 +490,9 @@ export default function InventoryPage() {
                 { wch: 15 },
                 { wch: 15 },
                 { wch: 15 },
+                { wch: 12 },
                 { wch: 15 },
+                { wch: 12 },
                 { wch: 12 },
                 { wch: 40 },
             ];
@@ -666,8 +685,14 @@ export default function InventoryPage() {
     const writeOk = userRole === "Admin" || canWrite("vehicles");
     const deleteOk = userRole === "Admin" || canDelete("vehicles");
     const hasFilters = Boolean(
-        debouncedSearch || statusFilter || advActiveCount > 0 || agingOnly
+        debouncedSearch ||
+            statusFilter !== "Active" ||
+            advActiveCount > 0 ||
+            agingOnly
     );
+    /** True empty dealership — don't treat default Active tab as a "filter". */
+    const isFirstUse =
+        kpis.total === 0 && !debouncedSearch && advActiveCount === 0 && !agingOnly;
 
     const drillAging = () => {
         setAgingOnly(true);
@@ -720,20 +745,26 @@ export default function InventoryPage() {
 
     const emptyBlock = (
         <EmptyState
-            kind={hasFilters ? "no-results" : "first-use"}
+            kind={isFirstUse ? "first-use" : "no-results"}
             icon={Car}
-            title={hasFilters ? "No vehicles match" : "No vehicles yet"}
+            title={isFirstUse ? "No vehicles yet" : "No vehicles match"}
             description={
-                hasFilters
-                    ? "Try another status filter or clear your search."
-                    : "Add your first vehicle to start tracking inventory."
+                isFirstUse
+                    ? "Add your first vehicle to start tracking inventory."
+                    : hasFilters
+                      ? "Try another status filter or clear your search."
+                      : "No Active units — switch status or add a vehicle."
             }
-            action={writeOk && !hasFilters ? { label: "Add vehicle", onClick: handleAdd, icon: Plus } : undefined}
+            action={
+                writeOk && isFirstUse
+                    ? { label: "Add vehicle", onClick: handleAdd, icon: Plus }
+                    : undefined
+            }
             className="border-0 bg-transparent py-10"
         />
     );
 
-    const colSpan = 12;
+    const colSpan = 11;
 
     return (
         <ListPageShell

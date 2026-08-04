@@ -405,6 +405,9 @@ export default function CustomerFormModal({
                                         Marketing email consent
                                         <span className="block text-xs text-gray-500">
                                             Unchecked by default. Timestamp stored when checked.
+                                            {mode === "edit" && customer?.marketing_consent_at
+                                                ? ` Last recorded: ${new Date(customer.marketing_consent_at).toLocaleString()}.`
+                                                : ""}
                                         </span>
                                     </span>
                                 </label>
@@ -419,7 +422,11 @@ export default function CustomerFormModal({
                                     <span className="text-sm text-gray-700">
                                         SMS / text consent
                                         <span className="block text-xs text-gray-500">
-                                            Required before any SMS send. Unchecked by default.
+                                            Stored for CASL. SMS transport is not configured yet
+                                            (send API returns 501). Unchecked by default.
+                                            {mode === "edit" && customer?.sms_consent_at
+                                                ? ` Last recorded: ${new Date(customer.sms_consent_at).toLocaleString()}.`
+                                                : ""}
                                         </span>
                                     </span>
                                 </label>

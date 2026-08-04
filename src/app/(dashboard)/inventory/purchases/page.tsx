@@ -50,8 +50,10 @@ interface Purchase {
     created_at: string;
 }
 
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
 const emptyForm = {
-    purchase_date: new Date().toISOString().slice(0, 10),
+    purchase_date: todayISO(),
     purchase_price: "",
     seller_name: "",
     seller_phone: "",
@@ -116,7 +118,7 @@ export default function PurchasesPage() {
 
     const openCreate = () => {
         setEditingId(null);
-        setForm(emptyForm);
+        setForm({ ...emptyForm, purchase_date: todayISO() });
         setFormError(null);
         setShowForm(true);
     };
@@ -144,6 +146,10 @@ export default function PurchasesPage() {
         setFormError(null);
         if (!form.seller_name.trim()) {
             setFormError("Seller name is required");
+            return;
+        }
+        if (!form.purchase_date) {
+            setFormError("Purchase date is required");
             return;
         }
         if (!form.purchase_price || Number.isNaN(Number(form.purchase_price))) {

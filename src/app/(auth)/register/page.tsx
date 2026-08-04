@@ -38,16 +38,40 @@ export default function RegisterPage() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (!form.accept_terms) {
+      setError("You must accept Terms and Privacy to continue");
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const res = await apiFetch<{
-        data: { email: string; otp_sent: boolean; otp_error?: string };
+        data: {
+          email: string;
+          otp_sent: boolean;
+          otp_error?: string;
+          resend_configured?: boolean;
+        };
         message?: string;
       }>("/api/auth/register-dealership", {
         method: "POST",
         body: form,
+        silent: true,
       });
-      toast.success("Dealership created", res.message || "Verify your email to continue");
+      if (res.data.otp_sent) {
+        toast.success(
+          "Dealership created",
+          res.message || "Check your email for the verification code."
+        );
+      } else {
+        // Honest path when Resend is missing — never claim the code was emailed
+        toast.warning(
+          "Dealership created — email not sent",
+          res.data.otp_error ||
+            res.message ||
+            "Not configured — add RESEND_API_KEY / EMAIL_FROM via wrangler when ready."
+        );
+      }
       const q = new URLSearchParams({
         email: res.data.email,
         purpose: "signup",

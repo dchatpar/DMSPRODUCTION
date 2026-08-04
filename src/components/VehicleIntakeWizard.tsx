@@ -544,7 +544,7 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
         return () => clearTimeout(t);
     }, [form, stepIndex, mode]);
 
-    // Duplicate VIN check (add mode only)
+    // Duplicate VIN check (add mode only) — ignore the draft we already created
     useEffect(() => {
         if (mode !== "add") return;
         const vin = form.vin.trim().toUpperCase();
@@ -552,6 +552,7 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
             setDuplicateHint(null);
             return;
         }
+        const selfId = form.id;
         const t = setTimeout(async () => {
             try {
                 const res = await fetch(`/api/vehicles?vin=${encodeURIComponent(vin)}&limit=1`, {
@@ -559,8 +560,11 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
                 });
                 if (!res.ok) return;
                 const json = await res.json();
-                if (json.data?.length) {
-                    setDuplicateHint(`VIN already in inventory (${json.data[0].year} ${json.data[0].make} ${json.data[0].model})`);
+                const hit = json.data?.[0];
+                if (hit && hit.id !== selfId) {
+                    setDuplicateHint(
+                        `VIN already in inventory (${hit.year} ${hit.make} ${hit.model})`
+                    );
                 } else {
                     setDuplicateHint(null);
                 }
@@ -569,7 +573,7 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
             }
         }, 400);
         return () => clearTimeout(t);
-    }, [form.vin, mode]);
+    }, [form.vin, form.id, mode]);
 
     const validateIdentity = (): string | null => {
         const vin = form.vin.trim().toUpperCase();
@@ -588,12 +592,18 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
         setForm((prev) => ({ ...prev, image_gallery: serialized }));
         if (!form.id && !draftSaved) return;
         const idOrVin = form.id || form.vin;
-        await fetch(`/api/vehicles/${encodeURIComponent(idOrVin)}`, {
+        const res = await fetch(`/api/vehicles/${encodeURIComponent(idOrVin)}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             credentials: "include",
             body: JSON.stringify({ image_gallery: serialized }),
         });
+        if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(
+                (body as { error?: string }).error || `Failed to save gallery (${res.status})`
+            );
+        }
     };
 
     const saveDraft = async (): Promise<boolean> => {
@@ -730,14 +740,20 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
             // Persist progress between steps
             setSaving(true);
             try {
-                await fetch(`/api/vehicles/${encodeURIComponent(form.id)}`, {
+                const res = await fetch(`/api/vehicles/${encodeURIComponent(form.id)}`, {
                     method: "PATCH",
                     headers: { "Content-Type": "application/json" },
                     credentials: "include",
                     body: JSON.stringify(buildPayload(form, false)),
                 });
+                if (!res.ok) {
+                    const body = await res.json().catch(() => ({}));
+                    toast.error(
+                        (body as { error?: string }).error || "Could not save step progress"
+                    );
+                }
             } catch {
-                // non-blocking
+                toast.error("Could not save step progress");
             } finally {
                 setSaving(false);
             }
@@ -837,7 +853,11 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
             ...img,
             sort_order: i,
         }));
-        await persistGallery(next);
+        try {
+            await persistGallery(next);
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Could not reorder photos");
+        }
     };
 
     const setCover = async (url: string) => {
@@ -845,7 +865,11 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
             ...img,
             is_cover: img.url === url,
         }));
-        await persistGallery(next);
+        try {
+            await persistGallery(next);
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Could not set cover");
+        }
     };
 
     const removeImage = async (url: string) => {
@@ -875,7 +899,11 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
         const next = gallery.map((img) =>
             img.url === url ? { ...img, role: role || null } : img
         );
-        await persistGallery(next);
+        try {
+            await persistGallery(next);
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Could not update photo role");
+        }
     };
 
     const toggleFeature = (feat: string) => {
@@ -1039,6 +1067,9 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
                                 setForm(restored);
                                 setMakeQuery(restored.make);
                                 setModelQuery(restored.model);
+                                // If local draft already has a server id, treat as saved
+                                // so Continue PATCHes instead of POSTing a duplicate VIN.
+                                setDraftSaved(Boolean(restored.id));
                                 setStepIndex(
                                     Math.min(
                                         Math.max(0, draft.stepIndex || 0),
@@ -1078,12 +1109,14 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
                                     }
                                     placeholder="17-character VIN"
                                     maxLength={17}
-                                    disabled={draftSaved && mode === "edit"}
+                                    disabled={draftSaved || mode === "edit"}
                                     containerClassName="flex-1"
                                     helper={
                                         duplicateHint
                                             ? duplicateHint
-                                            : `${form.vin.length}/17 · no I, O, Q`
+                                            : draftSaved
+                                              ? "VIN locked after draft save"
+                                              : `${form.vin.length}/17 · no I, O, Q`
                                     }
                                     error={duplicateHint ? duplicateHint : undefined}
                                 />
@@ -1093,7 +1126,7 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
                                     className="shrink-0"
                                     leftIcon={<Search className="h-4 w-4" />}
                                     onClick={() => setShowVinLookup(true)}
-                                    disabled={draftSaved && mode === "edit"}
+                                    disabled={draftSaved || mode === "edit"}
                                 >
                                     Decode VIN
                                 </Button>

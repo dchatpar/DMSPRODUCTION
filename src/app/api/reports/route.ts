@@ -4,6 +4,7 @@ import {
     pickSupabaseClient,
     requireDealershipAccess,
 } from "@/src/lib/auth-helpers";
+import { shouldScopeToAssigned } from "@/src/lib/permission-middleware";
 
 type DateFilter = { start: string; end: string } | null;
 type SupabaseClient = ReturnType<typeof pickSupabaseClient>["supabase"];
@@ -21,8 +22,28 @@ function applyDealershipScope(
     return query;
 }
 
+/** Salesperson/Staff: only their own deals (matches /api/deals). */
+function applySalespersonScope(query: any, assignedUserId: string | null) {
+    if (assignedUserId) {
+        return query.eq("salesperson_id", assignedUserId);
+    }
+    return query;
+}
+
 function dateOnly(iso: string): string {
     return iso.includes("T") ? iso.split("T")[0]! : iso;
+}
+
+/**
+ * Date window on sales_deals: prefer deal_date; if null, fall back to created_at.
+ * Prevents Closed Hillz rows with missing deal_date from vanishing in reports.
+ */
+function applyDealDateRange(query: any, startDay: string, endDay: string) {
+    const startIso = `${startDay}T00:00:00.000Z`;
+    const endIso = `${endDay}T23:59:59.999Z`;
+    return query.or(
+        `and(deal_date.gte.${startDay},deal_date.lte.${endDay}),and(deal_date.is.null,created_at.gte."${startIso}",created_at.lte."${endIso}")`
+    );
 }
 
 // GET reports data
@@ -65,9 +86,19 @@ export async function GET(req: NextRequest) {
             1
         ).toISOString();
 
-        const scope = {
+        const assignedUserId =
+            auth.user &&
+            shouldScopeToAssigned(
+                auth.profile.role,
+                auth.profile.user_permissions || []
+            )
+                ? auth.user.id
+                : null;
+
+        const scope: Scope = {
             dealershipId: dealershipId || null,
             isPlatformAdmin,
+            assignedUserId,
         };
 
         switch (reportType) {
@@ -119,6 +150,8 @@ export async function GET(req: NextRequest) {
 type Scope = {
     dealershipId: string | null;
     isPlatformAdmin: boolean;
+    /** When set (Salesperson/Staff), restrict deal/lead aggregates to this user. */
+    assignedUserId: string | null;
 };
 
 async function getSummaryReport(
@@ -133,6 +166,7 @@ async function getSummaryReport(
         .not("deal_status", "in", '("Cancelled","Negotiation")')
         .gte("created_at", quarterStart);
     salesQ = applyDealershipScope(salesQ, scope.dealershipId, scope.isPlatformAdmin);
+    salesQ = applySalespersonScope(salesQ, scope.assignedUserId);
     const { data: salesData } = await salesQ;
 
     const totalSalesRevenue =
@@ -183,6 +217,9 @@ async function getSummaryReport(
         scope.dealershipId,
         scope.isPlatformAdmin
     );
+    if (scope.assignedUserId) {
+        totalLeadsQ = totalLeadsQ.eq("assigned_to", scope.assignedUserId);
+    }
     const { count: totalLeads } = await totalLeadsQ;
 
     let newLeadsQ = supabase
@@ -197,49 +234,62 @@ async function getSummaryReport(
         scope.dealershipId,
         scope.isPlatformAdmin
     );
+    if (scope.assignedUserId) {
+        newLeadsQ = newLeadsQ.eq("assigned_to", scope.assignedUserId);
+    }
     const { count: newLeadsThisMonth } = await newLeadsQ;
 
-    let expensesQ = supabase
-        .from("expenses")
-        .select("amount, tax_amount")
-        .eq("status", "Paid")
-        .gte("expense_date", quarterStart);
-    expensesQ = applyDealershipScope(
-        expensesQ,
-        scope.dealershipId,
-        scope.isPlatformAdmin
-    );
-    const { data: expensesData } = await expensesQ;
+    let totalExpenses = 0;
+    if (!scope.assignedUserId) {
+        let expensesQ = supabase
+            .from("expenses")
+            .select("amount, tax_amount")
+            .eq("status", "Paid")
+            .gte("expense_date", quarterStart);
+        expensesQ = applyDealershipScope(
+            expensesQ,
+            scope.dealershipId,
+            scope.isPlatformAdmin
+        );
+        const { data: expensesData } = await expensesQ;
 
-    const totalExpenses =
-        expensesData?.reduce(
-            (sum: number, e: { amount?: number; tax_amount?: number }) =>
-                sum + (e.amount || 0) + (e.tax_amount || 0),
-            0
-        ) || 0;
+        totalExpenses =
+            expensesData?.reduce(
+                (sum: number, e: { amount?: number; tax_amount?: number }) =>
+                    sum + (e.amount || 0) + (e.tax_amount || 0),
+                0
+            ) || 0;
+    }
 
     const avgDealPrice = totalDeals > 0 ? totalSalesRevenue / totalDeals : 0;
 
-    let vehiclesCostQ = supabase
-        .from("vehicles")
-        .select("purchase_price, retail_price")
-        .eq("status", "Sold")
-        .gte("updated_at", quarterStart);
-    vehiclesCostQ = applyDealershipScope(
-        vehiclesCostQ,
-        scope.dealershipId,
-        scope.isPlatformAdmin
-    );
-    const { data: vehiclesCostData } = await vehiclesCostQ;
+    let totalProfit = 0;
+    if (!scope.assignedUserId) {
+        let vehiclesCostQ = supabase
+            .from("vehicles")
+            .select("purchase_price, retail_price")
+            .eq("status", "Sold")
+            .gte("updated_at", quarterStart);
+        vehiclesCostQ = applyDealershipScope(
+            vehiclesCostQ,
+            scope.dealershipId,
+            scope.isPlatformAdmin
+        );
+        const { data: vehiclesCostData } = await vehiclesCostQ;
 
-    const totalProfit =
-        vehiclesCostData?.reduce(
-            (
-                sum: number,
-                v: { retail_price?: number; purchase_price?: number }
-            ) => sum + ((v.retail_price || 0) - (v.purchase_price || 0)),
-            0
-        ) || 0;
+        totalProfit =
+            vehiclesCostData?.reduce(
+                (
+                    sum: number,
+                    v: { retail_price?: number; purchase_price?: number }
+                ) => sum + ((v.retail_price || 0) - (v.purchase_price || 0)),
+                0
+            ) || 0;
+    } else {
+        // Assigned roles: profit from their own deals already in sales revenue path;
+        // avoid leaking dealership-wide sold-vehicle margin.
+        totalProfit = 0;
+    }
 
     return NextResponse.json({
         reportType: "summary",
@@ -296,14 +346,14 @@ async function getSalesReport(
         `
         )
         .not("deal_status", "in", '("Cancelled","Negotiation")')
-        .gte("deal_date", startDay)
-        .lte("deal_date", endDay)
         .order("deal_date", { ascending: true });
+    dailySalesQ = applyDealDateRange(dailySalesQ, startDay, endDay);
     dailySalesQ = applyDealershipScope(
         dailySalesQ,
         scope.dealershipId,
         scope.isPlatformAdmin
     );
+    dailySalesQ = applySalespersonScope(dailySalesQ, scope.assignedUserId);
     const { data: dailySales } = await dailySalesQ;
 
     const salesByDate: Record<string, { count: number; revenue: number }> = {};
@@ -324,13 +374,16 @@ async function getSalesReport(
             salesperson:users(full_name)
         `
         )
-        .not("deal_status", "in", '("Cancelled","Negotiation")')
-        .gte("deal_date", startDay)
-        .lte("deal_date", endDay);
+        .not("deal_status", "in", '("Cancelled","Negotiation")');
+    topSalespeopleQ = applyDealDateRange(topSalespeopleQ, startDay, endDay);
     topSalespeopleQ = applyDealershipScope(
         topSalespeopleQ,
         scope.dealershipId,
         scope.isPlatformAdmin
+    );
+    topSalespeopleQ = applySalespersonScope(
+        topSalespeopleQ,
+        scope.assignedUserId
     );
     const { data: topSalespeople } = await topSalespeopleQ;
 
@@ -390,13 +443,16 @@ async function getSalesReport(
             vehicle:vehicles(purchase_price, extra_costs, taxes)
         `
         )
-        .not("deal_status", "in", '("Cancelled","Negotiation")')
-        .gte("deal_date", startDay)
-        .lte("deal_date", endDay);
+        .not("deal_status", "in", '("Cancelled","Negotiation")');
+    dealsWithCostQ = applyDealDateRange(dealsWithCostQ, startDay, endDay);
     dealsWithCostQ = applyDealershipScope(
         dealsWithCostQ,
         scope.dealershipId,
         scope.isPlatformAdmin
+    );
+    dealsWithCostQ = applySalespersonScope(
+        dealsWithCostQ,
+        scope.assignedUserId
     );
     const { data: dealsWithCost } = await dealsWithCostQ;
 
@@ -467,14 +523,14 @@ async function getSalespersonReport(
             vehicle:vehicles(purchase_price, extra_costs, taxes)
         `
         )
-        .not("deal_status", "in", '("Cancelled","Negotiation")')
-        .gte("deal_date", startDay)
-        .lte("deal_date", endDay);
+        .not("deal_status", "in", '("Cancelled","Negotiation")');
+    dealsQ = applyDealDateRange(dealsQ, startDay, endDay);
     dealsQ = applyDealershipScope(
         dealsQ,
         scope.dealershipId,
         scope.isPlatformAdmin
     );
+    dealsQ = applySalespersonScope(dealsQ, scope.assignedUserId);
     const { data: deals } = await dealsQ;
 
     type Row = {
@@ -734,14 +790,14 @@ async function getFinancialReport(
     let salesQ = supabase
         .from("sales_deals")
         .select("sale_price")
-        .not("deal_status", "in", '("Cancelled","Negotiation")')
-        .gte("deal_date", startDay)
-        .lte("deal_date", endDay);
+        .not("deal_status", "in", '("Cancelled","Negotiation")');
+    salesQ = applyDealDateRange(salesQ, startDay, endDay);
     salesQ = applyDealershipScope(
         salesQ,
         scope.dealershipId,
         scope.isPlatformAdmin
     );
+    salesQ = applySalespersonScope(salesQ, scope.assignedUserId);
     const { data: salesData } = await salesQ;
 
     const totalRevenue =
@@ -751,48 +807,66 @@ async function getFinancialReport(
             0
         ) || 0;
 
-    let expensesQ = supabase
-        .from("expenses")
-        .select("amount, category")
-        .eq("status", "Paid")
-        .gte("expense_date", startDay)
-        .lte("expense_date", endDay);
-    expensesQ = applyDealershipScope(
-        expensesQ,
-        scope.dealershipId,
-        scope.isPlatformAdmin
-    );
-    const { data: expensesData } = await expensesQ;
+    const expenseLine = (e: { amount?: number; tax_amount?: number }) =>
+        (e.amount || 0) + (e.tax_amount || 0);
 
-    const totalExpenses =
-        expensesData?.reduce(
-            (sum: number, e: { amount?: number }) => sum + (e.amount || 0),
-            0
-        ) || 0;
-
+    // Dealership-wide expenses / AR are management data — hide from assigned roles.
+    let totalExpenses = 0;
     const expensesByCategory: Record<string, number> = {};
-    expensesData?.forEach((e: { category?: string; amount?: number }) => {
-        const cat = e.category || "Uncategorized";
-        expensesByCategory[cat] =
-            (expensesByCategory[cat] || 0) + (e.amount || 0);
-    });
+    let outstandingCount = 0;
+    let totalOutstanding = 0;
 
-    let outstandingQ = supabase
-        .from("invoices")
-        .select("total")
-        .neq("status", "Paid");
-    outstandingQ = applyDealershipScope(
-        outstandingQ,
-        scope.dealershipId,
-        scope.isPlatformAdmin
-    );
-    const { data: outstandingInvoices } = await outstandingQ;
+    if (!scope.assignedUserId) {
+        let expensesQ = supabase
+            .from("expenses")
+            .select("amount, tax_amount, category")
+            .eq("status", "Paid")
+            .gte("expense_date", startDay)
+            .lte("expense_date", endDay);
+        expensesQ = applyDealershipScope(
+            expensesQ,
+            scope.dealershipId,
+            scope.isPlatformAdmin
+        );
+        const { data: expensesData } = await expensesQ;
 
-    const totalOutstanding =
-        outstandingInvoices?.reduce(
-            (sum: number, i: { total?: number }) => sum + (i.total || 0),
-            0
-        ) || 0;
+        totalExpenses =
+            expensesData?.reduce(
+                (sum: number, e: { amount?: number; tax_amount?: number }) =>
+                    sum + expenseLine(e),
+                0
+            ) || 0;
+
+        expensesData?.forEach(
+            (e: {
+                category?: string;
+                amount?: number;
+                tax_amount?: number;
+            }) => {
+                const cat = e.category || "Uncategorized";
+                expensesByCategory[cat] =
+                    (expensesByCategory[cat] || 0) + expenseLine(e);
+            }
+        );
+
+        let outstandingQ = supabase
+            .from("invoices")
+            .select("total")
+            .neq("status", "Paid");
+        outstandingQ = applyDealershipScope(
+            outstandingQ,
+            scope.dealershipId,
+            scope.isPlatformAdmin
+        );
+        const { data: outstandingInvoices } = await outstandingQ;
+
+        outstandingCount = outstandingInvoices?.length || 0;
+        totalOutstanding =
+            outstandingInvoices?.reduce(
+                (sum: number, i: { total?: number }) => sum + (i.total || 0),
+                0
+            ) || 0;
+    }
 
     const netIncome = totalRevenue - totalExpenses;
 
@@ -814,7 +888,7 @@ async function getFinancialReport(
                 })
             ),
             outstandingInvoices: {
-                count: outstandingInvoices?.length || 0,
+                count: outstandingCount,
                 total: totalOutstanding,
             },
         },
@@ -842,6 +916,9 @@ async function getLeadsReport(
         scope.dealershipId,
         scope.isPlatformAdmin
     );
+    if (scope.assignedUserId) {
+        totalLeadsQ = totalLeadsQ.eq("assigned_to", scope.assignedUserId);
+    }
     const { count: totalLeads } = await totalLeadsQ;
 
     let newLeadsQ = supabase
@@ -854,6 +931,9 @@ async function getLeadsReport(
         scope.dealershipId,
         scope.isPlatformAdmin
     );
+    if (scope.assignedUserId) {
+        newLeadsQ = newLeadsQ.eq("assigned_to", scope.assignedUserId);
+    }
     const { count: newLeads } = await newLeadsQ;
 
     let leadsBySourceQ = supabase.from("leads").select("source");
@@ -862,6 +942,12 @@ async function getLeadsReport(
         scope.dealershipId,
         scope.isPlatformAdmin
     );
+    if (scope.assignedUserId) {
+        leadsBySourceQ = leadsBySourceQ.eq(
+            "assigned_to",
+            scope.assignedUserId
+        );
+    }
     const { data: leadsBySource } = await leadsBySourceQ;
 
     const sourceCounts: Record<string, number> = {};
@@ -876,6 +962,12 @@ async function getLeadsReport(
         scope.dealershipId,
         scope.isPlatformAdmin
     );
+    if (scope.assignedUserId) {
+        leadsByStatusQ = leadsByStatusQ.eq(
+            "assigned_to",
+            scope.assignedUserId
+        );
+    }
     const { data: leadsByStatus } = await leadsByStatusQ;
 
     const statusCounts: Record<string, number> = {};
@@ -893,6 +985,9 @@ async function getLeadsReport(
         scope.dealershipId,
         scope.isPlatformAdmin
     );
+    if (scope.assignedUserId) {
+        convertedQ = convertedQ.eq("assigned_to", scope.assignedUserId);
+    }
     const { count: convertedLeads } = await convertedQ;
 
     const conversionRate =
@@ -927,6 +1022,29 @@ async function getExpensesReport(
     dateFilter: DateFilter,
     scope: Scope
 ) {
+    // Expenses are dealership management data — Salesperson/Staff do not get aggregates.
+    if (scope.assignedUserId) {
+        return NextResponse.json({
+            reportType: "expenses",
+            period: {
+                startDate: dateFilter?.start || null,
+                endDate: dateFilter?.end || null,
+            },
+            data: {
+                summary: {
+                    totalExpenses: 0,
+                    paidExpenses: 0,
+                    pendingExpenses: 0,
+                    expenseCount: 0,
+                },
+                byCategory: [],
+                byStatus: [],
+                restricted: true,
+                note: "Expense reports are limited to managers and admins.",
+            },
+        });
+    }
+
     const now = new Date();
     const startDate =
         dateFilter?.start ||
@@ -936,9 +1054,10 @@ async function getExpensesReport(
     const endDay = dateOnly(endDate);
 
     // Apply date filters on expense_date (was previously ignored).
+    // Totals include tax to match expenses list KPIs / summary report.
     let expensesQ = supabase
         .from("expenses")
-        .select("amount, category, status, expense_date")
+        .select("amount, tax_amount, category, status, expense_date")
         .gte("expense_date", startDay)
         .lte("expense_date", endDay);
     expensesQ = applyDealershipScope(
@@ -948,30 +1067,37 @@ async function getExpensesReport(
     );
     const { data: allExpenses } = await expensesQ;
 
+    const lineTotal = (e: { amount?: number; tax_amount?: number }) =>
+        (e.amount || 0) + (e.tax_amount || 0);
+
     const byCategory: Record<string, { count: number; total: number }> = {};
     allExpenses?.forEach(
-        (e: { category?: string; amount?: number }) => {
+        (e: { category?: string; amount?: number; tax_amount?: number }) => {
             const cat = e.category || "Uncategorized";
             if (!byCategory[cat]) {
                 byCategory[cat] = { count: 0, total: 0 };
             }
             byCategory[cat].count += 1;
-            byCategory[cat].total += e.amount || 0;
+            byCategory[cat].total += lineTotal(e);
         }
     );
 
     const byStatus: Record<string, number> = {};
-    allExpenses?.forEach((e: { status?: string; amount?: number }) => {
-        const status = e.status || "Unknown";
-        byStatus[status] = (byStatus[status] || 0) + (e.amount || 0);
-    });
+    allExpenses?.forEach(
+        (e: { status?: string; amount?: number; tax_amount?: number }) => {
+            const status = e.status || "Unknown";
+            byStatus[status] = (byStatus[status] || 0) + lineTotal(e);
+        }
+    );
 
     const paidExpenses =
         allExpenses
             ?.filter((e: { status?: string }) => e.status === "Paid")
             .reduce(
-                (sum: number, e: { amount?: number }) =>
-                    sum + (e.amount || 0),
+                (
+                    sum: number,
+                    e: { amount?: number; tax_amount?: number }
+                ) => sum + lineTotal(e),
                 0
             ) || 0;
     const pendingExpenses =
@@ -981,14 +1107,19 @@ async function getExpensesReport(
                     e.status === "Pending" || e.status === "Approved"
             )
             .reduce(
-                (sum: number, e: { amount?: number }) =>
-                    sum + (e.amount || 0),
+                (
+                    sum: number,
+                    e: { amount?: number; tax_amount?: number }
+                ) => sum + lineTotal(e),
                 0
             ) || 0;
 
     const totalExpenses =
         allExpenses?.reduce(
-            (sum: number, e: { amount?: number }) => sum + (e.amount || 0),
+            (
+                sum: number,
+                e: { amount?: number; tax_amount?: number }
+            ) => sum + lineTotal(e),
             0
         ) || 0;
 

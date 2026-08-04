@@ -37,29 +37,26 @@ export async function GET(req: NextRequest) {
             throw error;
         }
 
-        const dealershipId = auth.profile.is_platform_admin
-            ? null
-            : auth.profile.dealership_id;
-
-        if (!dealershipId && !auth.profile.is_platform_admin) {
-            return NextResponse.json(
-                { error: "No dealership context" },
-                { status: 403 }
-            );
+        // Always dealership-scoped — never aggregate all tenants for platform admins.
+        const dealershipId = auth.profile.dealership_id;
+        if (!dealershipId) {
+            return NextResponse.json({
+                data: [] as AppNotification[],
+                unread: 0,
+            });
         }
 
         const today = new Date().toISOString().split("T")[0]!;
         const items: AppNotification[] = [];
 
-        let invQ = supabase
+        const { data: invoices } = await supabase
             .from("invoices")
             .select("id, invoice_number, due_date, status, created_at")
+            .eq("dealership_id", dealershipId)
             .in("status", ["Pending", "Overdue"])
             .lte("due_date", today)
             .order("due_date", { ascending: true })
             .limit(8);
-        if (dealershipId) invQ = invQ.eq("dealership_id", dealershipId);
-        const { data: invoices } = await invQ;
         for (const inv of invoices || []) {
             items.push({
                 id: `inv-${inv.id}`,
@@ -72,16 +69,15 @@ export async function GET(req: NextRequest) {
             });
         }
 
-        let fuQ = supabase
+        const { data: followUps } = await supabase
             .from("follow_ups")
             .select("id, title, follow_up_date, status, created_at")
+            .eq("dealership_id", dealershipId)
             .neq("status", "Completed")
             .neq("status", "Cancelled")
             .lte("follow_up_date", today)
             .order("follow_up_date", { ascending: true })
             .limit(8);
-        if (dealershipId) fuQ = fuQ.eq("dealership_id", dealershipId);
-        const { data: followUps } = await fuQ;
         for (const fu of followUps || []) {
             const due = fu.follow_up_date as string | null;
             items.push({
@@ -98,16 +94,15 @@ export async function GET(req: NextRequest) {
         const taskHorizon = new Date(
             Date.now() + 3 * 24 * 60 * 60 * 1000
         ).toISOString();
-        let taskQ = supabase
+        const { data: tasks } = await supabase
             .from("tasks")
             .select("id, title, due_date, status, created_at")
+            .eq("dealership_id", dealershipId)
             .not("status", "in", '("Completed","Cancelled")')
             .not("due_date", "is", null)
             .lte("due_date", taskHorizon)
             .order("due_date", { ascending: true })
             .limit(8);
-        if (dealershipId) taskQ = taskQ.eq("dealership_id", dealershipId);
-        const { data: tasks } = await taskQ;
         for (const t of tasks || []) {
             const dueRaw = t.due_date ? String(t.due_date) : null;
             const dueDay = dueRaw ? dueRaw.slice(0, 10) : null;

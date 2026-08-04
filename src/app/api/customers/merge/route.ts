@@ -11,6 +11,8 @@ const CUSTOMER_FK_TABLES = [
     { table: "quotations", column: "customer_id" },
     { table: "ocr_documents", column: "customer_id" },
     { table: "finance_calculations", column: "customer_id" },
+    { table: "bill_of_sale", column: "customer_id" },
+    { table: "email_sequence_enrollments", column: "customer_id" },
 ] as const;
 
 /**
@@ -99,7 +101,35 @@ export async function POST(req: NextRequest) {
             }
         }
 
+        // CASL: never lose a true consent on merge. Prefer earliest consent_at.
         const stamp = new Date().toISOString();
+        if (merge.marketing_consent && !keep.marketing_consent) {
+            fill.marketing_consent = true;
+            fill.marketing_consent_at = merge.marketing_consent_at || stamp;
+            if (merge.marketing_consent_ip) fill.marketing_consent_ip = merge.marketing_consent_ip;
+        } else if (
+            merge.marketing_consent &&
+            keep.marketing_consent &&
+            merge.marketing_consent_at &&
+            keep.marketing_consent_at &&
+            String(merge.marketing_consent_at) < String(keep.marketing_consent_at)
+        ) {
+            fill.marketing_consent_at = merge.marketing_consent_at;
+        }
+        if (merge.sms_consent && !keep.sms_consent) {
+            fill.sms_consent = true;
+            fill.sms_consent_at = merge.sms_consent_at || stamp;
+            if (merge.sms_consent_ip) fill.sms_consent_ip = merge.sms_consent_ip;
+        } else if (
+            merge.sms_consent &&
+            keep.sms_consent &&
+            merge.sms_consent_at &&
+            keep.sms_consent_at &&
+            String(merge.sms_consent_at) < String(keep.sms_consent_at)
+        ) {
+            fill.sms_consent_at = merge.sms_consent_at;
+        }
+
         const keepNotes = [
             keep.notes,
             `Merged duplicate ${mergeId} (${merge.name}) on ${stamp.slice(0, 10)}.`,
@@ -107,16 +137,41 @@ export async function POST(req: NextRequest) {
             .filter(Boolean)
             .join("\n");
 
-        const { data: keptUpdated, error: keepErr } = await supabaseAdmin
-            .from("customers")
-            .update({
-                ...fill,
-                notes: keepNotes,
-                updated_at: stamp,
-            })
-            .eq("id", keepId)
-            .select()
-            .single();
+        let keptUpdated;
+        let keepErr;
+        {
+            const result = await supabaseAdmin
+                .from("customers")
+                .update({
+                    ...fill,
+                    notes: keepNotes,
+                    updated_at: stamp,
+                })
+                .eq("id", keepId)
+                .select()
+                .single();
+            keptUpdated = result.data;
+            keepErr = result.error;
+            if (keepErr && /marketing_consent_ip|sms_consent_ip|column/i.test(keepErr.message || "")) {
+                const {
+                    marketing_consent_ip: _m,
+                    sms_consent_ip: _s,
+                    ...withoutIp
+                } = fill;
+                const retry = await supabaseAdmin
+                    .from("customers")
+                    .update({
+                        ...withoutIp,
+                        notes: keepNotes,
+                        updated_at: stamp,
+                    })
+                    .eq("id", keepId)
+                    .select()
+                    .single();
+                keptUpdated = retry.data;
+                keepErr = retry.error;
+            }
+        }
 
         if (keepErr) throw keepErr;
 

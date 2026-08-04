@@ -238,27 +238,45 @@ function SocialPageInner() {
             setFormError("Pick a schedule date/time");
             return;
         }
+        if (mode === "publish") {
+            if (platform !== "Facebook") {
+                setFormError(
+                    "Live publish is Facebook Page only — switch platform to Facebook or save as Draft."
+                );
+                return;
+            }
+            if (!fb.connected) {
+                setFormError(
+                    "Connect Facebook Page first (needs FACEBOOK_APP_ID/SECRET). You can still save a Draft."
+                );
+                return;
+            }
+        }
         setSaving(true);
         setFormError(null);
         try {
-            const publishNow = mode === "publish";
+            const publishNow = mode === "publish" && platform === "Facebook" && Boolean(fb.connected);
             const body: Record<string, unknown> = {
                 platform,
                 content: content.trim(),
                 vehicle_id: vehicleId || null,
                 media_urls: mediaPreview.length ? mediaPreview : undefined,
                 publish_now: publishNow,
-                status: publishNow ? "Published" : mode === "schedule" ? "Scheduled" : "Draft",
+                // Never send Published without publish_now — API also guards Graph post_id
+                status: publishNow ? "Draft" : mode === "schedule" ? "Scheduled" : "Draft",
                 scheduled_date: mode === "schedule" ? new Date(scheduledAt).toISOString() : null,
             };
-            const res = await apiFetch<{ data: SocialPost; published?: boolean }>(
-                "/api/social/posts",
-                { method: "POST", body }
-            );
+            const res = await apiFetch<{
+                data: SocialPost;
+                published?: boolean;
+                message?: string;
+            }>("/api/social/posts", { method: "POST", body });
             if (res.published) {
                 toast.success("Published to Facebook Page");
             } else if (mode === "schedule") {
                 toast.success("Scheduled — cron or manual publish-scheduled will post when due");
+            } else if (res.message) {
+                toast.success(res.message);
             } else {
                 toast.success("Draft saved");
             }
@@ -366,15 +384,38 @@ function SocialPageInner() {
                         ))}
                     </FilterChipGroup>
 
-                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-2.5">
+                    <div
+                        className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-2.5 ${
+                            fb.connected
+                                ? "border-border bg-card"
+                                : oauthReady
+                                  ? "border-border bg-card"
+                                  : "border-amber-200 bg-amber-50"
+                        }`}
+                    >
                         <div className="min-w-0">
-                            <div className="text-sm font-medium text-foreground">Facebook Page</div>
-                            <div className="text-xs text-muted-foreground">
+                            <div
+                                className={`text-sm font-medium ${
+                                    !fb.connected && !oauthReady
+                                        ? "text-amber-950"
+                                        : "text-foreground"
+                                }`}
+                            >
+                                Facebook Page
+                            </div>
+                            <div
+                                className={`text-xs ${
+                                    !fb.connected && !oauthReady
+                                        ? "text-amber-900/90"
+                                        : "text-muted-foreground"
+                                }`}
+                            >
                                 {fb.connected
                                     ? `${fb.page_name || fb.account_name || "Connected"} · Graph publish ready`
                                     : oauthReady
                                       ? "Not connected — connect a Page to publish"
-                                      : "Not configured — add via wrangler when ready (FACEBOOK_APP_ID / FACEBOOK_APP_SECRET). Drafts still work."}
+                                      : fbMessage ||
+                                        "Not configured — add via wrangler when ready (FACEBOOK_APP_ID / FACEBOOK_APP_SECRET). Drafts still work."}
                             </div>
                         </div>
                         <Button
@@ -541,7 +582,13 @@ function SocialPageInner() {
                         <select
                             className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
                             value={platform}
-                            onChange={(e) => setPlatform(e.target.value)}
+                            onChange={(e) => {
+                                const next = e.target.value;
+                                setPlatform(next);
+                                if (next !== "Facebook" && mode === "publish") {
+                                    setMode("draft");
+                                }
+                            }}
                         >
                             <option>Facebook</option>
                             <option>Instagram</option>
@@ -601,11 +648,13 @@ function SocialPageInner() {
                             <FilterChip
                                 selected={mode === "publish"}
                                 onClick={() => setMode("publish")}
-                                disabled={!fb.connected}
+                                disabled={!fb.connected || platform !== "Facebook"}
                                 title={
-                                    fb.connected
-                                        ? "Publish now via Graph API"
-                                        : "Connect Facebook Page first"
+                                    platform !== "Facebook"
+                                        ? "Live publish is Facebook Page only"
+                                        : fb.connected
+                                          ? "Publish now via Graph API"
+                                          : "Connect Facebook Page first"
                                 }
                             >
                                 Publish to Page
@@ -625,13 +674,15 @@ function SocialPageInner() {
                                 <p className="text-xs text-muted-foreground">
                                     Stores scheduled_date. Hourly CF cron publishes when SOCIAL_CRON_SECRET is
                                     set; otherwise publish manually via /api/social/publish-scheduled.
+                                    Live cron returns 503 until secret is set — no fake publish.
                                 </p>
                             </label>
                         )}
-                        {mode === "publish" && !fb.connected && (
-                            <p className="text-xs text-warning">
-                                Not configured / not connected — add FACEBOOK_APP_ID/SECRET via
-                                wrangler when ready, then Connect Page. You can still save a draft.
+                        {(mode === "publish" && (!fb.connected || platform !== "Facebook")) && (
+                            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                                {platform !== "Facebook"
+                                    ? "Live publish is Facebook Page only in Social v1 — switch to Facebook or save as Draft."
+                                    : "Not configured / not connected — add FACEBOOK_APP_ID/SECRET via wrangler when ready, then Connect Page. You can still save a draft."}
                             </p>
                         )}
                     </fieldset>

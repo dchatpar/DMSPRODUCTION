@@ -115,7 +115,10 @@ export async function PATCH(
         const { id } = await params;
         const payload = await req.json();
 
-        if (!payload.vendor_name) {
+        if (
+            Object.prototype.hasOwnProperty.call(payload, "vendor_name") &&
+            !String(payload.vendor_name || "").trim()
+        ) {
             return NextResponse.json(
                 { error: "Vendor name is required" },
                 { status: 400 }
@@ -146,10 +149,14 @@ export async function PATCH(
         const safePayload = pickAllowed(payload, VENDOR_ALLOWED_FIELDS);
         delete (safePayload as any).dealership_id;
 
-        const updateData: any = {
-            ...safePayload,
-            vendor_type: payload.vendor_type || 'General',
-        };
+        // Only force vendor_type default when the client omitted it entirely
+        const updateData: Record<string, unknown> = { ...safePayload };
+        if (
+            Object.prototype.hasOwnProperty.call(payload, "vendor_type") &&
+            !payload.vendor_type
+        ) {
+            updateData.vendor_type = "General";
+        }
 
         const { data, error: dbError } = await supabase
             .from("vendors")

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import {
     Flag,
     Search,
@@ -14,7 +13,6 @@ import {
     RefreshCw,
     Shield
 } from "lucide-react";
-import { apiFetch } from "@/src/lib/fetch";
 
 interface FeatureFlag {
     id: string;
@@ -35,8 +33,6 @@ export default function FeatureFlagsPage() {
     const [search, setSearch] = useState("");
     const [updating, setUpdating] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
-
-    const router = useRouter();
 
     useEffect(() => {
         fetchFlags();

@@ -146,18 +146,20 @@ export async function GET(req: NextRequest) {
                 status: autotraderCompanySet ? "partial" : "url_only",
                 missing: autotraderCompanySet
                     ? []
-                    : ["settings.autotrader_company_id"],
-                href: "/inventory",
+                    : ["Business → AutoTrader Company ID"],
+                href: autotraderCompanySet
+                    ? "/inventory"
+                    : "/settings/business",
                 notes: autotraderLastExport
                     ? `Export/feed ready. Last export ${autotraderLastExport}. Not auto-listed — upload via your AT/HomeNet process.${
                           autotraderCompanySet
                               ? ""
-                              : " Set autotrader_company_id in Business settings JSON when you have a Company ID."
+                              : " Set AutoTrader Company ID under Settings → Business when you have a partner ID."
                       }`
                     : `VDP or Inventory → AutoTrader pipe feed / CSV. Batch: Active stock via Inventory “AT.ca feed”.${
                           autotraderCompanySet
                               ? ""
-                              : " Optional: set settings.autotrader_company_id for partner CompanyID."
+                              : " Optional: set AutoTrader Company ID under Settings → Business."
                       }`,
             },
         ];

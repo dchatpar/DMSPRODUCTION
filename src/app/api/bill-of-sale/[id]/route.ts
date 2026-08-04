@@ -193,11 +193,12 @@ export async function PATCH(
                 .delete()
                 .eq("bill_of_sale_id", id);
 
-            // Insert new payments
+            // Insert new payments (must carry dealership_id for RLS WITH CHECK)
             if (payments.length > 0) {
-                const paymentInserts = payments.map((p: any) => ({
+                const paymentInserts = payments.map((p: Record<string, unknown>) => ({
                     ...p,
                     bill_of_sale_id: id,
+                    dealership_id: existing.dealership_id,
                 }));
 
                 await supabase

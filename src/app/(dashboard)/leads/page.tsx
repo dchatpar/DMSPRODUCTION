@@ -32,7 +32,14 @@ import { RowActionsMenu } from "@/src/components/ui/RowActionsMenu";
 import { Avatar } from "@/src/components/ui/Avatar";
 import { RelationChip } from "@/src/components/ui/RelationChip";
 import { cn, timeAgo } from "@/src/lib/utils";
-import { scoreLead, temperatureClass } from "@/src/lib/business/lead-score";
+import {
+    resolveLeadScore,
+    temperatureClass,
+} from "@/src/lib/business/lead-score";
+import {
+    canDelete as canDeleteResource,
+    canEdit as canEditResource,
+} from "@/src/lib/permission-middleware";
 import { useDebouncedValue } from "@/src/hooks/useDebouncedValue";
 
 interface Lead {
@@ -134,13 +141,11 @@ export default function LeadsPage() {
     }>({ lead: null, loading: false });
 
     const canWrite = (resource: string): boolean => {
-        if (userRole === "Admin") return true;
-        return userPermissions.includes(`${resource}:write`);
+        return canEditResource(userRole, userPermissions, resource);
     };
 
     const canDelete = (resource: string): boolean => {
-        if (userRole === "Admin") return true;
-        return userPermissions.includes(`${resource}:delete`);
+        return canDeleteResource(userRole, userPermissions, resource);
     };
 
     const buildFilterQuery = useCallback(
@@ -228,7 +233,7 @@ export default function LeadsPage() {
             let warm = 0;
             let cold = 0;
             for (const lead of data.data || []) {
-                const temp = lead.temperature || scoreLead(lead).temperature;
+                const temp = resolveLeadScore(lead).temperature;
                 if (temp === "Hot") hot += 1;
                 else if (temp === "Warm") warm += 1;
                 else cold += 1;
@@ -442,7 +447,13 @@ export default function LeadsPage() {
 
     const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
     const hasFilters = Boolean(
-        debouncedSearch || statusFilter || sourceFilter || createdAtFrom || createdAtTo
+        debouncedSearch ||
+            statusFilter ||
+            sourceFilter ||
+            temperatureFilter ||
+            assigneeFilter ||
+            createdAtFrom ||
+            createdAtTo
     );
 
     const rowActions = (lead: Lead) => (
@@ -719,7 +730,7 @@ export default function LeadsPage() {
                                     </tr>
                                 ) : (
                                     leads.map((lead) => {
-                                        const scored = scoreLead(lead);
+                                        const scored = resolveLeadScore(lead);
                                         return (
                                             <tr
                                                 key={lead.id}
@@ -850,7 +861,7 @@ export default function LeadsPage() {
                             />
                         ) : (
                             leads.map((lead) => {
-                                const scored = scoreLead(lead);
+                                const scored = resolveLeadScore(lead);
                                 return (
                                     <div
                                         key={lead.id}

@@ -26,6 +26,7 @@ export async function POST(
                 {
                     error:
                         "Resend is not configured. Set RESEND_API_KEY and EMAIL_FROM (Settings → Integrations).",
+                    missingConfig: true,
                 },
                 { status: 503 }
             );

@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import {
     Shield,
     Search,
-    Filter,
     ChevronLeft,
     ChevronRight,
     RefreshCw,
@@ -14,7 +13,6 @@ import {
     User,
     Building2
 } from "lucide-react";
-import { apiFetch } from "@/src/lib/fetch";
 
 interface AuditLog {
     id: string;
@@ -63,12 +61,13 @@ export default function AuditLogsPage() {
                 return;
             }
 
-            // Build query params
+            // Build query params — free-text search maps to action ilike on API
             const params = new URLSearchParams({
                 limit: limit.toString(),
                 offset: offset.toString()
             });
-            if (actionFilter) params.set("action", actionFilter);
+            const actionQuery = actionFilter || search.trim();
+            if (actionQuery) params.set("action", actionQuery);
             if (entityFilter) params.set("entity_type", entityFilter);
 
             const response = await fetch(`/api/platform/audit-logs?${params}`, {

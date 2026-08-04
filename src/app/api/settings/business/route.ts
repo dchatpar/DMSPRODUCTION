@@ -1,9 +1,7 @@
 // Dealership self-service business profile (not platform-admin-only).
 import { NextRequest, NextResponse } from "next/server";
-import {
-    pickSupabaseClient,
-    requireDealershipAccess,
-} from "@/src/lib/auth-helpers";
+import { requireDealershipAccess } from "@/src/lib/auth-helpers";
+import { supabaseAdmin } from "@/src/lib/supabase-admin";
 
 type DealershipSettings = Record<string, unknown>;
 
@@ -44,6 +42,51 @@ function canReadSettings(profile: {
 const SELECT_COLS =
     "id, name, slug, business_name, business_address, business_phone, business_email, settings, status";
 
+function shapeBusinessResponse(
+    data: {
+        id: string;
+        name: string;
+        slug: string | null;
+        business_name: string | null;
+        business_address: string | null;
+        business_phone: string | null;
+        business_email: string | null;
+        status: string;
+        settings: unknown;
+    },
+    canEdit: boolean
+) {
+    const settings = asSettings(data.settings);
+    return {
+        id: data.id,
+        name: data.name,
+        slug: data.slug,
+        business_name: data.business_name,
+        business_address: data.business_address,
+        business_phone: data.business_phone,
+        business_email: data.business_email,
+        status: data.status,
+        hst_number:
+            typeof settings.hst_number === "string" ? settings.hst_number : "",
+        dealer_license:
+            typeof settings.dealer_license === "string"
+                ? settings.dealer_license
+                : typeof settings.license_number === "string"
+                  ? settings.license_number
+                  : "",
+        autotrader_company_id:
+            typeof settings.autotrader_company_id === "string"
+                ? settings.autotrader_company_id
+                : "",
+        autotrader_category_id:
+            typeof settings.autotrader_category_id === "string"
+                ? settings.autotrader_category_id
+                : "",
+        settings,
+        can_edit: canEdit,
+    };
+}
+
 export async function GET(req: NextRequest) {
     try {
         const auth = await requireDealershipAccess(req);
@@ -66,8 +109,9 @@ export async function GET(req: NextRequest) {
             );
         }
 
-        const { supabase } = pickSupabaseClient(req, auth.profile);
-        const { data, error } = await supabase
+        // Service role, scoped to caller's dealership_id — RLS on dealerships
+        // blocks Salesperson/Staff JWT reads even for their own row.
+        const { data, error } = await supabaseAdmin
             .from("dealerships")
             .select(SELECT_COLS)
             .eq("id", dealershipId)
@@ -80,38 +124,11 @@ export async function GET(req: NextRequest) {
             );
         }
 
-        const settings = asSettings(data.settings);
         return NextResponse.json({
-            data: {
-                id: data.id,
-                name: data.name,
-                slug: data.slug,
-                business_name: data.business_name,
-                business_address: data.business_address,
-                business_phone: data.business_phone,
-                business_email: data.business_email,
-                status: data.status,
-                hst_number:
-                    typeof settings.hst_number === "string"
-                        ? settings.hst_number
-                        : "",
-                dealer_license:
-                    typeof settings.dealer_license === "string"
-                        ? settings.dealer_license
-                        : typeof settings.license_number === "string"
-                          ? settings.license_number
-                          : "",
-                autotrader_company_id:
-                    typeof settings.autotrader_company_id === "string"
-                        ? settings.autotrader_company_id
-                        : "",
-                autotrader_category_id:
-                    typeof settings.autotrader_category_id === "string"
-                        ? settings.autotrader_category_id
-                        : "",
-                settings,
-                can_edit: canManageSettings(auth.profile),
-            },
+            data: shapeBusinessResponse(
+                data,
+                canManageSettings(auth.profile)
+            ),
         });
     } catch (error: unknown) {
         console.error("Error fetching business settings:", error);
@@ -139,7 +156,9 @@ export async function PATCH(req: NextRequest) {
 
         if (!canManageSettings(auth.profile)) {
             return NextResponse.json(
-                { error: "Forbidden — settings:write or Admin/Manager required" },
+                {
+                    error: "Forbidden — settings:write or Admin/Manager required",
+                },
                 { status: 403 }
             );
         }
@@ -153,9 +172,8 @@ export async function PATCH(req: NextRequest) {
         }
 
         const body = (await req.json()) as Record<string, unknown>;
-        const { supabase } = pickSupabaseClient(req, auth.profile);
 
-        const { data: existing, error: existingError } = await supabase
+        const { data: existing, error: existingError } = await supabaseAdmin
             .from("dealerships")
             .select(SELECT_COLS)
             .eq("id", dealershipId)
@@ -206,7 +224,7 @@ export async function PATCH(req: NextRequest) {
             updatePayload.business_email = body.business_email.trim() || null;
         }
 
-        const { data, error } = await supabase
+        const { data, error } = await supabaseAdmin
             .from("dealerships")
             .update(updatePayload)
             .eq("id", dealershipId)
@@ -217,38 +235,8 @@ export async function PATCH(req: NextRequest) {
             throw error || new Error("Update failed");
         }
 
-        const settings = asSettings(data.settings);
         return NextResponse.json({
-            data: {
-                id: data.id,
-                name: data.name,
-                slug: data.slug,
-                business_name: data.business_name,
-                business_address: data.business_address,
-                business_phone: data.business_phone,
-                business_email: data.business_email,
-                status: data.status,
-                hst_number:
-                    typeof settings.hst_number === "string"
-                        ? settings.hst_number
-                        : "",
-                dealer_license:
-                    typeof settings.dealer_license === "string"
-                        ? settings.dealer_license
-                        : typeof settings.license_number === "string"
-                          ? settings.license_number
-                          : "",
-                autotrader_company_id:
-                    typeof settings.autotrader_company_id === "string"
-                        ? settings.autotrader_company_id
-                        : "",
-                autotrader_category_id:
-                    typeof settings.autotrader_category_id === "string"
-                        ? settings.autotrader_category_id
-                        : "",
-                settings,
-                can_edit: true,
-            },
+            data: shapeBusinessResponse(data, true),
         });
     } catch (error: unknown) {
         console.error("Error updating business settings:", error);

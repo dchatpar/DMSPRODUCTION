@@ -66,13 +66,16 @@ export async function GET(req: NextRequest) {
             }
             query = query.eq("dealership_id", currentUser.dealership_id);
 
-            // Scope to assigned test drives for Salesperson/Staff
+            // Scope to assigned (+ unassigned) for Salesperson/Staff
             const scopedToAssigned = userRole === "Salesperson" || userRole === "Staff";
-            const viewAll = userPermissions.includes("*") ||
+            const isAdminOrManager = userRole === "Admin" || userRole === "Manager";
+            const viewAll = isAdminOrManager ||
+                userPermissions.includes("*") ||
                 (userPermissions.includes("test_drives:read") && !userPermissions.includes("test_drives:read:assigned"));
 
             if (scopedToAssigned || !viewAll) {
-                query = query.eq("user_id", user.id);
+                // Match assertOwnership: assigned to caller OR unassigned (team pool)
+                query = query.or(`user_id.eq.${user.id},user_id.is.null`);
             }
         }
 

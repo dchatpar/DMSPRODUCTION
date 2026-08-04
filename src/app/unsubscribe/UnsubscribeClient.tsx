@@ -56,8 +56,9 @@ export function UnsubscribeClient() {
     <div className="mx-auto max-w-md rounded-xl border border-gray-200 bg-white p-8 shadow-sm">
       <h1 className="text-xl font-semibold text-gray-900">Unsubscribe</h1>
       <p className="mt-3 text-sm leading-relaxed text-gray-600">
-        Stop marketing email from FlashFender / AdaptUs DMS. Transactional messages about a
-        purchase may still be sent when required by law.
+        Stop marketing email (and SMS marketing consent) from FlashFender / AdaptUs DMS.
+        Transactional messages about a purchase may still be sent when required by law. SMS
+        delivery is not configured in this product yet.
       </p>
 
       {status === "done" ? (

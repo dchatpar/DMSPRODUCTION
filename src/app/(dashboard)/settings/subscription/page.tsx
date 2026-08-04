@@ -11,8 +11,6 @@ import {
     RefreshCw,
     Zap
 } from "lucide-react";
-import { apiFetch } from "@/src/lib/fetch";
-
 interface Subscription {
     id: string;
     dealership_id: string;
@@ -62,9 +60,16 @@ export default function SubscriptionPage() {
 
             const meData = await meResponse.json();
             const dealershipId = meData.data.dealership_id;
+            const isPlatformAdmin = Boolean(meData.data?.is_platform_admin);
 
             if (!dealershipId) {
-                setError("You are not associated with any dealership");
+                if (isPlatformAdmin) {
+                    setError(
+                        "Platform admins without a home dealership manage plans under Platform → Subscriptions."
+                    );
+                } else {
+                    setError("You are not associated with any dealership");
+                }
                 return;
             }
 
@@ -163,10 +168,35 @@ export default function SubscriptionPage() {
 
             {/* Content */}
             <div className="px-6 py-6">
+                <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                    <p className="font-medium">Billing soon — plan changes are operator-managed</p>
+                    <p className="mt-0.5 text-xs text-amber-900/90">
+                        Self-serve Stripe checkout / upgrades are not live. Feature checklist below
+                        is product capability, not a paid entitlement portal. Email{" "}
+                        <a
+                            href="mailto:support@flashfender.com?subject=Subscription%20help"
+                            className="underline"
+                        >
+                            support@flashfender.com
+                        </a>{" "}
+                        to change plans.
+                    </p>
+                </div>
+
                 {error && (
-                    <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
-                        <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
-                        <p className="text-sm text-red-600">{error}</p>
+                    <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
+                        <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                        <div className="text-sm text-red-600 space-y-1">
+                            <p>{error}</p>
+                            {error.includes("Platform → Subscriptions") && (
+                                <a
+                                    href="/platform/subscriptions"
+                                    className="inline-block font-medium underline text-red-700 hover:text-red-800"
+                                >
+                                    Open platform subscriptions
+                                </a>
+                            )}
+                        </div>
                     </div>
                 )}
 

@@ -198,8 +198,11 @@ function NewDealWizardInner() {
                 return true;
             case 5:
                 return Boolean(form.vehicle_id) && form.sale_price > 0;
-            default:
+            default: {
+                const _exhaustive: never = step as never;
+                void _exhaustive;
                 return false;
+            }
         }
     };
 
@@ -256,6 +259,7 @@ function NewDealWizardInner() {
                         method: "PATCH",
                         body: JSON.stringify({
                             status: "Closed",
+                            converted_deal_id: res.data.id,
                             notes: `Converted to deal ${res.data.id}`,
                         }),
                         silent: true,

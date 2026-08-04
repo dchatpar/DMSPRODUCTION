@@ -6,8 +6,8 @@ export async function GET(req: NextRequest) {
         let supabase;
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json({ error: "Authorization token required" }, { status: 401 });
             }
             throw error;
@@ -38,15 +38,18 @@ export async function GET(req: NextRequest) {
         const url = new URL(req.url);
         const vehicleId = url.searchParams.get("vehicle_id");
         const customerId = url.searchParams.get("customer_id");
-        const limit = parseInt(url.searchParams.get("limit") || "50");
+        const limit = parseInt(url.searchParams.get("limit") || "50", 10);
 
         let query = supabase
             .from("finance_calculations")
             .select("*")
             .order("created_at", { ascending: false })
-            .limit(limit);
+            .limit(Math.min(Math.max(limit, 1), 100));
 
         if (!currentUser.is_platform_admin) {
+            query = query.eq("dealership_id", currentUser.dealership_id);
+        } else if (currentUser.dealership_id) {
+            // Platform admin with a home dealership — scope to that store by default
             query = query.eq("dealership_id", currentUser.dealership_id);
         }
 
@@ -61,10 +64,10 @@ export async function GET(req: NextRequest) {
 
         if (error) throw error;
 
-        return Response.json({ data });
-    } catch (error) {
+        return NextResponse.json({ data: data || [] });
+    } catch (error: unknown) {
         console.error("Error fetching finance calculations:", error);
-        return Response.json({ error: "Failed to fetch calculations" }, { status: 500 });
+        return NextResponse.json({ error: "Failed to fetch calculations" }, { status: 500 });
     }
 }
 
@@ -73,8 +76,8 @@ export async function POST(req: NextRequest) {
         let supabase;
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json({ error: "Authorization token required" }, { status: 401 });
             }
             throw error;
@@ -87,7 +90,7 @@ export async function POST(req: NextRequest) {
 
         const { data: currentUser } = await supabase
             .from("users")
-            .select("dealership_id")
+            .select("dealership_id, is_platform_admin")
             .eq("id", user.id)
             .single();
 
@@ -95,13 +98,22 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "User profile not found" }, { status: 404 });
         }
 
-        const body = await req.json();
+        if (!currentUser.dealership_id) {
+            return NextResponse.json(
+                {
+                    error:
+                        "No dealership context — cannot save F&I worksheet without a dealership.",
+                },
+                { status: 403 }
+            );
+        }
 
-        // Validate required fields
+        const body = (await req.json()) as Record<string, unknown>;
+
         if (body.sale_price === undefined || body.sale_price === null) {
             return NextResponse.json({ error: "sale_price is required" }, { status: 400 });
         }
-        if (typeof body.sale_price !== "number" || isNaN(body.sale_price) || body.sale_price < 0) {
+        if (typeof body.sale_price !== "number" || Number.isNaN(body.sale_price) || body.sale_price < 0) {
             return NextResponse.json({ error: "sale_price must be a non-negative number" }, { status: 400 });
         }
         if (body.interest_rate === undefined || body.interest_rate === null) {
@@ -114,14 +126,27 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "payment_amount is required" }, { status: 400 });
         }
 
+        const paymentType = body.payment_type;
+        if (
+            paymentType !== undefined &&
+            paymentType !== "monthly" &&
+            paymentType !== "biweekly" &&
+            paymentType !== "weekly"
+        ) {
+            return NextResponse.json(
+                { error: "payment_type must be monthly, biweekly, or weekly" },
+                { status: 400 }
+            );
+        }
+
         // Whitelist allowed fields (must match schema.sql finance_calculations columns)
         const allowed = [
             "vehicle_id", "customer_id", "sale_price",
             "down_payment", "trade_in_value", "interest_rate",
             "term_months", "payment_type", "payment_amount",
-            "total_interest", "total_cost", "tax_amount", "admin_fee"
-        ];
-        const calcData: Record<string, any> = {
+            "total_interest", "total_cost", "tax_amount", "admin_fee",
+        ] as const;
+        const calcData: Record<string, unknown> = {
             dealership_id: currentUser.dealership_id,
         };
         for (const field of allowed) {
@@ -138,9 +163,17 @@ export async function POST(req: NextRequest) {
 
         if (error) throw error;
 
-        return Response.json({ data }, { status: 201 });
-    } catch (error: any) {
+        return NextResponse.json({ data }, { status: 201 });
+    } catch (error: unknown) {
         console.error("Error creating finance calculation:", error);
-        return Response.json({ error: error?.message || "Failed to create calculation" }, { status: 500 });
+        return NextResponse.json(
+            {
+                error:
+                    error instanceof Error
+                        ? error.message
+                        : "Failed to create calculation",
+            },
+            { status: 500 }
+        );
     }
 }

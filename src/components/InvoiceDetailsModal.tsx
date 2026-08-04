@@ -26,7 +26,7 @@ interface Customer {
     name: string;
     email: string | null;
     phone: string | null;
-    avatar: string | null;
+    avatar?: string | null;
     address: string | null;
     city: string | null;
     province: string | null;
@@ -101,7 +101,10 @@ export default function InvoiceDetailsModal({
     const [showPayForm, setShowPayForm] = useState(false);
 
     const canEdit =
-        userRole === "Admin" || userPermissions.includes("invoices:write");
+        userRole === "Admin" ||
+        userRole === "Manager" ||
+        userPermissions.includes("invoices:write") ||
+        userPermissions.includes("*");
     const amountPaid = Number(invoice.amount_paid) || 0;
     const balanceDue = Math.max(0, (Number(invoice.total) || 0) - amountPaid);
     const isOverdue =
@@ -188,15 +191,23 @@ export default function InvoiceDetailsModal({
                 success?: boolean;
                 error?: string;
                 to?: string;
+                missingConfig?: boolean;
             }>(`/api/invoices/${invoice.id}/send`, {
                 method: "POST",
                 body: {},
+                // Route already returns a clear 503 body; avoid duplicate "Server error" toast.
+                silent5xx: true,
             });
             if (res.error) throw new Error(res.error);
             toast.success(`Invoice emailed to ${res.to || "customer"}`);
         } catch (err) {
+            const msg =
+                err instanceof Error ? err.message : "Failed to send invoice";
             toast.error(
-                err instanceof Error ? err.message : "Failed to send invoice"
+                msg.includes("Resend") || msg.includes("not configured")
+                    ? "Email not configured"
+                    : "Failed to send invoice",
+                msg
             );
         } finally {
             setBusy(false);

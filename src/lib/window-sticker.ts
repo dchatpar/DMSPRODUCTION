@@ -18,6 +18,8 @@ export interface WindowStickerVehicle {
     drivetrain?: string | null;
     fuel_type?: string | null;
     body_type?: string | null;
+    /** Schema field name used across AdaptUs vehicles */
+    body_style?: string | null;
     retail_price?: number | null;
     features?: string[] | string | null;
     dealership_name?: string | null;
@@ -65,7 +67,7 @@ export function printWindowSticker(v: WindowStickerVehicle): boolean {
         ["Transmission", v.transmission?.trim() || "—"],
         ["Drivetrain", v.drivetrain?.trim() || "—"],
         ["Fuel", v.fuel_type?.trim() || "—"],
-        ["Body", v.body_type?.trim() || "—"],
+        ["Body", (v.body_type || v.body_style)?.trim() || "—"],
     ];
 
     const specRows = rows

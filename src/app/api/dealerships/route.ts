@@ -44,10 +44,10 @@ export async function GET(req: NextRequest) {
         }
 
         const url = new URL(req.url);
-        const limit = parseInt(url.searchParams.get("limit") || "50");
-        const offset = parseInt(url.searchParams.get("offset") || "0");
+        const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") || "50", 10) || 50, 1), 100);
+        const offset = Math.max(parseInt(url.searchParams.get("offset") || "0", 10) || 0, 0);
         const status = url.searchParams.get("status");
-        const q = url.searchParams.get("q");
+        const q = url.searchParams.get("q")?.trim() || null;
 
         let query = supabase
             .from("dealerships")
@@ -55,31 +55,75 @@ export async function GET(req: NextRequest) {
             .order("created_at", { ascending: false })
             .range(offset, offset + limit - 1);
 
+        if (status) {
+            query = query.eq("status", status);
+        }
+        if (q) {
+            // Strip PostgREST filter metacharacters before embedding in .or()
+            const safe = q.replace(/[%_,.()\\]/g, "");
+            if (safe) {
+                query = query.or(
+                    `name.ilike.%${safe}%,slug.ilike.%${safe}%,business_email.ilike.%${safe}%,business_name.ilike.%${safe}%`
+                );
+            }
+        }
+
         const { data, error: dbError, count } = await query;
 
         if (dbError) throw dbError;
 
-        // Fetch user counts for all dealerships
-        const dealershipIds = (data || []).map((d: any) => d.id);
-        let userCounts: Record<string, number> = {};
+        // Fetch user counts + subscriptions for page rows only
+        const dealershipIds = (data || []).map((d: { id: string }) => d.id);
+        const userCounts: Record<string, number> = {};
+        const subscriptionsByDealership: Record<
+            string,
+            {
+                plan_name: string;
+                plan_price: number;
+                billing_cycle: string;
+                status: string;
+            }
+        > = {};
 
         if (dealershipIds.length > 0) {
             const { data: users } = await supabase
                 .from("users")
-                .select("dealership_id");
+                .select("dealership_id")
+                .in("dealership_id", dealershipIds);
 
-            // Count users per dealership
-            users?.forEach((u: any) => {
+            users?.forEach((u: { dealership_id: string | null }) => {
                 if (u.dealership_id) {
                     userCounts[u.dealership_id] = (userCounts[u.dealership_id] || 0) + 1;
                 }
             });
+
+            const { data: subs } = await supabase
+                .from("subscriptions")
+                .select("dealership_id, plan_name, plan_price, billing_cycle, status")
+                .in("dealership_id", dealershipIds);
+
+            subs?.forEach(
+                (s: {
+                    dealership_id: string;
+                    plan_name: string;
+                    plan_price: number;
+                    billing_cycle: string;
+                    status: string;
+                }) => {
+                    subscriptionsByDealership[s.dealership_id] = {
+                        plan_name: s.plan_name,
+                        plan_price: s.plan_price,
+                        billing_cycle: s.billing_cycle,
+                        status: s.status,
+                    };
+                }
+            );
         }
 
-        // Add user_count to each dealership
-        const dataWithCounts = (data || []).map((d: any) => ({
+        const dataWithCounts = (data || []).map((d: { id: string }) => ({
             ...d,
-            user_count: userCounts[d.id] || 0
+            user_count: userCounts[d.id] || 0,
+            subscription: subscriptionsByDealership[d.id] || undefined,
         }));
 
         return NextResponse.json({

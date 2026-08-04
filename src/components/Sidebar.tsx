@@ -103,8 +103,10 @@ const platformAdminSections: NavSection[] = [
 ];
 
 interface PermNavItem extends NavItem {
-    /** If set, show when Admin or any listed permission matches. */
+    /** If set, show when Admin/Manager or any listed permission matches. */
     anyOf?: string[];
+    /** If set, only these dealership roles may see the item (platform admin always). */
+    roles?: string[];
 }
 
 interface PermNavSection {
@@ -178,7 +180,14 @@ const dealershipSections: PermNavSection[] = [
         items: [
             { name: "Tasks", href: "/tasks", icon: ListTodo },
             { name: "Tickets", href: "/tickets", icon: FlaskConical },
-            { name: "Users", href: "/users", icon: UserCog },
+            {
+                name: "Users",
+                href: "/users",
+                icon: UserCog,
+                // API is Admin-only; Managers must not see a dead Users link
+                roles: ["Admin"],
+                anyOf: ["users:read", "users:write", "users:assign_roles"],
+            },
             {
                 name: "Roles",
                 href: "/roles",
@@ -203,7 +212,7 @@ const dealershipSections: PermNavSection[] = [
                 icon: Building2,
                 anyOf: ["settings:read", "settings:write", "settings:company", "settings:taxes"],
             },
-            { name: "Website embed", href: "/settings/website", icon: Globe },
+            { name: "Website embed", href: "/settings/website", icon: Globe, anyOf: ["settings:read", "settings:write", "settings:company"] },
             {
                 name: "Integrations",
                 href: "/settings/integrations",
@@ -213,6 +222,12 @@ const dealershipSections: PermNavSection[] = [
             {
                 name: "Subscription",
                 href: "/settings/subscription",
+                icon: CreditCard,
+                anyOf: ["settings:read", "settings:write", "settings:company"],
+            },
+            {
+                name: "Billing",
+                href: "/settings/billing",
                 icon: CreditCard,
                 anyOf: ["settings:read", "settings:write", "settings:company"],
             },
@@ -242,8 +257,12 @@ function canSeeNavItem(
     item: PermNavItem,
     opts: { role: string; isPlatformAdmin: boolean; permissions: string[] }
 ): boolean {
+    if (opts.isPlatformAdmin) return true;
+    if (item.roles && item.roles.length > 0 && !item.roles.includes(opts.role)) {
+        return false;
+    }
     if (!item.anyOf || item.anyOf.length === 0) return true;
-    if (opts.isPlatformAdmin || opts.role === "Admin" || opts.role === "Manager") return true;
+    if (opts.role === "Admin" || opts.role === "Manager") return true;
     if (opts.permissions.includes("*")) return true;
     return item.anyOf.some((p) => opts.permissions.includes(p));
 }

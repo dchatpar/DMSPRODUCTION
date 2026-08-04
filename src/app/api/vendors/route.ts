@@ -49,6 +49,7 @@ export async function GET(req: NextRequest) {
         const limit = parseInt(url.searchParams.get("limit") || "100");
         const offset = parseInt(url.searchParams.get("offset") || "0");
         const q = url.searchParams.get("q");
+        const vendorType = url.searchParams.get("vendor_type");
         const createdAtFrom = url.searchParams.get("created_at_from");
         const createdAtTo = url.searchParams.get("created_at_to");
 
@@ -67,18 +68,73 @@ export async function GET(req: NextRequest) {
                 `vendor_name.ilike.%${q}%,contact_name.ilike.%${q}%,phone.ilike.%${q}%`
             );
         }
-        if (createdAtFrom) query = query.gte("created_at", createdAtFrom);
-        if (createdAtTo) query = query.lte("created_at", createdAtTo);
+        if (vendorType) {
+            // Hillz/import rows may store vendor_type in different casing
+            query = query.ilike("vendor_type", vendorType);
+        }
+        // Inclusive calendar-day bounds for timestamptz created_at
+        if (createdAtFrom) {
+            const fromIso = createdAtFrom.includes("T")
+                ? createdAtFrom
+                : `${createdAtFrom}T00:00:00.000Z`;
+            query = query.gte("created_at", fromIso);
+        }
+        if (createdAtTo) {
+            const toIso = createdAtTo.includes("T")
+                ? createdAtTo
+                : `${createdAtTo}T23:59:59.999Z`;
+            query = query.lte("created_at", toIso);
+        }
 
         const { data, error: dbError, count } = await query;
 
         if (dbError) throw dbError;
+
+        // Aggregate type/phone totals across the filtered set (not just the page).
+        let totalsQuery = supabase.from("vendors").select("vendor_type, phone");
+        if (!currentUser.is_platform_admin) {
+            totalsQuery = totalsQuery.eq("dealership_id", currentUser.dealership_id);
+        }
+        if (q) {
+            totalsQuery = totalsQuery.or(
+                `vendor_name.ilike.%${q}%,contact_name.ilike.%${q}%,phone.ilike.%${q}%`
+            );
+        }
+        if (vendorType) totalsQuery = totalsQuery.ilike("vendor_type", vendorType);
+        if (createdAtFrom) {
+            const fromIso = createdAtFrom.includes("T")
+                ? createdAtFrom
+                : `${createdAtFrom}T00:00:00.000Z`;
+            totalsQuery = totalsQuery.gte("created_at", fromIso);
+        }
+        if (createdAtTo) {
+            const toIso = createdAtTo.includes("T")
+                ? createdAtTo
+                : `${createdAtTo}T23:59:59.999Z`;
+            totalsQuery = totalsQuery.lte("created_at", toIso);
+        }
+
+        const { data: totalsRows } = await totalsQuery;
+        let dealerCount = 0;
+        let financeCount = 0;
+        let withPhoneCount = 0;
+        for (const row of totalsRows || []) {
+            const t = String(row.vendor_type || "").toLowerCase();
+            if (t === "dealer") dealerCount += 1;
+            if (t === "finance") financeCount += 1;
+            if (row.phone) withPhoneCount += 1;
+        }
 
         return NextResponse.json({
             data: data || [],
             count: count || 0,
             limit,
             offset,
+            totals: {
+                dealerCount,
+                financeCount,
+                withPhoneCount,
+            },
         });
     } catch (error: any) {
         console.error("Error fetching vendors:", error);
@@ -129,6 +185,13 @@ export async function POST(req: NextRequest) {
             return NextResponse.json(
                 { error: "Unauthorized - No dealership context" },
                 { status: 403 }
+            );
+        }
+
+        if (!currentUser.dealership_id) {
+            return NextResponse.json(
+                { error: "Dealership context required to create a vendor" },
+                { status: 400 }
             );
         }
 

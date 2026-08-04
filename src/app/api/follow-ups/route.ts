@@ -75,11 +75,13 @@ export async function GET(req: NextRequest) {
 
             // Scope to assigned follow-ups for Salesperson/Staff
             const scopedToAssigned = userRole === "Salesperson" || userRole === "Staff";
-            const viewAll = userPermissions.includes("*") ||
+            const isAdminOrManager = userRole === "Admin" || userRole === "Manager";
+            const viewAll = isAdminOrManager ||
+                userPermissions.includes("*") ||
                 (userPermissions.includes("follow_ups:read") && !userPermissions.includes("follow_ups:read:assigned"));
 
             if (scopedToAssigned || !viewAll) {
-                query = query.eq("assigned_to", user.id);
+                query = query.or(`assigned_to.eq.${user.id},assigned_to.is.null`);
             }
         }
 

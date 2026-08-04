@@ -701,6 +701,11 @@ function ReportContent({ data, activeTab, formatCurrency }: { data: any; activeT
 
         return (
             <div className="space-y-6">
+                {data.restricted && data.note && (
+                    <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                        {data.note}
+                    </p>
+                )}
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                     <div className="bg-gradient-to-br from-red-50 to-rose-50 rounded-xl p-4 border border-red-100">
                         <div className="flex items-center gap-2 mb-2">

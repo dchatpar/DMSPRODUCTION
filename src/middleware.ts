@@ -122,16 +122,55 @@ export async function middleware(request: NextRequest) {
         data: { user },
     } = await supabase.auth.getUser();
 
-    // Soft-lock write APIs for expired SaaS trials (login still works).
+    const isApiCall = pathname.startsWith("/api/") || pathname.startsWith("/_next/");
+    const isPage = !isApiCall && !/\.[a-zA-Z0-9]+$/.test(pathname);
+
+    // Soft-lock write APIs + role shell gates need the users profile.
     // Grandfathered dealerships (subscription_status=active / null) never lock.
-    if (user && isMutatingApi(pathname, request.method)) {
+    if (user && (isMutatingApi(pathname, request.method) || isPage)) {
         const { data: profile } = await supabase
             .from("users")
-            .select("dealership_id, is_platform_admin")
+            .select("dealership_id, is_platform_admin, role")
             .eq("id", user.id)
             .maybeSingle();
 
-        if (profile && !profile.is_platform_admin && profile.dealership_id) {
+        if (profile && isPage) {
+            // Platform shell — dealer users must not reach AdaptUs console pages
+            // even if they type the URL (API already 403s; HTML shell was leaking).
+            const isPlatformShell =
+                pathname.startsWith("/platform") ||
+                pathname === "/dealerships" ||
+                pathname.startsWith("/dealerships/") ||
+                pathname === "/settings/platform" ||
+                pathname.startsWith("/settings/platform/");
+            if (isPlatformShell && !profile.is_platform_admin) {
+                const url = request.nextUrl.clone();
+                url.pathname = "/dashboard";
+                url.search = "";
+                return NextResponse.redirect(url);
+            }
+
+            // Users admin page — Salesperson/Staff must not land on the shell
+            const isUsersShell =
+                pathname === "/users" || pathname.startsWith("/users/");
+            if (
+                isUsersShell &&
+                !profile.is_platform_admin &&
+                profile.role !== "Admin"
+            ) {
+                const url = request.nextUrl.clone();
+                url.pathname = "/dashboard";
+                url.search = "";
+                return NextResponse.redirect(url);
+            }
+        }
+
+        if (
+            profile &&
+            isMutatingApi(pathname, request.method) &&
+            !profile.is_platform_admin &&
+            profile.dealership_id
+        ) {
             const { data: dealership } = await supabase
                 .from("dealerships")
                 .select("subscription_status, trial_ends_at")
@@ -158,8 +197,6 @@ export async function middleware(request: NextRequest) {
         // - Pages (no extension, no /api/ prefix, no /_next/) → redirect to /login
         // - API calls → just pass through; they'll return 401 themselves
         //   and the centralized fetch wrapper handles the redirect.
-        const isApiCall = pathname.startsWith("/api/") || pathname.startsWith("/_next/");
-        const isPage = !isApiCall && !/\.[a-zA-Z0-9]+$/.test(pathname);
         if (isPage) {
             const url = request.nextUrl.clone();
             url.pathname = "/login";

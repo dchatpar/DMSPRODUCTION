@@ -1,24 +1,24 @@
-import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/src/lib/supabase-admin";
+import { requireDealershipAccess } from "@/src/lib/auth-helpers";
 
 export async function POST(req: NextRequest) {
     try {
-        let supabase;
-        try {
-            supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
-                return NextResponse.json({ error: "Authorization token required" }, { status: 401 });
-            }
-            throw error;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
         }
 
         const formData = await req.formData();
-        const file = formData.get("file") as File;
-        const vin = formData.get("vin") as string;
+        const file = formData.get("file") as File | null;
+        const vinRaw = formData.get("vin");
+        const vin =
+            typeof vinRaw === "string" ? vinRaw.trim().toUpperCase() : "";
 
-        if (!file) {
+        if (!file || typeof file === "string") {
             return NextResponse.json({ error: "No file provided" }, { status: 400 });
         }
 
@@ -31,15 +31,18 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "File size must be less than 10MB" }, { status: 400 });
         }
 
-        // Generate unique file name
+        // Generate unique file name (scoped path under dealership when available)
         const fileExt = "pdf";
-        const fileName = `carfax-${vin || "unknown"}-${Date.now()}.${fileExt}`;
+        const dealerPrefix = auth.profile.dealership_id
+            ? `${auth.profile.dealership_id}/`
+            : "";
+        const fileName = `${dealerPrefix}carfax-${vin || "unknown"}-${Date.now()}.${fileExt}`;
 
         // Upload to Supabase Storage
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
-        const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
+        const { error: uploadError } = await supabaseAdmin.storage
             .from("carfax-reports")
             .upload(fileName, buffer, {
                 contentType: "application/pdf",

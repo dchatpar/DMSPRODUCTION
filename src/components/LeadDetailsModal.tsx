@@ -16,9 +16,13 @@ import { StatusBadge } from "@/src/components/ui/StatusBadge";
 import { Button } from "@/src/components/ui/Button";
 import { Badge } from "@/src/components/ui/Badge";
 import { LeadEmailSequencePanel } from "@/src/components/LeadEmailSequencePanel";
-import { apiFetch } from "@/src/lib/fetch";
+import { apiFetch, ApiError } from "@/src/lib/fetch";
 import { toast } from "@/src/lib/toast";
-import { scoreLead, temperatureClass } from "@/src/lib/business/lead-score";
+import {
+    resolveLeadScore,
+    temperatureClass,
+} from "@/src/lib/business/lead-score";
+import { canCreate, canEdit } from "@/src/lib/permission-middleware";
 import { cn } from "@/src/lib/utils";
 
 interface Lead {
@@ -98,11 +102,8 @@ export default function LeadDetailsModal({
     const [converting, setConverting] = useState(false);
     const [loggingCall, setLoggingCall] = useState(false);
 
-    const canEdit = userRole === "Admin" || userPermissions.includes("leads:write");
-    const canDeal =
-        userRole === "Admin" ||
-        userPermissions.includes("deals:write") ||
-        userPermissions.includes("*");
+    const canEditLead = canEdit(userRole || "", userPermissions, "leads");
+    const canDeal = canCreate(userRole || "", userPermissions, "deals");
     const customerName = lead.customer?.name?.trim() || null;
     const title = customerName ?? "Lead";
     const email = lead.customer?.email?.trim() || null;
@@ -112,13 +113,7 @@ export default function LeadDetailsModal({
         ? `${lead.vehicle.year} ${lead.vehicle.make} ${lead.vehicle.model}`
         : parseVehicleFromNotes(lead.notes);
 
-    const scored =
-        lead.score != null && lead.temperature
-            ? {
-                  score: lead.score,
-                  temperature: lead.temperature as "Hot" | "Warm" | "Cold",
-              }
-            : scoreLead(lead);
+    const scored = resolveLeadScore(lead);
 
     const activityItems = [
         {
@@ -173,8 +168,8 @@ export default function LeadDetailsModal({
         } catch (err) {
             const message = err instanceof Error ? err.message : "Convert failed";
             const data =
-                err && typeof err === "object" && "data" in err
-                    ? (err as { data?: { redirect?: string; code?: string } }).data
+                err instanceof ApiError
+                    ? (err.data as { redirect?: string; code?: string } | null)
                     : undefined;
             if (data?.redirect) {
                 toast.error(message);
@@ -251,7 +246,7 @@ export default function LeadDetailsModal({
                             {lead.converted_deal_id ? "Open deal" : "Convert to deal"}
                         </Button>
                     )}
-                    {canEdit && (
+                    {canEditLead && (
                         <Button
                             variant="outline"
                             size="sm"
@@ -261,7 +256,7 @@ export default function LeadDetailsModal({
                             Edit
                         </Button>
                     )}
-                    {canEdit && (
+                    {canEditLead && (
                         <Button
                             variant="outline"
                             size="sm"
@@ -352,7 +347,7 @@ export default function LeadDetailsModal({
                 <LeadEmailSequencePanel
                     leadId={lead.id}
                     customerEmail={email}
-                    canEdit={canEdit}
+                    canEdit={canEditLead}
                 />
             </div>
         </RecordDrawer>

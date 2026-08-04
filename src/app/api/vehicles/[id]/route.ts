@@ -202,6 +202,7 @@ export async function PUT(
             userRole === "Admin" ||
             userRole === "Manager" ||
             userPerms.includes("vehicles:photos") ||
+            userPerms.includes("vehicles:write") ||
             userPerms.includes("*");
 
         if (payload.retail_price !== undefined && !canManagePricing) {
@@ -212,7 +213,7 @@ export async function PUT(
         }
         if (payload.image_gallery !== undefined && !canManagePhotos) {
             return NextResponse.json(
-                { error: "Forbidden - You need vehicles:photos permission to modify photos" },
+                { error: "Forbidden - You need vehicles:photos or vehicles:write permission to modify photos" },
                 { status: 403 }
             );
         }
@@ -335,6 +336,7 @@ export async function PATCH(
             userRole === "Admin" ||
             userRole === "Manager" ||
             userPerms.includes("vehicles:photos") ||
+            userPerms.includes("vehicles:write") ||
             userPerms.includes("*");
 
         if (payload.retail_price !== undefined && !canManagePricing) {
@@ -345,7 +347,7 @@ export async function PATCH(
         }
         if (payload.image_gallery !== undefined && !canManagePhotos) {
             return NextResponse.json(
-                { error: "Forbidden - You need vehicles:photos permission to modify photos" },
+                { error: "Forbidden - You need vehicles:photos or vehicles:write permission to modify photos" },
                 { status: 403 }
             );
         }

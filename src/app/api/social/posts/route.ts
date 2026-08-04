@@ -99,9 +99,16 @@ export async function POST(req: NextRequest) {
                 ? body.scheduled_date
                 : null;
 
+        // Honesty: never persist Published without a real Graph post_id.
+        // Clients may send status=Published; ignore until publish succeeds.
+        if (status === "Published" && !publishNow) {
+            status = scheduledDate ? "Scheduled" : "Draft";
+        }
+
         let publishedDate: string | null = null;
         let notes = body.notes ? String(body.notes) : null;
         let graphPostId: string | null = null;
+        let honestyMessage: string | null = null;
 
         // Resolve media from vehicle gallery when vehicle_id given and media not supplied
         let mediaUrls: string[] | null = Array.isArray(body.media_urls)
@@ -149,12 +156,8 @@ export async function POST(req: NextRequest) {
         if (publishNow) {
             if (platform !== "Facebook") {
                 status = "Draft";
-                notes = [
-                    notes,
-                    `${platform} live publish not supported in Social v1 — saved as Draft.`,
-                ]
-                    .filter(Boolean)
-                    .join("\n");
+                honestyMessage = `${platform} live publish not supported in Social v1 — saved as Draft.`;
+                notes = [notes, honestyMessage].filter(Boolean).join("\n");
             } else {
                 const { data: fb } = await supabaseAdmin
                     .from("facebook_business_account")
@@ -165,12 +168,9 @@ export async function POST(req: NextRequest) {
 
                 if (!fb?.access_token || !fb.page_id) {
                     status = "Draft";
-                    notes = [
-                        notes,
-                        "Facebook Page not connected with a token — saved as Draft. Connect requires FACEBOOK_APP_ID/SECRET.",
-                    ]
-                        .filter(Boolean)
-                        .join("\n");
+                    honestyMessage =
+                        "Facebook Page not connected — saved as Draft. Connect requires FACEBOOK_APP_ID/SECRET via wrangler, then Connect Page.";
+                    notes = [notes, honestyMessage].filter(Boolean).join("\n");
                 } else {
                     try {
                         const result = await publishPagePost({
@@ -187,15 +187,21 @@ export async function POST(req: NextRequest) {
                             .join("\n");
                     } catch (pubErr) {
                         status = "Failed";
-                        notes = [
-                            notes,
-                            `Publish failed: ${pubErr instanceof Error ? pubErr.message : "unknown"}`,
-                        ]
-                            .filter(Boolean)
-                            .join("\n");
+                        honestyMessage = `Publish failed: ${pubErr instanceof Error ? pubErr.message : "unknown"}`;
+                        notes = [notes, honestyMessage].filter(Boolean).join("\n");
                     }
                 }
             }
+        }
+
+        // Final guard: Published requires Graph id
+        if (status === "Published" && !graphPostId) {
+            status = "Draft";
+            publishedDate = null;
+            honestyMessage =
+                honestyMessage ||
+                "Refused fake Published status — no Graph post_id. Saved as Draft.";
+            notes = [notes, honestyMessage].filter(Boolean).join("\n");
         }
 
         const insertRow: Record<string, unknown> = {
@@ -252,8 +258,9 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(
             {
                 data,
-                published: status === "Published",
+                published: status === "Published" && Boolean(graphPostId),
                 graph_post_id: graphPostId,
+                message: honestyMessage,
             },
             { status: 201 }
         );

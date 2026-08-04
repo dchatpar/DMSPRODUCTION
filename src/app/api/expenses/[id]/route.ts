@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { assertOwnershipOrDeny, pickAllowed, requireDealershipAccess } from "@/src/lib/auth-helpers";
 
 const EXPENSE_ALLOWED_FIELDS = [
-    "category", "amount", "description", "date", "status", "vendor_id",
+    "category", "amount", "description", "status", "vendor_id",
     // Schema-actual columns used by the expenses table
     "expense_date", "due_date", "reference_number", "notes", "tax_amount",
     "payment_method", "vehicle_id",

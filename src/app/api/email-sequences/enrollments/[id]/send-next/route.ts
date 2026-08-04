@@ -113,7 +113,7 @@ export async function POST(
                     ? 503
                     : result.code === "STOPPED"
                       ? 409
-                      : 400;
+                      : 400; // NO_EMAIL, NO_CONSENT, SEND_FAILED, …
             return NextResponse.json(result, { status });
         }
 

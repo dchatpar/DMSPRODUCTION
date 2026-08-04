@@ -36,9 +36,13 @@ export async function GET(req: NextRequest) {
             .range(offset, offset + limit - 1);
 
         if (q) {
-            query = query.or(
-                `seller_name.ilike.%${q}%,seller_phone.ilike.%${q}%,title_number.ilike.%${q}%,notes.ilike.%${q}%`
-            );
+            // Strip PostgREST filter metacharacters so user search can't break `.or()`.
+            const safe = q.replace(/[%*,()]/g, "").trim();
+            if (safe) {
+                query = query.or(
+                    `seller_name.ilike.%${safe}%,seller_phone.ilike.%${safe}%,title_number.ilike.%${safe}%,notes.ilike.%${safe}%`
+                );
+            }
         }
 
         const { data, error, count } = await query;
@@ -106,11 +110,12 @@ export async function POST(req: NextRequest) {
                 .from("vehicles")
                 .select("id")
                 .eq("vin", vin)
+                .eq("dealership_id", targetDealership)
                 .maybeSingle();
 
             if (existingVin) {
                 return NextResponse.json(
-                    { error: `VIN already exists in inventory (${existingVin.id})` },
+                    { error: "VIN already exists in this dealership's inventory" },
                     { status: 409 }
                 );
             }
@@ -138,7 +143,15 @@ export async function POST(req: NextRequest) {
                 .select("id")
                 .single();
 
-            if (vehicleError) throw vehicleError;
+            if (vehicleError) {
+                if ((vehicleError as { code?: string }).code === "23505") {
+                    return NextResponse.json(
+                        { error: "VIN already exists in inventory" },
+                        { status: 409 }
+                    );
+                }
+                throw vehicleError;
+            }
             vehicleId = newVehicle.id;
         }
 

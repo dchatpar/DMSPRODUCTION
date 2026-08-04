@@ -224,16 +224,30 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
         return NextResponse.json({ error: "Vehicle belongs to another dealership" }, { status: 403 });
     }
 
-    const existing: string[] = Array.isArray(vehicle.image_gallery) ? vehicle.image_gallery : [];
-    const filtered = existing.filter((u) => u !== urlToRemove);
+    // Gallery may be plain URL strings OR JSON-encoded VehicleImage objects.
+    // Match by parsed URL — never compare raw text[] entries to the public URL.
+    const existingParsed = parseGallery(vehicle.image_gallery);
+    const filtered = existingParsed.filter((img) => img.url !== urlToRemove);
 
-    if (filtered.length === existing.length) {
-        return NextResponse.json({ ok: true, vin, removed: 0, image_gallery: existing });
+    if (filtered.length === existingParsed.length) {
+        return NextResponse.json({
+            ok: true,
+            vin,
+            removed: 0,
+            image_gallery: vehicle.image_gallery,
+        });
     }
+
+    const normalized = filtered.map((img, i) => ({
+        ...img,
+        sort_order: i,
+        is_cover: i === 0,
+    }));
+    const serialized = serializeGallery(normalized);
 
     const { data: updated, error: updErr } = await supabaseAdmin
         .from("vehicles")
-        .update({ image_gallery: filtered })
+        .update({ image_gallery: serialized })
         .eq("id", vehicle.id)
         .select("id, vin, image_gallery")
         .single();
