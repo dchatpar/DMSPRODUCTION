@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "@/src/lib/fetch";
+import { BrandLogo } from "@/src/components/BrandLogo";
 
 type SubscriptionInfo = {
   status: string | null;
@@ -39,6 +40,9 @@ export function TrialExpiredLock() {
   return (
     <div className="absolute inset-0 z-40 flex items-center justify-center bg-background/95 p-6 backdrop-blur-sm">
       <div className="max-w-md text-center">
+        <div className="mb-6 flex justify-center">
+          <BrandLogo variant="stacked" size="md" href={null} />
+        </div>
         <h1 className="text-2xl font-semibold tracking-tight">Trial ended</h1>
         <p className="mt-3 text-sm text-muted-foreground">
           Your 7-day trial has ended. You can still sign in, but dashboard modules and

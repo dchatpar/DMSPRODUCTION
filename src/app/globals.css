@@ -1,20 +1,21 @@
 @import "tailwindcss";
 
 /* ------------------------------------------------------------------ *
- *  Design tokens — 2026 Calm Ops (light-first)
- *  - Primary #2563EB accent only / hover #1D4ED8
- *  - Cool canvas ~210 25% 97% + subtle primary radial
+ *  Design tokens — FlashFender brand (light-first)
+ *  - Primary electric blue #00AEEF / #0EA5E9 (replaces Calm Ops #2563EB)
+ *  - FLASH accent gradient #E11D2E → #F97316
+ *  - Charcoal text #1F2937; cool canvas + subtle primary radial
  *  - Geist UI + tabular nums; Geist Mono for VIN/IDs
  *  - Hairline borders; quieter radii (lg/md); no aurora chrome
  * ------------------------------------------------------------------ */
 :root {
   /* Surfaces — cool canvas */
   --background: 210 25% 97%;
-  --foreground: 222 47% 11%;
+  --foreground: 220 14% 17%; /* charcoal #1F2937 */
   --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
+  --card-foreground: 220 14% 17%;
   --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
+  --popover-foreground: 220 14% 17%;
 
   /* Sub-surfaces */
   --muted: 210 22% 95%;
@@ -22,21 +23,26 @@
   --subtle: 210 25% 97%;
   --subtle-foreground: 215 19% 32%;
   --secondary: 210 22% 95%;
-  --secondary-foreground: 222 47% 11%;
+  --secondary-foreground: 220 14% 17%;
 
   /* Borders & inputs — hairline */
   --border: 214 28% 88%;
   --input: 214 28% 88%;
-  --ring: 217 91% 53%; /* Brand Blue */
+  --ring: 196 100% 47%; /* Electric blue */
 
-  /* Brand — Master Brand Blue #2563EB */
-  --primary: 217 91% 53%; /* #2563EB */
+  /* Brand — FlashFender electric blue #00AEEF / #0EA5E9 */
+  --primary: 196 100% 47%; /* #00AEEF */
   --primary-foreground: 0 0% 100%;
-  --primary-50: 214 100% 97%; /* #EFF6FF */
-  --primary-100: 214 95% 93%; /* #DBEAFE */
-  --primary-500: 217 91% 53%;
-  --primary-600: 224 76% 48%; /* #1D4ED8 hover */
-  --primary-700: 226 71% 40%; /* #1E40AF */
+  --primary-50: 199 100% 97%; /* sky wash */
+  --primary-100: 199 95% 90%;
+  --primary-500: 199 89% 48%; /* #0EA5E9 */
+  --primary-600: 199 89% 39%; /* hover */
+  --primary-700: 201 96% 32%;
+
+  /* Charcoal + FLASH wordmark gradient */
+  --charcoal: 220 14% 17%; /* #1F2937 */
+  --flash-from: 354 76% 50%; /* #E11D2E */
+  --flash-to: 25 95% 53%; /* #F97316 */
 
   /* Kept for legacy accents; not default chrome */
   --violet: 262 83% 58%;
@@ -63,8 +69,8 @@
   --info-100: 204 100% 92%;
 
   /* Status pills */
-  --status-new: 217 91% 60%;
-  --status-new-50: 214 95% 95%;
+  --status-new: 196 100% 52%;
+  --status-new-50: 199 100% 95%;
   --status-active: 160 84% 39%;
   --status-active-50: 151 81% 95%;
   --status-pending: 32 95% 44%;
@@ -99,10 +105,10 @@
   --glass-bg: rgb(255 255 255 / 0.95);
   --glass-border: rgb(226 232 240 / 0.9);
 
-  --aurora-1: 217 91% 53%;
-  --aurora-2: 217 91% 53%;
-  --aurora-3: 199 89% 48%;
-  --aurora-4: 217 91% 60%;
+  --aurora-1: 196 100% 47%;
+  --aurora-2: 199 89% 48%;
+  --aurora-3: 196 100% 47%;
+  --aurora-4: 199 89% 55%;
 
   --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -135,15 +141,19 @@
 
   --border: 217 33% 20%;
   --input: 217 33% 20%;
-  --ring: 217 91% 60%;
+  --ring: 196 100% 55%;
 
-  --primary: 217 91% 60%;
+  --primary: 196 100% 52%;
   --primary-foreground: 0 0% 100%;
-  --primary-50: 217 50% 14%;
-  --primary-100: 217 50% 20%;
-  --primary-500: 217 91% 60%;
-  --primary-600: 217 91% 65%;
-  --primary-700: 217 91% 70%;
+  --primary-50: 199 50% 14%;
+  --primary-100: 199 50% 20%;
+  --primary-500: 199 89% 55%;
+  --primary-600: 196 100% 60%;
+  --primary-700: 196 100% 68%;
+
+  --charcoal: 210 40% 96%;
+  --flash-from: 354 76% 58%;
+  --flash-to: 25 95% 58%;
 
   --violet: 262 80% 70%;
   --violet-foreground: 222 47% 5%;
@@ -167,8 +177,8 @@
   --info-50: 199 50% 14%;
   --info-100: 199 50% 20%;
 
-  --status-new: 217 91% 70%;
-  --status-new-50: 217 50% 18%;
+  --status-new: 196 100% 65%;
+  --status-new-50: 199 50% 18%;
   --status-active: 160 75% 55%;
   --status-active-50: 160 50% 18%;
   --status-pending: 32 95% 60%;
@@ -219,6 +229,9 @@
   --color-primary-500: hsl(var(--primary-500));
   --color-primary-600: hsl(var(--primary-600));
   --color-primary-700: hsl(var(--primary-700));
+  --color-charcoal: hsl(var(--charcoal));
+  --color-flash-from: hsl(var(--flash-from));
+  --color-flash-to: hsl(var(--flash-to));
   --color-violet: hsl(var(--violet));
   --color-violet-foreground: hsl(var(--violet-foreground));
   --color-violet-50: hsl(var(--violet-50));
@@ -387,6 +400,31 @@ body {
   color: transparent;
 }
 
+/* FLASH wordmark / urgency accent — red → orange */
+.bg-flash-gradient {
+  background-image: linear-gradient(
+    90deg,
+    hsl(var(--flash-from)) 0%,
+    hsl(var(--flash-to)) 100%
+  );
+}
+
+.text-flash-gradient {
+  background-image: linear-gradient(
+    90deg,
+    hsl(var(--flash-from)) 0%,
+    hsl(var(--flash-to)) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.text-charcoal {
+  color: hsl(var(--charcoal));
+}
+
 .btn-premium {
   background: hsl(var(--primary));
   color: hsl(var(--primary-foreground));
@@ -523,3 +561,30 @@ body {
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { scrollbar-width: none; }
+
+/* TipTap */
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+  height: 0;
+}
+.ProseMirror:focus { outline: none; }
+
+/* react-day-picker brand */
+.rdp-brand {
+  --rdp-accent-color: hsl(var(--primary));
+  --rdp-accent-background-color: hsl(var(--primary-50));
+  --rdp-day-height: 2.25rem;
+  --rdp-day-width: 2.25rem;
+  font-size: 0.875rem;
+}
+.rdp-brand .rdp-selected .rdp-day_button {
+  background-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+.rdp-brand .rdp-today:not(.rdp-selected) .rdp-day_button {
+  color: hsl(var(--primary));
+  font-weight: 600;
+}

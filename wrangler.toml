@@ -18,6 +18,7 @@ APP_URL = "https://app.flashfender.com"
 # wrangler secret put SOCIAL_CRON_SECRET
 # wrangler secret put CRM_CRON_SECRET   # optional; falls back to SOCIAL_CRON_SECRET for email due-send
 # wrangler secret put OPENAI_API_KEY   # optional AI captions
+# wrangler secret put MINIMAX_API_KEY  # Flash AI desk (MiniMax-M2.7)
 # wrangler secret put RESEND_API_KEY   # OTP + forgot-password + CRM sequences (required for live email)
 # wrangler secret put EMAIL_FROM       # e.g. FlashFender <noreply@flashfender.com>
 

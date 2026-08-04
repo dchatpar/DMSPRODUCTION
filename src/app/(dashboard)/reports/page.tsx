@@ -32,8 +32,10 @@ import {
 } from "lucide-react";
 import { apiFetch } from "@/src/lib/fetch";
 import { toast } from "@/src/lib/toast";
+import { CHART_COLORS } from "@/src/components/ui/chart";
+import { DatePicker } from "@/src/components/ui/date-picker";
 
-const COLORS = ["#3B82F6", "#8B5CF6", "#EC4899", "#F59E0B", "#10B981", "#6366F1", "#EF4444", "#14B8A6"];
+const COLORS = CHART_COLORS;
 
 interface ReportData {
     reportType: string;
@@ -240,18 +242,18 @@ export default function ReportsPage() {
                         </button>
                     ))}
                     <div className="flex gap-2 ml-auto items-center">
-                        <input
-                            type="date"
+                        <DatePicker
                             value={start}
-                            onChange={(e) => setCustomDateRange({ start: e.target.value, end })}
-                            className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg"
+                            onChange={(iso) => setCustomDateRange({ start: iso, end })}
+                            placeholder="Start"
+                            className="w-[150px]"
                         />
                         <span className="text-gray-400">to</span>
-                        <input
-                            type="date"
+                        <DatePicker
                             value={end}
-                            onChange={(e) => setCustomDateRange({ start, end: e.target.value })}
-                            className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg"
+                            onChange={(iso) => setCustomDateRange({ start, end: iso })}
+                            placeholder="End"
+                            className="w-[150px]"
                         />
                     </div>
                 </div>

@@ -29,6 +29,7 @@ import FollowUpFormModal from "@/src/components/FollowUpFormModal";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
 import { apiFetch } from "@/src/lib/fetch";
 import { toast } from "@/src/lib/toast";
+import { DatePicker } from "@/src/components/ui/date-picker";
 
 interface Customer {
     id: string;
@@ -451,24 +452,16 @@ export default function FollowUpsPage() {
                                         <div>
                                             <label className="block text-xs font-medium text-gray-500 mb-1.5">Follow-up Date Range</label>
                                             <div className="flex flex-col gap-2">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-xs text-gray-400 w-8">From</span>
-                                                    <input
-                                                        type="date"
-                                                        value={followUpDateFrom}
-                                                        onChange={(e) => setFollowUpDateFrom(e.target.value)}
-                                                        className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                    />
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-xs text-gray-400 w-8">To</span>
-                                                    <input
-                                                        type="date"
-                                                        value={followUpDateTo}
-                                                        onChange={(e) => setFollowUpDateTo(e.target.value)}
-                                                        className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                    />
-                                                </div>
+                                                <DatePicker
+                                                    label="From"
+                                                    value={followUpDateFrom}
+                                                    onChange={setFollowUpDateFrom}
+                                                />
+                                                <DatePicker
+                                                    label="To"
+                                                    value={followUpDateTo}
+                                                    onChange={setFollowUpDateTo}
+                                                />
                                             </div>
                                         </div>
                                         <div className="flex gap-2 pt-1">

@@ -7,6 +7,7 @@ import { MobileBottomNav } from "@/src/components/MobileBottomNav";
 import { ThemeProvider } from "@/src/components/ThemeProvider";
 import { TrialBanner } from "@/src/components/TrialBanner";
 import { TrialExpiredLock } from "@/src/components/TrialExpiredLock";
+import { FlashAiProvider } from "@/src/components/ai/FlashAiProvider";
 import { cn } from "@/src/lib/utils";
 
 export default function DashboardLayout({
@@ -29,25 +30,27 @@ export default function DashboardLayout({
             enableSystem
             disableTransitionOnChange
         >
-            <div className="flex h-screen bg-background text-foreground">
-                <Sidebar />
-                <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-                    {!isIntakeWizard && <TopHeader />}
-                    <TrialBanner />
-                    <main
-                        className={cn(
-                            "relative flex-1 overflow-auto bg-page",
-                            isIntakeWizard ? "pb-0 pt-14 lg:pt-0" : "pb-20 pt-14 lg:pb-0 lg:pt-0"
-                        )}
-                    >
-                        <div className="relative min-h-full">
-                            {children}
-                            <TrialExpiredLock />
-                        </div>
-                    </main>
+            <FlashAiProvider>
+                <div className="flex h-screen bg-background text-foreground">
+                    <Sidebar />
+                    <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+                        {!isIntakeWizard && <TopHeader />}
+                        <TrialBanner />
+                        <main
+                            className={cn(
+                                "relative flex-1 overflow-auto bg-page",
+                                isIntakeWizard ? "pb-0 pt-14 lg:pt-0" : "pb-20 pt-14 lg:pb-0 lg:pt-0"
+                            )}
+                        >
+                            <div className="relative min-h-full">
+                                {children}
+                                <TrialExpiredLock />
+                            </div>
+                        </main>
+                    </div>
+                    <MobileBottomNav />
                 </div>
-                <MobileBottomNav />
-            </div>
+            </FlashAiProvider>
         </ThemeProvider>
     );
 }

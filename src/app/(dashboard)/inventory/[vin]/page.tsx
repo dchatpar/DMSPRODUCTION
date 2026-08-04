@@ -26,6 +26,9 @@ import {
 import ConfirmDialog from "@/src/components/ConfirmDialog";
 import { CarfaxPanel } from "@/src/components/CarfaxPanel";
 import { KijijiListingPack } from "@/src/components/KijijiListingPack";
+import { RichTextDisplay } from "@/src/components/ui/rich-text-editor";
+import { AiActionButton } from "@/src/components/ai/AiActionButton";
+import { toast } from "@/src/lib/toast";
 import {
     resolveGallery,
     serializeGallery,
@@ -34,7 +37,6 @@ import {
     type VehicleImageRole,
 } from "@/src/lib/vehicle-image";
 import { printWindowSticker } from "@/src/lib/window-sticker";
-import { toast } from "@/src/lib/toast";
 import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
 import {
     disclosureDraftWarning,
@@ -434,6 +436,7 @@ export default function VehicleDetailPage() {
     const [brokenImages, setBrokenImages] = useState<Set<string>>(new Set());
     const [disclosureDraft, setDisclosureDraft] = useState("");
     const [savingDisclosure, setSavingDisclosure] = useState(false);
+    const [priceNarrative, setPriceNarrative] = useState("");
 
     const heroRef = useRef<HTMLDivElement>(null);
     const railRef = useRef<HTMLDivElement>(null);
@@ -1033,13 +1036,74 @@ export default function VehicleDetailPage() {
                 </section>
 
                 {/* 6. Description */}
-                <section className="rounded-xl border border-border bg-card p-4">
-                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                        Description
-                    </p>
-                    <p className={`whitespace-pre-line text-sm leading-relaxed ${vehicle.description?.trim() ? "text-foreground/85" : "text-muted-foreground"}`}>
-                        {vehicle.description?.trim() ? vehicle.description : "—"}
-                    </p>
+                <section className="rounded-xl border border-border bg-card p-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            Description
+                        </p>
+                        {canEdit && vehicle.id ? (
+                            <AiActionButton
+                                label="Generate description"
+                                endpoint="/api/ai/description"
+                                body={{ vehicle_id: vehicle.id }}
+                                onResult={(content) => {
+                                    void (async () => {
+                                        try {
+                                            const res = await fetch(
+                                                `/api/vehicles/${encodeURIComponent(vehicle.id)}`,
+                                                {
+                                                    method: "PATCH",
+                                                    credentials: "include",
+                                                    headers: {
+                                                        "Content-Type": "application/json",
+                                                    },
+                                                    body: JSON.stringify({
+                                                        description: content,
+                                                    }),
+                                                }
+                                            );
+                                            if (!res.ok) {
+                                                const body = await res.json().catch(() => ({}));
+                                                throw new Error(
+                                                    (body as { error?: string }).error ||
+                                                        "Failed to save description"
+                                                );
+                                            }
+                                            setVehicle((v) =>
+                                                v ? { ...v, description: content } : v
+                                            );
+                                            toast.success(
+                                                "Description saved",
+                                                "Review on edit if you need tweaks."
+                                            );
+                                        } catch (err) {
+                                            toast.error(
+                                                err instanceof Error
+                                                    ? err.message
+                                                    : "Could not save description"
+                                            );
+                                        }
+                                    })();
+                                }}
+                            />
+                        ) : null}
+                    </div>
+                    <RichTextDisplay value={vehicle.description} />
+                    {canEdit && vehicle.id ? (
+                        <div className="space-y-2 border-t border-border pt-3">
+                            <AiActionButton
+                                label="Price / aging narrative"
+                                endpoint="/api/ai/price-narrative"
+                                body={{ vehicle_id: vehicle.id }}
+                                onResult={(content) => setPriceNarrative(content)}
+                            />
+                            {priceNarrative ? (
+                                <pre className="whitespace-pre-wrap rounded-md border border-border bg-muted/40 p-3 font-sans text-xs leading-relaxed text-foreground/90">
+                                    {priceNarrative}
+                                </pre>
+                            ) : null}
+                        </div>
+                    ) : null}
                 </section>
 
                 <section className="rounded-xl border border-border bg-card p-4 space-y-4">
@@ -1080,13 +1144,29 @@ export default function VehicleDetailPage() {
                             )}
                         </div>
                         {canEdit ? (
-                            <textarea
+                            <>
+                                <div className="mb-2">
+                                    <AiActionButton
+                                        label="Ontario disclosure helper"
+                                        endpoint="/api/ai/disclosure"
+                                        body={{ vehicle_id: vehicle.id }}
+                                        onResult={(content) => {
+                                            setDisclosureDraft(content);
+                                            toast.success(
+                                                "Disclosure draft ready",
+                                                "Human confirm — click Save disclosure."
+                                            );
+                                        }}
+                                    />
+                                </div>
+                                <textarea
                                 rows={3}
                                 value={disclosureDraft}
                                 onChange={(e) => setDisclosureDraft(e.target.value)}
                                 placeholder="Ontario MVDA disclosure notes…"
                                 className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
                             />
+                            </>
                         ) : (
                             <p
                                 className={`whitespace-pre-line text-sm ${
@@ -1103,9 +1183,7 @@ export default function VehicleDetailPage() {
                     </div>
                     <div>
                         <p className="text-[11px] text-muted-foreground">Internal notes</p>
-                        <p className={`whitespace-pre-line text-sm ${vehicle.internal_notes?.trim() ? "text-foreground/85" : "text-muted-foreground"}`}>
-                            {vehicle.internal_notes?.trim() ? vehicle.internal_notes : "—"}
-                        </p>
+                        <RichTextDisplay value={vehicle.internal_notes} />
                     </div>
                     <div>
                         <p className="text-[11px] text-muted-foreground">YouTube</p>

@@ -3,7 +3,6 @@
 import { Suspense, useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-    Car,
     Mail,
     Lock,
     Eye,
@@ -16,6 +15,7 @@ import {
 } from "lucide-react";
 import { apiFetch } from "@/src/lib/fetch";
 import { toast } from "@/src/lib/toast";
+import { BrandLogo } from "@/src/components/BrandLogo";
 import { Button } from "@/src/components/ui/Button";
 import { Input } from "@/src/components/ui/Input";
 
@@ -134,14 +134,14 @@ function LoginForm() {
                 <div className="pointer-events-none absolute -top-32 -left-32 h-96 w-96 rounded-full bg-primary-500/40 blur-3xl" aria-hidden />
                 <div className="pointer-events-none absolute -bottom-32 -right-32 h-96 w-96 rounded-full bg-primary-700/40 blur-3xl" aria-hidden />
 
-                <div className="relative z-10 flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15 backdrop-blur">
-                        <Car className="h-6 w-6" />
-                    </div>
-                    <div>
-                        <p className="text-h3 text-white">Flash Fender</p>
-                        <p className="text-xs uppercase tracking-wider text-white/70">Dealer Management</p>
-                    </div>
+                <div className="relative z-10">
+                    <BrandLogo
+                        variant="stacked"
+                        size="md"
+                        href={null}
+                        onDark
+                        subtitle="Dealer Management"
+                    />
                 </div>
 
                 <div className="relative z-10 space-y-8">
@@ -179,15 +179,13 @@ function LoginForm() {
             <div className="flex min-h-dvh items-center justify-center px-5 py-12 sm:px-8">
                 <div className="w-full max-w-sm space-y-8">
                     {/* Mobile-only brand */}
-                    <div className="flex items-center gap-3 lg:hidden">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-                            <Car className="h-5 w-5" />
-                        </div>
-                        <div>
-                            <p className="text-h3 text-foreground">Flash Fender</p>
-                            <p className="text-xs text-muted-foreground">Dealer Management</p>
-                        </div>
-                    </div>
+                    <BrandLogo
+                        variant="lockup"
+                        size="md"
+                        href={null}
+                        className="lg:hidden"
+                        subtitle="Dealer Management"
+                    />
 
                     <div>
                         <h2 className="text-h1 text-foreground">Sign in</h2>

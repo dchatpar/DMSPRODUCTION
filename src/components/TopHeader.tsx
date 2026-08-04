@@ -11,13 +11,16 @@ import {
     LogOut,
     Search,
     Settings,
+    Sparkles,
     User,
 } from "lucide-react";
 import { apiFetch } from "@/src/lib/fetch";
 import { toast } from "@/src/lib/toast";
 import { Avatar } from "@/src/components/ui/Avatar";
+import { BrandLogo } from "@/src/components/BrandLogo";
 import { CommandPalette } from "@/src/components/CommandPalette";
 import { ThemeToggle } from "@/src/components/ThemeToggle";
+import { useFlashAi } from "@/src/components/ai/FlashAiProvider";
 import { cn } from "@/src/lib/utils";
 
 interface UserData {
@@ -100,6 +103,7 @@ function buildBreadcrumbs(pathname: string) {
 export function TopHeader() {
     const pathname = usePathname() ?? "";
     const router = useRouter();
+    const { openPanel } = useFlashAi();
     const [cmdOpen, setCmdOpen] = useState(false);
     const [notifOpen, setNotifOpen] = useState(false);
     const [menuOpen, setMenuOpen] = useState(false);
@@ -193,6 +197,9 @@ export function TopHeader() {
     return (
         <>
             <header className="sticky top-0 z-30 hidden h-16 shrink-0 items-center gap-3 border-b border-border bg-card px-4 lg:flex">
+                <div className="shrink-0 pr-2">
+                    <BrandLogo variant="lockup" size="sm" href="/dashboard" />
+                </div>
                 <nav aria-label="Breadcrumb" className="min-w-0 flex-1">
                     <ol className="flex items-center gap-1 text-sm text-muted-foreground">
                         {breadcrumbs.map((c, i) => (
@@ -220,6 +227,16 @@ export function TopHeader() {
                     <kbd className="rounded border border-border bg-card px-1.5 py-0.5 text-[10px] font-medium">
                         {isMac ? "⌘K" : "Ctrl+K"}
                     </kbd>
+                </button>
+
+                <button
+                    type="button"
+                    onClick={() => openPanel()}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-2.5 text-sm font-medium text-primary hover:bg-primary/10"
+                    aria-label="Ask Flash AI"
+                >
+                    <Sparkles className="h-4 w-4" />
+                    <span className="hidden sm:inline">Ask Flash AI</span>
                 </button>
 
                 <div className="relative" ref={notifRef}>

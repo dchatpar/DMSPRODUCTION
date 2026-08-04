@@ -37,6 +37,17 @@ import { MetricStrip } from "@/src/components/ui/MetricStrip";
 import { RowActionsMenu } from "@/src/components/ui/RowActionsMenu";
 import { FilterChip, FilterChipGroup, SegmentedControl } from "@/src/components/ui/FilterChip";
 import { SkeletonTable } from "@/src/components/ui/Skeleton";
+import { AiNotConfiguredBanner } from "@/src/components/ai/AiNotConfiguredBanner";
+import { apiFetch, ApiError } from "@/src/lib/fetch";
+import {
+    Drawer,
+    DrawerContent,
+    DrawerDescription,
+    DrawerFooter,
+    DrawerHeader,
+    DrawerTitle,
+} from "@/src/components/ui/drawer";
+import { VirtualList } from "@/src/components/ui/virtual-list";
 import {
     DataTable,
     DataTableBody,
@@ -158,6 +169,7 @@ export default function InventoryPage() {
     const [advDraft, setAdvDraft] = useState<AdvFilters>(EMPTY_ADV);
     const [advApplied, setAdvApplied] = useState<AdvFilters>(EMPTY_ADV);
     const [showAdvanced, setShowAdvanced] = useState(false);
+    const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
     const [agingOnly, setAgingOnly] = useState(false);
     const [sortBy, setSortBy] = useState<SortKey>("created_at");
     const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -181,6 +193,9 @@ export default function InventoryPage() {
             return "table";
         }
     });
+    const [nlQuery, setNlQuery] = useState("");
+    const [nlBusy, setNlBusy] = useState(false);
+    const [nlMissing, setNlMissing] = useState(false);
 
     const [showConfirmDialog, setShowConfirmDialog] = useState(false);
     const [confirmDialogData, setConfirmDialogData] = useState<{
@@ -357,6 +372,78 @@ export default function InventoryPage() {
         setAdvApplied(EMPTY_ADV);
         setAgingOnly(false);
         setCurrentPage(1);
+    };
+
+    const runNlSearch = async () => {
+        const q = nlQuery.trim() || searchTerm.trim();
+        if (!q) {
+            toast.error("Enter a natural-language search first");
+            return;
+        }
+        setNlBusy(true);
+        setNlMissing(false);
+        try {
+            const res = await apiFetch<{
+                data: {
+                    filters: {
+                        q?: string;
+                        make?: string;
+                        model?: string;
+                        status?: string;
+                        min_price?: number;
+                        max_price?: number;
+                        min_year?: number;
+                        max_year?: number;
+                        aging_only?: boolean;
+                        min_days_in_stock?: number;
+                    };
+                    explanation?: string | null;
+                };
+            }>("/api/ai/inventory-search", {
+                method: "POST",
+                body: { query: q },
+                silent: true,
+            });
+            const f = res.data.filters;
+            if (f.q) setSearchTerm(f.q);
+            if (f.status) {
+                setAgingOnly(false);
+                setStatusFilter(f.status);
+            }
+            if (f.aging_only || (f.min_days_in_stock && f.min_days_in_stock >= 45)) {
+                setAgingOnly(true);
+                setStatusFilter("Active");
+            }
+            setAdvDraft((prev) => ({
+                ...prev,
+                make: f.make || prev.make,
+                minYear: f.min_year != null ? String(f.min_year) : prev.minYear,
+                maxYear: f.max_year != null ? String(f.max_year) : prev.maxYear,
+                minPrice: f.min_price != null ? String(f.min_price) : prev.minPrice,
+                maxPrice: f.max_price != null ? String(f.max_price) : prev.maxPrice,
+            }));
+            setAdvApplied((prev) => ({
+                ...prev,
+                make: f.make || prev.make,
+                minYear: f.min_year != null ? String(f.min_year) : prev.minYear,
+                maxYear: f.max_year != null ? String(f.max_year) : prev.maxYear,
+                minPrice: f.min_price != null ? String(f.min_price) : prev.minPrice,
+                maxPrice: f.max_price != null ? String(f.max_price) : prev.maxPrice,
+            }));
+            setCurrentPage(1);
+            toast.success(
+                "Filters applied",
+                res.data.explanation || "Review results — Flash AI draft filters only."
+            );
+        } catch (err) {
+            if (err instanceof ApiError && err.status === 503) {
+                setNlMissing(true);
+                return;
+            }
+            toast.error(err instanceof Error ? err.message : "NL search failed");
+        } finally {
+            setNlBusy(false);
+        }
     };
 
     const advActiveCount = useMemo(() => {
@@ -874,6 +961,28 @@ export default function InventoryPage() {
                                 className="min-h-10 w-full rounded-md border border-border bg-background py-2 pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground shadow-none focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary"
                             />
                         </div>
+                        <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center">
+                            <input
+                                type="text"
+                                placeholder='Ask Flash AI: "red SUVs under 30k aging 60d+"'
+                                value={nlQuery}
+                                onChange={(e) => setNlQuery(e.target.value)}
+                                className="min-h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                            />
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={nlBusy}
+                                onClick={() => void runNlSearch()}
+                            >
+                                {nlBusy ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                    "Flash AI"
+                                )}
+                            </Button>
+                        </div>
+                        {nlMissing ? <AiNotConfiguredBanner compact className="w-full" /> : null}
                         <FilterChipGroup aria-label="Status filter">
                             {STATUS_TABS.map((tab) => (
                                 <FilterChip
@@ -892,8 +1001,23 @@ export default function InventoryPage() {
                         <Button
                             variant="outline"
                             size="sm"
+                            className="hidden md:inline-flex"
                             onClick={() => setShowAdvanced((v) => !v)}
                             aria-expanded={showAdvanced}
+                        >
+                            <SlidersHorizontal className="h-4 w-4" />
+                            Filters
+                            {advActiveCount > 0 ? (
+                                <span className="ml-1 rounded-full bg-primary/15 px-1.5 text-xs tabular-nums text-primary">
+                                    {advActiveCount}
+                                </span>
+                            ) : null}
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="md:hidden"
+                            onClick={() => setMobileFiltersOpen(true)}
                         >
                             <SlidersHorizontal className="h-4 w-4" />
                             Filters
@@ -920,7 +1044,7 @@ export default function InventoryPage() {
                         />
                     </div>
                     {showAdvanced && (
-                        <div className="grid gap-3 rounded-md border border-border bg-background p-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+                        <div className="hidden gap-3 rounded-md border border-border bg-background p-3 md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                             <label className="block space-y-1 text-xs">
                                 <span className="font-medium text-muted-foreground">Make</span>
                                 <input
@@ -979,7 +1103,7 @@ export default function InventoryPage() {
                                     <option value="Certified">Certified</option>
                                 </select>
                             </label>
-                            <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-3 xl:col-span-6">
+                            <div className="flex items-end gap-2 md:col-span-2 lg:col-span-3 xl:col-span-6">
                                 <Button size="sm" onClick={applyAdvanced}>
                                     Apply filters
                                 </Button>
@@ -989,6 +1113,109 @@ export default function InventoryPage() {
                             </div>
                         </div>
                     )}
+                    <Drawer open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
+                        <DrawerContent>
+                            <DrawerHeader>
+                                <DrawerTitle>Inventory filters</DrawerTitle>
+                                <DrawerDescription>
+                                    Narrow stock by make, year, price, and condition.
+                                </DrawerDescription>
+                            </DrawerHeader>
+                            <div className="grid gap-3 overflow-y-auto px-4 pb-2">
+                                <label className="block space-y-1 text-xs">
+                                    <span className="font-medium text-muted-foreground">Make</span>
+                                    <input
+                                        className="min-h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                                        value={advDraft.make}
+                                        onChange={(e) => setAdvDraft({ ...advDraft, make: e.target.value })}
+                                        placeholder="e.g. Toyota"
+                                    />
+                                </label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <label className="block space-y-1 text-xs">
+                                        <span className="font-medium text-muted-foreground">Year min</span>
+                                        <input
+                                            type="number"
+                                            className="min-h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                                            value={advDraft.minYear}
+                                            onChange={(e) =>
+                                                setAdvDraft({ ...advDraft, minYear: e.target.value })
+                                            }
+                                        />
+                                    </label>
+                                    <label className="block space-y-1 text-xs">
+                                        <span className="font-medium text-muted-foreground">Year max</span>
+                                        <input
+                                            type="number"
+                                            className="min-h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                                            value={advDraft.maxYear}
+                                            onChange={(e) =>
+                                                setAdvDraft({ ...advDraft, maxYear: e.target.value })
+                                            }
+                                        />
+                                    </label>
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <label className="block space-y-1 text-xs">
+                                        <span className="font-medium text-muted-foreground">Price min</span>
+                                        <input
+                                            type="number"
+                                            className="min-h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                                            value={advDraft.minPrice}
+                                            onChange={(e) =>
+                                                setAdvDraft({ ...advDraft, minPrice: e.target.value })
+                                            }
+                                        />
+                                    </label>
+                                    <label className="block space-y-1 text-xs">
+                                        <span className="font-medium text-muted-foreground">Price max</span>
+                                        <input
+                                            type="number"
+                                            className="min-h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                                            value={advDraft.maxPrice}
+                                            onChange={(e) =>
+                                                setAdvDraft({ ...advDraft, maxPrice: e.target.value })
+                                            }
+                                        />
+                                    </label>
+                                </div>
+                                <label className="block space-y-1 text-xs">
+                                    <span className="font-medium text-muted-foreground">Condition</span>
+                                    <select
+                                        className="min-h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                                        value={advDraft.condition}
+                                        onChange={(e) =>
+                                            setAdvDraft({ ...advDraft, condition: e.target.value })
+                                        }
+                                    >
+                                        <option value="">Any</option>
+                                        <option value="New">New</option>
+                                        <option value="Used">Used</option>
+                                        <option value="Certified">Certified</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <DrawerFooter>
+                                <Button
+                                    onClick={() => {
+                                        applyAdvanced();
+                                        setMobileFiltersOpen(false);
+                                    }}
+                                >
+                                    Apply filters
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    onClick={() => {
+                                        clearAdvanced();
+                                        setMobileFiltersOpen(false);
+                                    }}
+                                >
+                                    Clear
+                                </Button>
+                            </DrawerFooter>
+                        </DrawerContent>
+                    </Drawer>
                     {selectedIds.size > 0 && (
                         <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2">
                             <span className="text-sm font-medium tabular-nums">
@@ -1223,85 +1450,90 @@ export default function InventoryPage() {
                         ) : vehicles.length === 0 ? (
                             emptyBlock
                         ) : (
-                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                                {vehicles.map((vehicle) => {
+                            <VirtualList
+                                items={vehicles}
+                                estimateSize={340}
+                                height={Math.min(720, Math.max(360, vehicles.length * 120))}
+                                overscan={4}
+                                getItemKey={(v) => v.id}
+                                className="pr-1"
+                                renderItem={(vehicle) => {
                                     const estIncome = calculateGrossProfit(vehicle);
                                     const days = daysInStock(vehicle.created_at);
                                     const gallery = resolveGallery(vehicle.image_gallery, vehicle.images);
                                     return (
-                                        <div
-                                            key={vehicle.id}
-                                            className="overflow-hidden rounded-lg border border-border bg-background transition-colors hover:border-border/80 hover:bg-muted/20"
-                                        >
-                                            <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={selectedIds.has(vehicle.id)}
-                                                    onChange={() => toggleSelect(vehicle.id)}
-                                                    aria-label={`Select ${vehicle.vin}`}
-                                                    className="h-4 w-4 rounded border-border"
-                                                />
-                                                <span className="text-xs text-muted-foreground">Select</span>
-                                            </div>
-                                            <button
-                                                type="button"
-                                                onClick={() => handleViewDetails(vehicle)}
-                                                className="block aspect-[16/10] w-full overflow-hidden bg-muted"
-                                            >
-                                                <VehicleImage
-                                                    gallery={gallery}
-                                                    alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
-                                                    variant="card"
-                                                    showCount
-                                                    sizes="(max-width:640px) 100vw, 33vw"
-                                                />
-                                            </button>
-                                            <div className="space-y-3 p-4">
+                                        <div className="pb-3">
+                                            <div className="overflow-hidden rounded-lg border border-border bg-background transition-colors hover:border-border/80 hover:bg-muted/20">
+                                                <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedIds.has(vehicle.id)}
+                                                        onChange={() => toggleSelect(vehicle.id)}
+                                                        aria-label={`Select ${vehicle.vin}`}
+                                                        className="h-4 w-4 rounded border-border"
+                                                    />
+                                                    <span className="text-xs text-muted-foreground">Select</span>
+                                                </div>
                                                 <button
                                                     type="button"
                                                     onClick={() => handleViewDetails(vehicle)}
-                                                    className="w-full text-left"
+                                                    className="block aspect-[16/10] w-full overflow-hidden bg-muted"
                                                 >
-                                                    <p className="truncate font-medium text-foreground">
-                                                        {vehicle.year} {vehicle.make} {vehicle.model}
-                                                    </p>
-                                                    <p className={cn(dataTableVinClass, "truncate")}>
-                                                        {vehicle.stock_number ? `#${vehicle.stock_number} · ` : ""}
-                                                        {vehicle.vin}
-                                                    </p>
+                                                    <VehicleImage
+                                                        gallery={gallery}
+                                                        alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
+                                                        variant="card"
+                                                        showCount
+                                                        sizes="(max-width:640px) 100vw, 33vw"
+                                                    />
                                                 </button>
-                                                <div className="flex flex-wrap items-center gap-2">
-                                                    <StatusBadge status={vehicle.status} resource="vehicle" />
-                                                    <span className="text-xs tabular-nums text-muted-foreground">
-                                                        {days}d in stock
-                                                    </span>
-                                                </div>
-                                                <div className="flex items-baseline justify-between gap-2">
-                                                    <span className="text-sm font-semibold tabular-nums text-foreground">
-                                                        {formatRetailPlusTaxes(vehicle.retail_price)}
-                                                    </span>
-                                                    <span className="text-xs tabular-nums text-muted-foreground">
-                                                        Cost {formatCurrency(vehicle.purchase_price || 0)}
-                                                    </span>
-                                                </div>
-                                                <div className="flex items-baseline justify-between gap-2">
-                                                    <span
-                                                        className={cn(
-                                                            "text-xs font-medium tabular-nums",
-                                                            estIncome >= 0 ? "text-success" : "text-destructive"
-                                                        )}
+                                                <div className="space-y-3 p-4">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleViewDetails(vehicle)}
+                                                        className="w-full text-left"
                                                     >
-                                                        Est. {formatCurrency(estIncome)}
-                                                    </span>
-                                                </div>
-                                                <div className="flex justify-end border-t border-border pt-2">
-                                                    {rowActions(vehicle)}
+                                                        <p className="truncate font-medium text-foreground">
+                                                            {vehicle.year} {vehicle.make} {vehicle.model}
+                                                        </p>
+                                                        <p className={cn(dataTableVinClass, "truncate")}>
+                                                            {vehicle.stock_number ? `#${vehicle.stock_number} · ` : ""}
+                                                            {vehicle.vin}
+                                                        </p>
+                                                    </button>
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <StatusBadge status={vehicle.status} resource="vehicle" />
+                                                        <span className="text-xs tabular-nums text-muted-foreground">
+                                                            {days}d in stock
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-baseline justify-between gap-2">
+                                                        <span className="text-sm font-semibold tabular-nums text-foreground">
+                                                            {formatRetailPlusTaxes(vehicle.retail_price)}
+                                                        </span>
+                                                        <span className="text-xs tabular-nums text-muted-foreground">
+                                                            Cost {formatCurrency(vehicle.purchase_price || 0)}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-baseline justify-between gap-2">
+                                                        <span
+                                                            className={cn(
+                                                                "text-xs font-medium tabular-nums",
+                                                                estIncome >= 0 ? "text-success" : "text-destructive"
+                                                            )}
+                                                        >
+                                                            Est. {formatCurrency(estIncome)}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex justify-end border-t border-border pt-2">
+                                                        {rowActions(vehicle)}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
                                     );
-                                })}
-                            </div>
+                                }}
+                            />
                         )}
                     </div>
                 )}

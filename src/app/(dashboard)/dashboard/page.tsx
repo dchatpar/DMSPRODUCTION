@@ -16,6 +16,7 @@ import {
     ResponsiveContainer,
     Legend,
 } from "recharts";
+import { CHART_COLORS, chartTooltipStyle } from "@/src/components/ui/chart";
 import {
     Car,
     Users,
@@ -47,10 +48,9 @@ import { StatusBadge } from "@/src/components/ui/StatusBadge";
 import { Avatar } from "@/src/components/ui/Avatar";
 import { Skeleton } from "@/src/components/ui/Skeleton";
 import { EmptyState } from "@/src/components/ui/EmptyState";
+import { DeskBriefWidget } from "@/src/components/ai/DeskBriefWidget";
 import { Button } from "@/src/components/ui/Button";
 import { cn, formatCurrency, timeAgo } from "@/src/lib/utils";
-
-const CHART_COLORS = ["#2563EB", "#0D9488", "#EA580C", "#CA8A04", "#059669", "#475569", "#DC2626", "#0891B2"];
 
 // ── Types ────────────────────────────────────────────────────────────
 interface UserProfile {
@@ -428,6 +428,8 @@ function ManagerDashboard({
                 </CardContent>
             </Card>
 
+            <DeskBriefWidget />
+
             {/* Charts */}
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
                 <ChartCard title="Leads by Source" subtitle="Top channels">
@@ -439,7 +441,7 @@ function ManagerDashboard({
                                         <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="hsl(var(--border))" />
                                         <XAxis type="number" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} stroke="hsl(var(--border))" />
                                         <YAxis type="category" dataKey="name" width={70} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} stroke="hsl(var(--border))" />
-                                        <Tooltip contentStyle={{ backgroundColor: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} />
+                                        <Tooltip contentStyle={chartTooltipStyle} />
                                         <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                                             {leadsSourceData.map((_, idx) => (
                                                 <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
@@ -475,7 +477,7 @@ function ManagerDashboard({
                                             <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
                                         ))}
                                     </Pie>
-                                    <Tooltip contentStyle={{ backgroundColor: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} />
+                                    <Tooltip contentStyle={chartTooltipStyle} />
                                     <Legend wrapperStyle={{ fontSize: 11, color: "hsl(var(--muted-foreground))" }} />
                                 </PieChart>
                             </ResponsiveContainer>

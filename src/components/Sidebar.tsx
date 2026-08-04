@@ -45,6 +45,7 @@ import {
 import { apiFetch } from "@/src/lib/fetch";
 import { toast } from "@/src/lib/toast";
 import { Avatar } from "@/src/components/ui/Avatar";
+import { BrandLogo } from "@/src/components/BrandLogo";
 import { ThemeToggle } from "@/src/components/ThemeToggle";
 import { cn } from "@/src/lib/utils";
 import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
@@ -384,23 +385,17 @@ export default function Sidebar() {
     const renderNav = () => (
         <nav className="flex h-full flex-col" aria-label="Main">
             <div className="flex h-14 items-center gap-2.5 border-b border-border px-3.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-                    <Car className="h-3.5 w-3.5" aria-hidden />
-                </div>
                 <div className="min-w-0 flex-1">
-                    <p className="truncate text-base font-bold tracking-tight text-foreground">
-                        Flash Fender
-                    </p>
-                    {userData?.is_platform_admin && (
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
-                            AdaptUs Platform
-                        </p>
-                    )}
-                    {!userData?.is_platform_admin && userData?.dealership_name && (
-                        <p className="truncate text-[11px] text-muted-foreground">
-                            {userData.dealership_name}
-                        </p>
-                    )}
+                    <BrandLogo
+                        variant="lockup"
+                        size="sm"
+                        href="/dashboard"
+                        subtitle={
+                            userData?.is_platform_admin
+                                ? "AdaptUs Platform"
+                                : userData?.dealership_name ?? null
+                        }
+                    />
                 </div>
                 <button
                     type="button"
@@ -553,20 +548,17 @@ export default function Sidebar() {
                 >
                     <Menu className="h-5 w-5" />
                 </button>
-                <div className="flex min-w-0 items-center gap-2">
-                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
-                        <Car className="h-3.5 w-3.5" />
-                    </div>
-                    <div className="min-w-0">
-                        <p className="truncate text-sm font-bold tracking-tight text-foreground leading-tight">
-                            Flash Fender
-                        </p>
-                        {userData?.dealership_name && !userData?.is_platform_admin && (
-                            <p className="truncate text-[10px] text-muted-foreground leading-tight">
-                                {userData.dealership_name}
-                            </p>
-                        )}
-                    </div>
+                <div className="min-w-0 flex-1">
+                    <BrandLogo
+                        variant="lockup"
+                        size="sm"
+                        href="/dashboard"
+                        subtitle={
+                            userData?.dealership_name && !userData?.is_platform_admin
+                                ? userData.dealership_name
+                                : null
+                        }
+                    />
                 </div>
             </div>
 

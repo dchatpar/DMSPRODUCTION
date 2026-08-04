@@ -3,9 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Car } from "lucide-react";
 import { apiFetch } from "@/src/lib/fetch";
 import { toast } from "@/src/lib/toast";
+import { BrandLogo } from "@/src/components/BrandLogo";
 import { Button } from "@/src/components/ui/Button";
 import { Input } from "@/src/components/ui/Input";
 
@@ -92,15 +92,12 @@ export default function RegisterPage() {
   return (
     <div className="min-h-dvh bg-background px-5 py-10 text-foreground">
       <div className="mx-auto w-full max-w-2xl space-y-8">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <Car className="h-5 w-5" />
-          </div>
-          <div>
-            <p className="text-lg font-semibold">Flash Fender</p>
-            <p className="text-xs text-muted-foreground">Start your 7-day trial</p>
-          </div>
-        </div>
+        <BrandLogo
+          variant="lockup"
+          size="md"
+          href={null}
+          subtitle="Start your 7-day trial"
+        />
 
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Register your dealership</h1>

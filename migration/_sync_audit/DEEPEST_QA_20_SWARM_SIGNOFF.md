@@ -127,3 +127,17 @@ Non-P0 honesty retained: Resend/Meta missing → 503 / amber placeholders (no in
 ## Verdict
 
 **PASS — Phase B integrator.** All 20 lanes signed off; **10 P0s** live on tip `a2a4fd4d…`; floors **158 / 78 / 72**; `BUILD_ID`=`vWEb13642-Ekpt_B2eACz`; no invented secrets.
+
+---
+
+## Redeploy (2026-08-04 07:25 local)
+
+User-requested redeploy after Deepest QA tip `a2a4fd4d…`.
+
+| Field | Value |
+|-------|-------|
+| New tip | `c38819f8-36f2-46ba-813f-aefbabcc9b27` |
+| BUILD_ID | `80dV2uBx2OU2e4jNJKdkw` |
+| Floors | vehicles **158** / deals **78** / invoices **72** |
+| Signoff | `migration/_sync_audit/WAVE_MX_REDEPLOY_SIGNOFF.md` |
+

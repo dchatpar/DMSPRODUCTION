@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "@/src/lib/fetch";
 import { toast } from "@/src/lib/toast";
+import { BrandLogo } from "@/src/components/BrandLogo";
 import { Button } from "@/src/components/ui/Button";
 import { Input } from "@/src/components/ui/Input";
 
@@ -48,6 +49,7 @@ export default function ForgotPasswordPage() {
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background px-5 py-12 text-foreground">
       <div className="w-full max-w-sm space-y-6">
+        <BrandLogo variant="lockup" size="md" href="/login" />
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Forgot password</h1>
           <p className="mt-2 text-sm text-muted-foreground">

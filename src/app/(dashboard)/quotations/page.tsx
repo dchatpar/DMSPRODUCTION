@@ -24,6 +24,7 @@ import { cn } from "@/src/lib/utils";
 import { useRouter } from "next/navigation";
 import { buildQuotationShareText } from "@/src/lib/quotation-share";
 import { computePayment } from "@/src/lib/finance-calc";
+import { AiActionButton } from "@/src/components/ai/AiActionButton";
 
 interface Vehicle {
     id: string;
@@ -88,6 +89,9 @@ export default function QuotationsPage() {
     const [emailingId, setEmailingId] = useState<string | null>(null);
     const [vehicles, setVehicles] = useState<Vehicle[]>([]);
     const [customers, setCustomers] = useState<Customer[]>([]);
+    const [coachObjection, setCoachObjection] = useState("price too high");
+    const [coachQuoteId, setCoachQuoteId] = useState("");
+    const [coachDraft, setCoachDraft] = useState("");
     const [form, setForm] = useState({
         customer_id: "",
         vehicle_id: "",
@@ -333,6 +337,54 @@ export default function QuotationsPage() {
                 Email requires Resend (Settings → Integrations). Without it, Email returns 503 — no fake send.
                 Mark as Sent only updates status after you delivered the quote yourself.
             </p>
+
+            <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+                <p className="text-sm font-semibold text-foreground">Quote objection coach</p>
+                <div className="grid gap-3 md:grid-cols-2">
+                    <label className="text-sm space-y-1">
+                        <span className="text-muted-foreground">Quote (optional)</span>
+                        <select
+                            className="w-full rounded-lg border border-border bg-background px-3 py-2"
+                            value={coachQuoteId}
+                            onChange={(e) => setCoachQuoteId(e.target.value)}
+                        >
+                            <option value="">General coaching</option>
+                            {quotes.map((q) => (
+                                <option key={q.id} value={q.id}>
+                                    {q.quote_number || q.id.slice(0, 8)} · {q.status}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    <label className="text-sm space-y-1">
+                        <span className="text-muted-foreground">Objection</span>
+                        <input
+                            className="w-full rounded-lg border border-border bg-background px-3 py-2"
+                            value={coachObjection}
+                            onChange={(e) => setCoachObjection(e.target.value)}
+                            placeholder="price too high"
+                        />
+                    </label>
+                </div>
+                <AiActionButton
+                    label="Coach with Flash AI"
+                    endpoint="/api/ai/quote-coach"
+                    body={{
+                        quotation_id: coachQuoteId || undefined,
+                        objection: coachObjection,
+                    }}
+                    onResult={(content) => setCoachDraft(content)}
+                />
+                {coachDraft ? (
+                    <textarea
+                        readOnly
+                        rows={6}
+                        value={coachDraft}
+                        className="w-full rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm"
+                    />
+                ) : null}
+            </div>
+
             {showForm && (
                 <form
                     onSubmit={handleCreate}

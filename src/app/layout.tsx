@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Toaster } from "sonner";
 import { ApiErrorBridge } from "@/src/components/ApiErrorBridge";
 import { ESBUILD_NAME_HELPER } from "@/src/components/ThemeProvider";
+import { Toaster } from "@/src/components/ui/toaster";
 import "./globals.css";
+import "react-day-picker/style.css";
 
 const geistSans = Geist({
     variable: "--font-geist-sans",
@@ -19,10 +20,18 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
     title: {
-        default: "Flash Fender",
-        template: "%s · Flash Fender",
+        default: "FlashFender",
+        template: "%s · FlashFender",
     },
-    description: "Flash Fender Dealer Management System",
+    description: "FlashFender Dealer Management System",
+    icons: {
+        icon: [
+            { url: "/favicon.png", sizes: "32x32", type: "image/png" },
+            { url: "/brand/favicon-16.png", sizes: "16x16", type: "image/png" },
+            { url: "/brand/flashfender-mark.png", type: "image/png" },
+        ],
+        apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+    },
 };
 
 export default function RootLayout({
@@ -45,12 +54,7 @@ export default function RootLayout({
                 className={`${geistSans.className} min-h-dvh bg-background text-foreground antialiased`}
             >
                 {children}
-                <Toaster
-                    position="top-right"
-                    richColors
-                    closeButton
-                    duration={5000}
-                />
+                <Toaster />
                 <ApiErrorBridge />
             </body>
         </html>

@@ -32,6 +32,7 @@ import ConfirmDialog from "@/src/components/ConfirmDialog";
 import * as XLSX from "xlsx";
 import { apiFetch } from "@/src/lib/fetch";
 import { toast } from "@/src/lib/toast";
+import { DatePicker } from "@/src/components/ui/date-picker";
 import { PageHeader } from "@/src/components/ui/PageHeader";
 import { Button } from "@/src/components/ui/Button";
 
@@ -467,24 +468,16 @@ export default function TestDrivesPage() {
                                         <div>
                                             <label className="block text-xs font-medium text-muted-foreground mb-1.5">Scheduled Date Range</label>
                                             <div className="flex flex-col gap-2">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-xs text-muted-foreground/70 w-8">From</span>
-                                                    <input
-                                                        type="date"
-                                                        value={scheduledDateFrom}
-                                                        onChange={(e) => setScheduledDateFrom(e.target.value)}
-                                                        className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
-                                                    />
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-xs text-muted-foreground/70 w-8">To</span>
-                                                    <input
-                                                        type="date"
-                                                        value={scheduledDateTo}
-                                                        onChange={(e) => setScheduledDateTo(e.target.value)}
-                                                        className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
-                                                    />
-                                                </div>
+                                                <DatePicker
+                                                    label="From"
+                                                    value={scheduledDateFrom}
+                                                    onChange={setScheduledDateFrom}
+                                                />
+                                                <DatePicker
+                                                    label="To"
+                                                    value={scheduledDateTo}
+                                                    onChange={setScheduledDateTo}
+                                                />
                                             </div>
                                         </div>
                                         <div className="flex gap-2 pt-1">

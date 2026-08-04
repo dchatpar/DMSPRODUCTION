@@ -51,7 +51,10 @@ import { Input } from "@/src/components/ui/Input";
 import { Select } from "@/src/components/ui/Select";
 import { Textarea } from "@/src/components/ui/Textarea";
 import { Button } from "@/src/components/ui/Button";
+import { RichTextEditor } from "@/src/components/ui/rich-text-editor";
+import { AiActionButton } from "@/src/components/ai/AiActionButton";
 import { toast } from "@/src/lib/toast";
+import { vehicleIntakeCoreSchema } from "@/src/lib/schemas/vehicle-intake";
 import { cn } from "@/src/lib/utils";
 import { PENDING_VIN_SPECS_KEY } from "@/src/lib/pending-vin-specs";
 import {
@@ -576,11 +579,17 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
     }, [form.vin, form.id, mode]);
 
     const validateIdentity = (): string | null => {
-        const vin = form.vin.trim().toUpperCase();
-        if (vin.length < 11) return "Enter a valid VIN (at least 11 characters)";
-        if (!form.make.trim()) return "Select a make";
-        if (!form.model.trim()) return "Select a model";
-        if (!form.year) return "Enter a year";
+        const parsed = vehicleIntakeCoreSchema.safeParse({
+            vin: form.vin.trim().toUpperCase(),
+            year: form.year,
+            make: form.make,
+            model: form.model,
+            description: form.description,
+            internal_notes: form.internal_notes,
+        });
+        if (!parsed.success) {
+            return parsed.error.issues[0]?.message ?? "Invalid vehicle details";
+        }
         if (mode === "add" && duplicateHint) return "This VIN already exists — open it to edit instead";
         return null;
     };
@@ -1345,9 +1354,14 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
                                     </DndContext>
                                 )}
 
-                                <div>
-                                    <div className="mb-2 flex flex-wrap gap-2">
-                                        <span className="text-sm font-medium text-foreground">Description</span>
+                                    <RichTextEditor
+                                        label="Description"
+                                        value={form.description}
+                                        onChange={(html) => patchField("description", html)}
+                                        placeholder="Merchandising description for the lot / VDP…"
+                                        minHeight={140}
+                                    />
+                                    <div className="mb-2 flex flex-wrap items-center gap-2">
                                         {DESC_TEMPLATES.map((tpl, i) => (
                                             <button
                                                 key={i}
@@ -1358,14 +1372,17 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
                                                 Auto {i + 1}
                                             </button>
                                         ))}
+                                        {form.id ? (
+                                            <AiActionButton
+                                                label="Generate with Flash AI"
+                                                endpoint="/api/ai/description"
+                                                body={{ vehicle_id: form.id }}
+                                                onResult={(content) =>
+                                                    patchField("description", content)
+                                                }
+                                            />
+                                        ) : null}
                                     </div>
-                                    <Textarea
-                                        rows={4}
-                                        value={form.description}
-                                        onChange={(e) => patchField("description", e.target.value)}
-                                        placeholder="Merchandising description for the lot / VDP…"
-                                    />
-                                </div>
                             </>
                         )}
                     </>
@@ -1775,11 +1792,12 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
                                     : undefined
                             }
                         />
-                        <Textarea
+                        <RichTextEditor
                             label="Internal notes"
-                            rows={2}
                             value={form.internal_notes}
-                            onChange={(e) => patchField("internal_notes", e.target.value)}
+                            onChange={(html) => patchField("internal_notes", html)}
+                            placeholder="Desk-only notes…"
+                            minHeight={88}
                         />
                         <Input
                             label="YouTube URL"

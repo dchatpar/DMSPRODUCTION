@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { apiFetch } from "@/src/lib/fetch";
 import { toast } from "@/src/lib/toast";
+import { BrandLogo } from "@/src/components/BrandLogo";
 import { Button } from "@/src/components/ui/Button";
 import { Input } from "@/src/components/ui/Input";
 
@@ -88,6 +89,7 @@ function VerifyEmailForm() {
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background px-5 py-12 text-foreground">
       <div className="w-full max-w-sm space-y-6">
+        <BrandLogo variant="lockup" size="md" href="/login" />
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Verify your email</h1>
           <p className="mt-2 text-sm text-muted-foreground">

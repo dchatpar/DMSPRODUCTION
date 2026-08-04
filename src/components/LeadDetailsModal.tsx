@@ -16,6 +16,7 @@ import { StatusBadge } from "@/src/components/ui/StatusBadge";
 import { Button } from "@/src/components/ui/Button";
 import { Badge } from "@/src/components/ui/Badge";
 import { LeadEmailSequencePanel } from "@/src/components/LeadEmailSequencePanel";
+import { AiActionButton } from "@/src/components/ai/AiActionButton";
 import { apiFetch, ApiError } from "@/src/lib/fetch";
 import { toast } from "@/src/lib/toast";
 import {
@@ -101,6 +102,7 @@ export default function LeadDetailsModal({
     const router = useRouter();
     const [converting, setConverting] = useState(false);
     const [loggingCall, setLoggingCall] = useState(false);
+    const [followUpDraft, setFollowUpDraft] = useState("");
 
     const canEditLead = canEdit(userRole || "", userPermissions, "leads");
     const canDeal = canCreate(userRole || "", userPermissions, "deals");
@@ -344,6 +346,43 @@ export default function LeadDetailsModal({
 
                 <RecordNotes>{lead.notes}</RecordNotes>
                 <ActivityTimeline items={activityItems} title="Activity" />
+                <div className="space-y-2 rounded-lg border border-border p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Flash AI follow-up draft
+                    </p>
+                    <AiActionButton
+                        label="Draft email follow-up"
+                        endpoint="/api/ai/follow-up"
+                        body={{ lead_id: lead.id, channel: "email" }}
+                        onResult={(content, raw) => {
+                            const data = raw as {
+                                subject?: string | null;
+                                body?: string;
+                                casl_note?: string;
+                                sent?: boolean;
+                            };
+                            setFollowUpDraft(
+                                [
+                                    data.subject ? `Subject: ${data.subject}` : null,
+                                    data.body || content,
+                                    "",
+                                    data.casl_note ||
+                                        "Draft only — not sent. Review CASL before send.",
+                                ]
+                                    .filter(Boolean)
+                                    .join("\n")
+                            );
+                        }}
+                    />
+                    {followUpDraft ? (
+                        <textarea
+                            readOnly
+                            rows={8}
+                            value={followUpDraft}
+                            className="w-full rounded-md border border-border bg-muted/30 px-3 py-2 text-sm"
+                        />
+                    ) : null}
+                </div>
                 <LeadEmailSequencePanel
                     leadId={lead.id}
                     customerEmail={email}

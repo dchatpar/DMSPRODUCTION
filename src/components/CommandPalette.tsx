@@ -1,19 +1,28 @@
 "use client";
 
-// Command palette (⌘K / Ctrl+K) — search vehicles, customers, deals, leads.
+// Command palette (⌘K / Ctrl+K) — cmdk search over vehicles, customers, deals, leads.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
     Car,
     FileText,
     Loader2,
-    Search,
+    Sparkles,
     Users,
     UserRound,
 } from "lucide-react";
 import { apiFetch } from "@/src/lib/fetch";
-import { cn } from "@/src/lib/utils";
+import {
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandInput,
+    CommandItem,
+    CommandList,
+    CommandSeparator,
+} from "@/src/components/ui/command";
+import { useFlashAi } from "@/src/components/ai/FlashAiProvider";
 
 type ResultKind = "vehicle" | "customer" | "deal" | "lead";
 
@@ -30,10 +39,7 @@ interface CommandPaletteProps {
     onOpenChange: (open: boolean) => void;
 }
 
-const KIND_META: Record<
-    ResultKind,
-    { label: string; icon: typeof Car }
-> = {
+const KIND_META: Record<ResultKind, { label: string; icon: typeof Car }> = {
     vehicle: { label: "Vehicles", icon: Car },
     customer: { label: "Customers", icon: UserRound },
     deal: { label: "Deals", icon: FileText },
@@ -51,24 +57,22 @@ function vehicleLabel(v: Record<string, unknown>): string {
 
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     const router = useRouter();
-    const inputRef = useRef<HTMLInputElement>(null);
+    const { openPanel } = useFlashAi();
     const [query, setQuery] = useState("");
     const [loading, setLoading] = useState(false);
     const [results, setResults] = useState<SearchResult[]>([]);
-    const [activeIndex, setActiveIndex] = useState(0);
 
     const close = useCallback(() => {
         onOpenChange(false);
         setQuery("");
         setResults([]);
-        setActiveIndex(0);
     }, [onOpenChange]);
 
-    useEffect(() => {
-        if (!open) return;
-        const t = window.setTimeout(() => inputRef.current?.focus(), 20);
-        return () => window.clearTimeout(t);
-    }, [open]);
+    const askFlash = useCallback(() => {
+        const seed = query.trim().length >= 2 ? query.trim() : undefined;
+        close();
+        openPanel(seed);
+    }, [close, openPanel, query]);
 
     useEffect(() => {
         if (!open) return;
@@ -155,7 +159,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                 }
 
                 setResults(next);
-                setActiveIndex(0);
             } finally {
                 if (!cancelled) setLoading(false);
             }
@@ -167,18 +170,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         };
     }, [open, query]);
 
-    const grouped = useMemo(() => {
-        const order: ResultKind[] = ["vehicle", "customer", "deal", "lead"];
-        return order
-            .map((kind) => ({
-                kind,
-                items: results.filter((r) => r.kind === kind),
-            }))
-            .filter((g) => g.items.length > 0);
-    }, [results]);
-
-    const flat = useMemo(() => grouped.flatMap((g) => g.items), [grouped]);
-
     const select = useCallback(
         (item: SearchResult) => {
             close();
@@ -187,127 +178,93 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         [close, router]
     );
 
-    useEffect(() => {
-        if (!open) return;
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === "Escape") {
-                e.preventDefault();
-                close();
-                return;
-            }
-            if (e.key === "ArrowDown") {
-                e.preventDefault();
-                setActiveIndex((i) => Math.min(i + 1, Math.max(flat.length - 1, 0)));
-            }
-            if (e.key === "ArrowUp") {
-                e.preventDefault();
-                setActiveIndex((i) => Math.max(i - 1, 0));
-            }
-            if (e.key === "Enter" && flat[activeIndex]) {
-                e.preventDefault();
-                select(flat[activeIndex]);
-            }
-        };
-        window.addEventListener("keydown", onKey);
-        return () => window.removeEventListener("keydown", onKey);
-    }, [open, close, flat, activeIndex, select]);
-
     if (!open) return null;
 
-    let flatCursor = -1;
+    const order: ResultKind[] = ["vehicle", "customer", "deal", "lead"];
+    const grouped = order
+        .map((kind) => ({
+            kind,
+            items: results.filter((r) => r.kind === kind),
+        }))
+        .filter((g) => g.items.length > 0);
 
     return (
         <div className="fixed inset-0 z-[80]" role="dialog" aria-modal="true" aria-label="Command palette">
-            <div
+            <button
+                type="button"
                 className="absolute inset-0 bg-foreground/40 animate-fade-in"
                 onClick={close}
-                aria-hidden
+                aria-label="Close command palette"
             />
             <div className="absolute left-1/2 top-[12vh] w-[min(560px,calc(100vw-2rem))] -translate-x-1/2 animate-fade-in-down overflow-hidden rounded-xl border border-border bg-card shadow-xl">
-                <div className="flex items-center gap-2 border-b border-border px-3">
-                    <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-                    <input
-                        ref={inputRef}
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        placeholder="Search vehicles, customers, deals, leads…"
-                        className="h-12 w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
-                        aria-label="Search"
-                    />
-                    {loading ? (
-                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                    ) : (
-                        <kbd className="hidden rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground sm:inline">
-                            ESC
-                        </kbd>
-                    )}
-                </div>
-
-                <div className="max-h-[min(420px,55vh)] overflow-y-auto p-2">
-                    {query.trim().length < 2 && (
-                        <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-                            Type at least 2 characters to search.
-                        </p>
-                    )}
-                    {query.trim().length >= 2 && !loading && flat.length === 0 && (
-                        <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-                            No results for “{query.trim()}”.
-                        </p>
-                    )}
-                    {grouped.map((group) => {
-                        const Meta = KIND_META[group.kind];
-                        const Icon = Meta.icon;
-                        return (
-                            <div key={group.kind} className="mb-2">
-                                <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                                    {Meta.label}
-                                </p>
-                                <ul className="space-y-0.5">
-                                    {group.items.map((item) => {
-                                        flatCursor += 1;
-                                        const index = flatCursor;
-                                        const active = index === activeIndex;
-                                        return (
-                                            <li key={`${item.kind}-${item.id}`}>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => select(item)}
-                                                    onMouseEnter={() => setActiveIndex(index)}
-                                                    className={cn(
-                                                        "flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left",
-                                                        active
-                                                            ? "bg-primary-50 text-primary"
-                                                            : "text-foreground hover:bg-muted"
-                                                    )}
-                                                >
-                                                    <Icon
-                                                        className={cn(
-                                                            "h-4 w-4 shrink-0",
-                                                            active ? "text-primary" : "text-muted-foreground"
-                                                        )}
-                                                    />
-                                                    <span className="min-w-0 flex-1">
-                                                        <span className="block truncate text-sm font-medium">
-                                                            {item.title}
-                                                        </span>
-                                                        <span
-                                                            className={cn(
-                                                                "block truncate text-xs",
-                                                                active ? "text-primary/80" : "text-muted-foreground"
-                                                            )}
-                                                        >
-                                                            {item.subtitle}
-                                                        </span>
-                                                    </span>
-                                                </button>
-                                            </li>
-                                        );
-                                    })}
-                                </ul>
-                            </div>
-                        );
-                    })}
-                </div>
+                <Command shouldFilter={false} loop>
+                    <div className="relative">
+                        <CommandInput
+                            value={query}
+                            onValueChange={setQuery}
+                            placeholder="Search vehicles, customers, deals, leads…"
+                        />
+                        {loading ? (
+                            <Loader2 className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 animate-spin text-muted-foreground" />
+                        ) : (
+                            <kbd className="pointer-events-none absolute right-3 top-3.5 hidden rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground sm:inline">
+                                ESC
+                            </kbd>
+                        )}
+                    </div>
+                    <CommandList>
+                        <CommandGroup heading="Flash AI">
+                            <CommandItem
+                                value="ask-flash-ai"
+                                onSelect={() => askFlash()}
+                            >
+                                <Sparkles className="h-4 w-4 shrink-0 text-primary" />
+                                <span className="min-w-0 flex-1">
+                                    <span className="block truncate text-sm font-medium">
+                                        Ask Flash AI
+                                    </span>
+                                    <span className="block truncate text-xs text-muted-foreground">
+                                        Desk copilot · drafts never auto-send
+                                    </span>
+                                </span>
+                            </CommandItem>
+                        </CommandGroup>
+                        <CommandSeparator />
+                        {query.trim().length < 2 ? (
+                            <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+                                Type at least 2 characters to search records.
+                            </p>
+                        ) : null}
+                        {query.trim().length >= 2 && !loading ? (
+                            <CommandEmpty>No results for “{query.trim()}”.</CommandEmpty>
+                        ) : null}
+                        {grouped.map((group) => {
+                            const Meta = KIND_META[group.kind];
+                            const Icon = Meta.icon;
+                            return (
+                                <CommandGroup key={group.kind} heading={Meta.label}>
+                                    {group.items.map((item) => (
+                                        <CommandItem
+                                            key={`${item.kind}-${item.id}`}
+                                            value={`${item.kind}-${item.id}-${item.title}`}
+                                            onSelect={() => select(item)}
+                                        >
+                                            <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                            <span className="min-w-0 flex-1">
+                                                <span className="block truncate text-sm font-medium">
+                                                    {item.title}
+                                                </span>
+                                                <span className="block truncate text-xs text-muted-foreground">
+                                                    {item.subtitle}
+                                                </span>
+                                            </span>
+                                        </CommandItem>
+                                    ))}
+                                </CommandGroup>
+                            );
+                        })}
+                    </CommandList>
+                </Command>
             </div>
         </div>
     );
