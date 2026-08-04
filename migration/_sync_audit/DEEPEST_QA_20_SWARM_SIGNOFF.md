@@ -106,7 +106,7 @@ Non-P0 honesty retained: Resend/Meta missing → 503 / amber placeholders (no in
 
 | Field | Value |
 |-------|-------|
-| Commit SHA | _(filled after commit)_ |
+| Commit SHA | _f86155edef0da5661864bf88027fe62e1cf4bf4a_ |
 | Remote pushed | `production` → `https://github.com/dchatpar/DMSPRODUCTION.git` (`master`) |
 | `origin` (ManishKumar) | **unchanged** |
 | `.env*` | **not committed** |
