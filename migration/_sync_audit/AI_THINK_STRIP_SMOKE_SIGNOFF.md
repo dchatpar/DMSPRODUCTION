@@ -14,6 +14,7 @@
 **CF account:** `9269f304c042e14181e08bf8ee7aa4f9`  
 **App:** https://app.flashfender.com  
 **Site:** https://flashfender.com  
+**Git:** `production` @ `9771144619e63362554dea767e919e85b2900403` (origin ManishKumar untouched)  
 
 ## Floors
 
