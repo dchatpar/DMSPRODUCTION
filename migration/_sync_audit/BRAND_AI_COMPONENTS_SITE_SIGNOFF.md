@@ -43,6 +43,7 @@
 ## Git
 
 - **Remote:** `production` → https://github.com/dchatpar/DMSPRODUCTION.git (origin ManishKumar unchanged)
+- **Commit:** `f1c32b08cb71f3a7651339db01a1dc2e38eba629`
 - **No `.env*`** committed
 - Probe: `migration/_sync_audit/_brand_ai_smoke.py`
 
