@@ -1,6 +1,14 @@
 // app/api/vendors/[id]/route.ts
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
+import { assertOwnershipOrDeny, pickAllowed, requireDealershipAccess } from "@/src/lib/auth-helpers";
+
+const VENDOR_ALLOWED_FIELDS = [
+    "vendor_name", "contact_name", "contact_email", "contact_phone", "address",
+    "gst_number", "hst_number", "pst_number", "notes",
+    // Schema-actual columns used by the vendors table
+    "vendor_type", "phone", "city", "province", "postal_code",
+] as const;
 
 // GET single vendor
 export async function GET(
@@ -8,8 +16,15 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -24,15 +39,27 @@ export async function GET(
 
         const { id } = await params;
 
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        // Narrow fetch first to assert ownership
+        const { data: existing, error: existingError } = await supabase
+            .from("vendors")
+            .select("id, dealership_id")
+            .eq("id", id)
+            .single();
 
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Vendor not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
         }
 
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
+
+        // Re-fetch the full row
         const { data, error: dbError } = await supabase
             .from("vendors")
             .select("*")
@@ -64,8 +91,15 @@ export async function PATCH(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -79,16 +113,6 @@ export async function PATCH(
         }
 
         const { id } = await params;
-
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
-        }
-
         const payload = await req.json();
 
         if (!payload.vendor_name) {
@@ -98,21 +122,33 @@ export async function PATCH(
             );
         }
 
+        // Assert ownership before any write
+        const { data: existing, error: existingError } = await supabase
+            .from("vendors")
+            .select("id, dealership_id")
+            .eq("id", id)
+            .single();
+
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Vendor not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
+        }
+
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
+
+        // Whitelist the update payload and block dealership_id changes
+        const safePayload = pickAllowed(payload, VENDOR_ALLOWED_FIELDS);
+        delete (safePayload as any).dealership_id;
+
         const updateData: any = {
+            ...safePayload,
             vendor_type: payload.vendor_type || 'General',
-            vendor_name: payload.vendor_name,
-            address: payload.address || null,
-            phone: payload.phone || null,
-            gst_number: payload.gst_number || null,
-            hst_number: payload.hst_number || null,
-            pst_number: payload.pst_number || null,
-            city: payload.city || null,
-            province: payload.province || null,
-            postal_code: payload.postal_code || null,
-            contact_name: payload.contact_name || null,
-            contact_email: payload.contact_email || null,
-            contact_phone: payload.contact_phone || null,
-            notes: payload.notes || null,
         };
 
         const { data, error: dbError } = await supabase
@@ -147,8 +183,15 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -163,14 +206,25 @@ export async function DELETE(
 
         const { id } = await params;
 
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        // Assert ownership before any write
+        const { data: existing, error: existingError } = await supabase
+            .from("vendors")
+            .select("id, dealership_id")
+            .eq("id", id)
+            .single();
 
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Vendor not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
         }
+
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
 
         const { error: dbError } = await supabase
             .from("vendors")

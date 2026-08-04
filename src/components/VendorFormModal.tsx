@@ -9,8 +9,10 @@ import {
     Store,
     Phone,
     Mail,
-    MapPin,
+    MapPin
 } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
+import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
 
 interface Vendor {
     id?: string;
@@ -56,8 +58,10 @@ export default function VendorFormModal({
     mode,
     vendor,
     onClose,
-    onSuccess,
+    onSuccess
 }: VendorFormModalProps) {
+    useOverlayDismiss(onClose);
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -75,7 +79,7 @@ export default function VendorFormModal({
         contact_name: vendor?.contact_name || "",
         contact_email: vendor?.contact_email || "",
         contact_phone: vendor?.contact_phone || "",
-        notes: vendor?.notes || "",
+        notes: vendor?.notes || ""
     });
 
     const handleChange = (
@@ -94,8 +98,6 @@ export default function VendorFormModal({
             if (!formData.vendor_name.trim()) {
                 throw new Error("Vendor name is required");
             }
-
-            const token = localStorage.getItem("access_token");
             const url = vendor?.id ? `/api/vendors/${vendor.id}` : "/api/vendors";
             const method = vendor?.id ? "PATCH" : "POST";
 
@@ -113,16 +115,14 @@ export default function VendorFormModal({
                 contact_name: formData.contact_name || null,
                 contact_email: formData.contact_email || null,
                 contact_phone: formData.contact_phone || null,
-                notes: formData.notes || null,
+                notes: formData.notes || null
             };
 
             const response = await fetch(url, {
                 method,
                 headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify(payload),
+                    "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
             });
 
             if (!response.ok) {

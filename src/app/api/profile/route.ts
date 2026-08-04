@@ -127,13 +127,25 @@ export async function PATCH(req: NextRequest) {
                     upsert: true,
                 });
 
-            if (!uploadError) {
-                const { data: urlData } = supabase.storage
-                    .from("avatars")
-                    .getPublicUrl(fileName);
-
-                payload.avatar = urlData.publicUrl;
+            if (uploadError) {
+                const msg = uploadError.message || "Avatar upload failed";
+                const bucketMissing =
+                    /bucket|not found|does not exist/i.test(msg);
+                return NextResponse.json(
+                    {
+                        error: bucketMissing
+                            ? "Avatar storage is not configured (missing 'avatars' bucket). Contact an administrator."
+                            : `Avatar upload failed: ${msg}`,
+                    },
+                    { status: bucketMissing ? 503 : 500 }
+                );
             }
+
+            const { data: urlData } = supabase.storage
+                .from("avatars")
+                .getPublicUrl(fileName);
+
+            payload.avatar = urlData.publicUrl;
         }
 
         // Allowed fields for profile update

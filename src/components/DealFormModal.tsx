@@ -13,8 +13,10 @@ import {
     Car,
     Percent,
     Clock,
-    Building,
+    Building
 } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
+import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
 
 interface Vehicle {
     id: string;
@@ -48,21 +50,21 @@ interface Salesperson {
 
 interface Deal {
     id: string;
-    vehicle_id: string;
-    customer_id: string;
+    vehicle_id: string | null;
+    customer_id: string | null;
     deal_status: string;
     finance_term: number | null;
     interest_rate: number | null;
     down_payment: number;
     sale_price: number;
-    salesperson_id: string;
+    salesperson_id: string | null;
     finance_company: string | null;
     notes: string | null;
     deal_date: string;
     created_at: string;
-    vehicle: Vehicle;
-    customer: Customer;
-    salesperson: Salesperson;
+    vehicle: Vehicle | null;
+    customer: Customer | null;
+    salesperson: Salesperson | null;
 }
 
 interface DealFormModalProps {
@@ -76,8 +78,10 @@ export default function DealFormModal({
     mode,
     deal,
     onClose,
-    onSuccess,
+    onSuccess
 }: DealFormModalProps) {
+    useOverlayDismiss(onClose);
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [loadingData, setLoadingData] = useState(false);
@@ -95,7 +99,7 @@ export default function DealFormModal({
         finance_company: "",
         salesperson_id: "",
         notes: "",
-        deal_date: new Date().toISOString().split("T")[0],
+        deal_date: new Date().toISOString().split("T")[0]
     });
 
     useEffect(() => {
@@ -113,7 +117,7 @@ export default function DealFormModal({
                 finance_company: deal.finance_company || "",
                 salesperson_id: deal.salesperson_id || "",
                 notes: deal.notes || "",
-                deal_date: deal.deal_date || new Date().toISOString().split("T")[0],
+                deal_date: deal.deal_date || new Date().toISOString().split("T")[0]
             });
         }
     }, [mode, deal]);
@@ -121,29 +125,17 @@ export default function DealFormModal({
     const fetchDropdownData = async () => {
         setLoadingData(true);
         try {
-            const token = localStorage.getItem("access_token");
-            const headers = { Authorization: `Bearer ${token}` };
-
             // Fetch vehicles that are active (not sold)
-            const vehiclesRes = await fetch("/api/vehicles?status=Active", { headers });
-            if (vehiclesRes.ok) {
-                const vehiclesData = await vehiclesRes.json();
-                setVehicles(vehiclesData.data || []);
-            }
+            const vehiclesData = await apiFetch<any>("/api/vehicles?status=Active");
+            setVehicles(vehiclesData.data || []);
 
             // Fetch customers
-            const customersRes = await fetch("/api/customers?limit=100", { headers });
-            if (customersRes.ok) {
-                const customersData = await customersRes.json();
-                setCustomers(customersData.data || []);
-            }
+            const customersData = await apiFetch<any>("/api/customers?limit=100");
+            setCustomers(customersData.data || []);
 
             // Fetch users for salespeople
-            const usersRes = await fetch("/api/users?limit=100", { headers });
-            if (usersRes.ok) {
-                const usersData = await usersRes.json();
-                setSalespersons(usersData.data || []);
-            }
+            const usersData = await apiFetch<any>("/api/users?limit=100");
+            setSalespersons(usersData.data || []);
         } catch (err) {
             console.error("Error fetching dropdown data:", err);
         } finally {
@@ -157,7 +149,7 @@ export default function DealFormModal({
         const { name, value, type } = e.target;
         setFormData((prev) => ({
             ...prev,
-            [name]: type === "number" ? (value === "" ? "" : parseFloat(value) || 0) : value,
+            [name]: type === "number" ? (value === "" ? "" : parseFloat(value) || 0) : value
         }));
     };
 
@@ -167,7 +159,7 @@ export default function DealFormModal({
             setFormData((prev) => ({
                 ...prev,
                 vehicle_id: vehicleId,
-                sale_price: vehicle.retail_price || 0,
+                sale_price: vehicle.retail_price || 0
             }));
         }
     };
@@ -178,13 +170,12 @@ export default function DealFormModal({
         setError(null);
 
         try {
-            const token = localStorage.getItem("access_token");
             const url = mode === "add" ? "/api/deals" : `/api/deals/${deal?.id}`;
             const method = mode === "add" ? "POST" : "PATCH";
 
             const payload = {
                 vehicle_id: formData.vehicle_id,
-                customer_id: formData.customer_id,
+                customer_id: formData.customer_id || null,
                 deal_status: formData.deal_status,
                 sale_price: formData.sale_price,
                 down_payment: formData.down_payment || 0,
@@ -193,21 +184,16 @@ export default function DealFormModal({
                 finance_company: formData.finance_company || null,
                 salesperson_id: formData.salesperson_id || null,
                 notes: formData.notes || null,
-                deal_date: formData.deal_date,
+                deal_date: formData.deal_date
             };
 
-            const response = await fetch(url, {
+            const response = await apiFetch(url, {
                 method,
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify(payload),
+                body: payload
             });
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || `Failed to ${mode} deal`);
+            if (!response) {
+                throw new Error(`Failed to ${mode} deal`);
             }
 
             onSuccess();
@@ -295,7 +281,7 @@ export default function DealFormModal({
                             {/* Customer Selection */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                                    Customer *
+                                    Customer {mode === "add" ? "*" : ""}
                                 </label>
                                 <div className="relative">
                                     <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -304,10 +290,12 @@ export default function DealFormModal({
                                         value={formData.customer_id}
                                         onChange={handleChange}
                                         className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                                        required
+                                        required={mode === "add"}
                                         disabled={loadingData}
                                     >
-                                        <option value="">Select a customer</option>
+                                        <option value="">
+                                            {mode === "edit" ? "Unlinked / select customer" : "Select a customer"}
+                                        </option>
                                         {customers.map((customer) => (
                                             <option key={customer.id} value={customer.id}>
                                                 {customer.name} {customer.email ? `(${customer.email})` : ""}
@@ -398,12 +386,42 @@ export default function DealFormModal({
                                 </div>
                             </div>
 
-                            {/* Finance Details */}
-                            {(formData.deal_status === "Finance" || formData.deal_status === "Down Payment") && (
-                                <div className="grid grid-cols-3 gap-4">
+                            {/* Desking lite — always available; term/rate persist on save */}
+                            <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 space-y-3">
+                                <div className="flex items-center justify-between gap-2">
+                                    <p className="text-sm font-semibold text-indigo-900 flex items-center gap-2">
+                                        <Percent className="w-4 h-4" />
+                                        Desking
+                                    </p>
+                                    <p className="text-xs text-indigo-700">
+                                        Est. monthly{" "}
+                                        <span className="font-bold">
+                                            {(() => {
+                                                const term = parseInt(formData.finance_term, 10) || 0;
+                                                const rate = parseFloat(formData.interest_rate) || 0;
+                                                const principal = Math.max(
+                                                    0,
+                                                    (formData.sale_price || 0) - (formData.down_payment || 0)
+                                                );
+                                                if (!term || principal <= 0) return "—";
+                                                const r = rate / 100 / 12;
+                                                const pay =
+                                                    r <= 0
+                                                        ? principal / term
+                                                        : (principal * r * Math.pow(1 + r, term)) /
+                                                          (Math.pow(1 + r, term) - 1);
+                                                return new Intl.NumberFormat("en-CA", {
+                                                    style: "currency",
+                                                    currency: "CAD",
+                                                }).format(pay);
+                                            })()}
+                                        </span>
+                                    </p>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                                            Finance Term (months)
+                                            Term (months)
                                         </label>
                                         <div className="relative">
                                             <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -412,7 +430,7 @@ export default function DealFormModal({
                                                 name="finance_term"
                                                 value={formData.finance_term}
                                                 onChange={handleChange}
-                                                className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                                                 placeholder="e.g. 60"
                                                 min="1"
                                             />
@@ -420,7 +438,7 @@ export default function DealFormModal({
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                                            Interest Rate (%)
+                                            Rate (%)
                                         </label>
                                         <div className="relative">
                                             <Percent className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -429,7 +447,7 @@ export default function DealFormModal({
                                                 name="interest_rate"
                                                 value={formData.interest_rate}
                                                 onChange={handleChange}
-                                                className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                                                 placeholder="e.g. 5.99"
                                                 min="0"
                                                 max="100"
@@ -439,7 +457,7 @@ export default function DealFormModal({
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                                            Finance Company
+                                            Finance company
                                         </label>
                                         <div className="relative">
                                             <Building className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -448,13 +466,13 @@ export default function DealFormModal({
                                                 name="finance_company"
                                                 value={formData.finance_company}
                                                 onChange={handleChange}
-                                                className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                                                 placeholder="e.g. TD Auto Finance"
                                             />
                                         </div>
                                     </div>
                                 </div>
-                            )}
+                            </div>
 
                             {/* Salesperson */}
                             <div>

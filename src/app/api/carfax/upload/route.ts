@@ -47,8 +47,17 @@ export async function POST(req: NextRequest) {
             });
 
         if (uploadError) {
-            console.error("Storage upload error:", uploadError);
-            throw uploadError;
+            console.error("Storage upload error:", uploadError.message);
+            const msg = uploadError.message || "Upload failed";
+            const bucketMissing = /bucket|not found|does not exist/i.test(msg);
+            return NextResponse.json(
+                {
+                    error: bucketMissing
+                        ? "CARFAX storage is not configured (missing 'carfax-reports' bucket). Contact an administrator."
+                        : `Failed to upload CARFAX report: ${msg}`,
+                },
+                { status: bucketMissing ? 503 : 500 }
+            );
         }
 
         // Get public URL

@@ -9,8 +9,9 @@ import {
     Loader2,
     AlertCircle,
     RefreshCw,
-    Zap,
+    Zap
 } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
 
 interface Subscription {
     id: string;
@@ -51,15 +52,8 @@ export default function SubscriptionPage() {
             setLoading(true);
             setError(null);
 
-            const token = localStorage.getItem("access_token");
-            if (!token) {
-                window.location.href = "/login";
-                return;
-            }
-
             // First get user to find their dealership
             const meResponse = await fetch("/api/me", {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!meResponse.ok) {
@@ -76,7 +70,6 @@ export default function SubscriptionPage() {
 
             // Get dealership details
             const dealershipResponse = await fetch(`/api/dealerships/${dealershipId}`, {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (dealershipResponse.ok) {
@@ -97,14 +90,14 @@ export default function SubscriptionPage() {
         return new Date(dateString).toLocaleDateString("en-US", {
             year: "numeric",
             month: "long",
-            day: "numeric",
+            day: "numeric"
         });
     };
 
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat("en-US", {
             style: "currency",
-            currency: "USD",
+            currency: "USD"
         }).format(amount);
     };
 
@@ -114,7 +107,7 @@ export default function SubscriptionPage() {
             Trial: { bg: "bg-blue-100", text: "text-blue-700", icon: Zap },
             PastDue: { bg: "bg-amber-100", text: "text-amber-700", icon: AlertCircle },
             Suspended: { bg: "bg-red-100", text: "text-red-700", icon: XCircle },
-            Cancelled: { bg: "bg-gray-100", text: "text-gray-700", icon: XCircle },
+            Cancelled: { bg: "bg-gray-100", text: "text-gray-700", icon: XCircle }
         };
         const style = styles[status] || { bg: "bg-gray-100", text: "text-gray-700", icon: XCircle };
         const Icon = style.icon;
@@ -308,14 +301,14 @@ export default function SubscriptionPage() {
                                 <h3 className="text-sm font-medium text-gray-500">Billing Information</h3>
                             </div>
                             <p className="text-sm text-gray-600 mb-4">
-                                Manage your payment methods and billing address.
+                                Self-serve payment methods are not available yet. View plan details here and contact AdaptUs to change billing.
                             </p>
                             <a
                                 href="/settings/billing"
                                 className="inline-flex items-center justify-center gap-2 w-full px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
                             >
                                 <CreditCard className="w-4 h-4" />
-                                Manage Billing
+                                Billing details
                             </a>
                         </div>
 
@@ -325,9 +318,20 @@ export default function SubscriptionPage() {
                             <p className="text-sm text-amber-700 mb-4">
                                 Contact our support team for assistance with your subscription.
                             </p>
-                            <button className="w-full px-4 py-2 text-sm font-medium text-amber-800 bg-amber-100 rounded-lg hover:bg-amber-200 transition-colors">
-                                Contact Support
+                            <button
+                                type="button"
+                                disabled
+                                title="Self-serve plan changes are not available yet"
+                                className="w-full px-4 py-2 text-sm font-medium text-amber-800/60 bg-amber-100/60 rounded-lg cursor-not-allowed"
+                            >
+                                Contact Support (coming soon)
                             </button>
+                            <a
+                                href="mailto:support@flashfender.com?subject=Subscription%20help"
+                                className="mt-2 block w-full text-center text-sm text-amber-800 underline"
+                            >
+                                Email support@flashfender.com
+                            </a>
                         </div>
                     </div>
                 </div>

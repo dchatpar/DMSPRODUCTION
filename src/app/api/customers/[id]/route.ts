@@ -1,6 +1,28 @@
 // app/api/customers/[id]/route.ts
-import { createTokenClient } from "@/src/lib/server-token";
+//
+// P1-1 + P1-3 fix:
+//   - `pickSupabaseClient` so platform admins get service-role (cross-
+//     dealership reads/writes), everyone else gets RLS-scoped client.
+//   - Perm checks move AFTER the 404/ownership check (P1-3): we don't
+//     leak existence to a Salesperson who guessed an id.
+//   - F-08 fix: PUT now uses the same field whitelist as PATCH (was
+//     previously accepting any field).
 import { NextRequest, NextResponse } from "next/server";
+import {
+    assertOwnershipOrDeny,
+    pickAllowed,
+    pickSupabaseClient,
+    requireDealershipAccess,
+} from "@/src/lib/auth-helpers";
+import { applyConsentTimestamps } from "@/src/lib/customer-consent";
+import { clientIp } from "@/src/lib/trial";
+
+const CUSTOMER_ALLOWED_FIELDS = [
+    "name", "email", "phone", "address", "city", "province", "postal_code",
+    "status", "source", "notes", "company", "assigned_to",
+    "marketing_consent", "sms_consent",
+    "marketing_consent_at", "sms_consent_at",
+] as const;
 
 // GET single customer
 export async function GET(
@@ -8,35 +30,21 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
-
-        try {
-            supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
-                return NextResponse.json(
-                    { error: "Authorization token required" },
-                    { status: 401 }
-                );
-            }
-            throw error;
-        }
-
-        // Verify user is authenticated
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
             return NextResponse.json(
-                { error: "Invalid or expired token" },
+                { error: auth.error || "Unauthorized" },
                 { status: 401 }
             );
         }
 
+        const { supabase } = pickSupabaseClient(req, auth.profile);
         const { id } = await params;
 
+        // Narrow fetch first to assert ownership without leaking other columns
         const { data, error: dbError } = await supabase
             .from("customers")
-            .select("*")
+            .select("id, dealership_id, assigned_to")
             .eq("id", id)
             .single();
 
@@ -50,7 +58,17 @@ export async function GET(
             throw dbError;
         }
 
-        return NextResponse.json({ data });
+        const deny = assertOwnershipOrDeny(data, auth.profile);
+        if (deny) return deny;
+
+        // Re-fetch the full row now that ownership is verified
+        const { data: full } = await supabase
+            .from("customers")
+            .select("*")
+            .eq("id", id)
+            .single();
+
+        return NextResponse.json({ data: full });
     } catch (error: any) {
         console.error("Error fetching customer:", error);
         return NextResponse.json(
@@ -66,48 +84,56 @@ export async function PUT(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
-
-        try {
-            supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
-                return NextResponse.json(
-                    { error: "Authorization token required" },
-                    { status: 401 }
-                );
-            }
-            throw error;
-        }
-
-        // Verify user is authenticated
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
             return NextResponse.json(
-                { error: "Invalid or expired token" },
+                { error: auth.error || "Unauthorized" },
                 { status: 401 }
             );
         }
 
+        const { supabase } = pickSupabaseClient(req, auth.profile);
         const { id } = await params;
         const payload = await req.json();
 
-        // Validate required fields for full update
-        const required = ["name"];
-        for (const field of required) {
-            if (!payload[field]) {
+        // P1-3: ownership check first.
+        const { data: existing, error: existingError } = await supabase
+            .from("customers")
+            .select("id, dealership_id, assigned_to, marketing_consent, sms_consent, marketing_consent_at, sms_consent_at")
+            .eq("id", id)
+            .single();
+
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
                 return NextResponse.json(
-                    { error: `Missing required field: ${field}` },
-                    { status: 400 }
+                    { error: "Customer not found" },
+                    { status: 404 }
                 );
             }
+            throw existingError;
+        }
+
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
+
+        // F-08: PUT now applies the same whitelist as PATCH (was: blind
+        // accept of the entire payload). dealership_id is dropped even
+        // if sent.
+        let safePayload = pickAllowed(payload, CUSTOMER_ALLOWED_FIELDS) as Record<string, unknown>;
+        delete safePayload.dealership_id;
+        safePayload = applyConsentTimestamps(safePayload, existing, { ip: clientIp(req) });
+
+        if (Object.keys(safePayload).length === 0) {
+            return NextResponse.json(
+                { error: "No valid fields to update" },
+                { status: 400 }
+            );
         }
 
         // Validate email format if provided
-        if (payload.email) {
+        if (safePayload.email) {
             const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(payload.email)) {
+            if (!emailRegex.test(safePayload.email as string)) {
                 return NextResponse.json(
                     { error: "Invalid email format" },
                     { status: 400 }
@@ -115,12 +141,32 @@ export async function PUT(
             }
         }
 
-        const { data, error: dbError } = await supabase
+        // "name" required for PUT semantics; verify after whitelist
+        if (!safePayload.name) {
+            return NextResponse.json(
+                { error: "Missing required field: name" },
+                { status: 400 }
+            );
+        }
+
+        let { data, error: dbError } = await supabase
             .from("customers")
-            .update(payload)
+            .update(safePayload)
             .eq("id", id)
             .select()
             .single();
+
+        if (dbError && /marketing_consent_ip|sms_consent_ip|column/i.test(dbError.message || "")) {
+            const { marketing_consent_ip: _m, sms_consent_ip: _s, ...withoutIp } = safePayload;
+            const retry = await supabase
+                .from("customers")
+                .update(withoutIp)
+                .eq("id", id)
+                .select()
+                .single();
+            data = retry.data;
+            dbError = retry.error;
+        }
 
         if (dbError) {
             if (dbError.code === "PGRST116") {
@@ -148,38 +194,44 @@ export async function PATCH(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
-
-        try {
-            supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
-                return NextResponse.json(
-                    { error: "Authorization token required" },
-                    { status: 401 }
-                );
-            }
-            throw error;
-        }
-
-        // Verify user is authenticated
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
             return NextResponse.json(
-                { error: "Invalid or expired token" },
+                { error: auth.error || "Unauthorized" },
                 { status: 401 }
             );
         }
 
+        const { supabase } = pickSupabaseClient(req, auth.profile);
         const { id } = await params;
         const payload = await req.json();
 
-        // Allowed fields for update (removed avatar since it doesn't exist)
-        const allowedFields = ["name", "email", "phone", "company", "address", "city", "state", "zip", "status", "notes"];
-        const updateFields = Object.keys(payload).filter(key => allowedFields.includes(key));
+        // P1-3: ownership check first.
+        const { data: existing, error: existingError } = await supabase
+            .from("customers")
+            .select("id, dealership_id, assigned_to, marketing_consent, sms_consent, marketing_consent_at, sms_consent_at")
+            .eq("id", id)
+            .single();
 
-        if (updateFields.length === 0) {
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Customer not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
+        }
+
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
+
+        // Whitelist the update payload and block dealership_id changes
+        let safePayload = pickAllowed(payload, CUSTOMER_ALLOWED_FIELDS) as Record<string, unknown>;
+        delete safePayload.dealership_id;
+        safePayload = applyConsentTimestamps(safePayload, existing, { ip: clientIp(req) });
+
+        if (Object.keys(safePayload).length === 0) {
             return NextResponse.json(
                 { error: "No valid fields to update" },
                 { status: 400 }
@@ -187,9 +239,9 @@ export async function PATCH(
         }
 
         // Validate email format if provided
-        if (payload.email) {
+        if (safePayload.email) {
             const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(payload.email)) {
+            if (!emailRegex.test(safePayload.email as string)) {
                 return NextResponse.json(
                     { error: "Invalid email format" },
                     { status: 400 }
@@ -197,12 +249,24 @@ export async function PATCH(
             }
         }
 
-        const { data, error: dbError } = await supabase
+        let { data, error: dbError } = await supabase
             .from("customers")
-            .update(payload)
+            .update(safePayload)
             .eq("id", id)
             .select()
             .single();
+
+        if (dbError && /marketing_consent_ip|sms_consent_ip|column/i.test(dbError.message || "")) {
+            const { marketing_consent_ip: _m, sms_consent_ip: _s, ...withoutIp } = safePayload;
+            const retry = await supabase
+                .from("customers")
+                .update(withoutIp)
+                .eq("id", id)
+                .select()
+                .single();
+            data = retry.data;
+            dbError = retry.error;
+        }
 
         if (dbError) {
             if (dbError.code === "PGRST116") {
@@ -230,46 +294,42 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
-
-        try {
-            supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
-                return NextResponse.json(
-                    { error: "Authorization token required" },
-                    { status: 401 }
-                );
-            }
-            throw error;
-        }
-
-        // Verify user is authenticated
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
             return NextResponse.json(
-                { error: "Invalid or expired token" },
+                { error: auth.error || "Unauthorized" },
                 { status: 401 }
             );
         }
 
-        // Get current user's permissions
-        const { data: currentUser } = await supabase
-            .from("users")
-            .select("role, dealership_id, is_platform_admin, user_permissions")
-            .eq("id", user.id)
+        const { supabase } = pickSupabaseClient(req, auth.profile);
+        const { id } = await params;
+
+        // P1-3: ownership check first. Permission gate comes after.
+        const { data: existing, error: existingError } = await supabase
+            .from("customers")
+            .select("id, dealership_id, assigned_to")
+            .eq("id", id)
             .single();
 
-        if (!currentUser) {
-            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Customer not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
         }
 
-        const userRole = currentUser.role;
-        const userPerms = currentUser.user_permissions || [];
-        const isPlatformAdmin = currentUser.is_platform_admin;
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
 
-        // Check customers:delete permission
+        // Permission gate after ownership.
+        const userRole = auth.profile.role;
+        const userPerms = (auth.profile as any).user_permissions || [];
+        const isPlatformAdmin = auth.profile.is_platform_admin;
+
         const canDelete = isPlatformAdmin ||
             userRole === "Admin" ||
             userRole === "Manager" ||
@@ -282,8 +342,6 @@ export async function DELETE(
                 { status: 403 }
             );
         }
-
-        const { id } = await params;
 
         // Check if customer has any related records (sales, leads, etc.)
         const { count: salesCount, error: salesError } = await supabase

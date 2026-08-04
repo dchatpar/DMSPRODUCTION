@@ -1,13 +1,15 @@
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
+import { getCarfaxEnv, fetchCarfaxReportForVin } from "@/src/lib/carfax";
+import { requireDealershipAccess } from "@/src/lib/auth-helpers";
 
 export async function GET(req: NextRequest) {
     try {
         let supabase;
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json({ error: "Authorization token required" }, { status: 401 });
             }
             throw error;
@@ -16,6 +18,7 @@ export async function GET(req: NextRequest) {
         const url = new URL(req.url);
         const vehicleId = url.searchParams.get("vehicle_id");
         const vin = url.searchParams.get("vin");
+        const includeStatus = url.searchParams.get("status") === "1";
 
         let query = supabase
             .from("carfax_reports")
@@ -30,41 +33,125 @@ export async function GET(req: NextRequest) {
         }
 
         const { data, error } = await query;
-
         if (error) throw error;
 
-        return Response.json({ data });
+        const body: Record<string, unknown> = { data };
+        if (includeStatus) {
+            body.env = getCarfaxEnv();
+        }
+        return NextResponse.json(body);
     } catch (error) {
         console.error("Error fetching Carfax reports:", error);
-        return Response.json({ error: "Failed to fetch reports" }, { status: 500 });
+        return NextResponse.json({ error: "Failed to fetch reports" }, { status: 500 });
     }
 }
 
+/**
+ * Attach or create a carfax_reports row.
+ * Body: { vehicle_id?, vin, report_url?, action?: "attach" | "fetch" }
+ * action=fetch uses partner env when present; never invents keys.
+ */
 export async function POST(req: NextRequest) {
     try {
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
+
         let supabase;
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json({ error: "Authorization token required" }, { status: 401 });
             }
             throw error;
         }
 
         const body = await req.json();
+        const vin = typeof body.vin === "string" ? body.vin.trim().toUpperCase() : "";
+        const vehicleId = typeof body.vehicle_id === "string" ? body.vehicle_id : null;
+        const action = body.action === "fetch" ? "fetch" : "attach";
+
+        if (!vin) {
+            return NextResponse.json({ error: "vin is required" }, { status: 400 });
+        }
+
+        let reportUrl: string | null =
+            typeof body.report_url === "string" && body.report_url.trim()
+                ? body.report_url.trim()
+                : null;
+        let reportData: Record<string, unknown> | null = null;
+        let ownershipCount: number | null = null;
+        let accidentCount: number | null = null;
+        let titleStatus: string | null = null;
+        let source: string = "manual";
+
+        if (action === "fetch") {
+            const fetched = await fetchCarfaxReportForVin(vin);
+            if (!fetched.ok) {
+                const status = fetched.code === "missing_env" ? 503 : 400;
+                return NextResponse.json(
+                    {
+                        error: fetched.message,
+                        code: fetched.code,
+                        missing: fetched.missing || [],
+                        env: getCarfaxEnv(),
+                    },
+                    { status }
+                );
+            }
+            reportUrl = fetched.report_url;
+            source = fetched.source;
+            reportData = fetched.report_data || null;
+            ownershipCount = fetched.ownership_count ?? null;
+            accidentCount = fetched.accident_count ?? null;
+            titleStatus = fetched.title_status ?? null;
+        }
+
+        if (!reportUrl) {
+            return NextResponse.json(
+                { error: "report_url is required when action is attach" },
+                { status: 400 }
+            );
+        }
+
+        const row = {
+            vehicle_id: vehicleId,
+            vin,
+            report_url: reportUrl,
+            report_data: reportData
+                ? { ...reportData, _source: source }
+                : { _source: source },
+            ownership_count: ownershipCount,
+            accident_count: accidentCount,
+            title_status: titleStatus,
+            last_updated: new Date().toISOString(),
+            dealership_id: auth.profile.dealership_id || null,
+        };
 
         const { data, error } = await supabase
             .from("carfax_reports")
-            .insert(body)
+            .insert(row)
             .select()
             .single();
 
         if (error) throw error;
 
-        return Response.json({ data });
+        // Mirror primary URL onto vehicle when we have an id
+        if (vehicleId) {
+            await supabase
+                .from("vehicles")
+                .update({ carfax_report_url: reportUrl })
+                .eq("id", vehicleId);
+        }
+
+        return NextResponse.json({ data, env: getCarfaxEnv() }, { status: 201 });
     } catch (error) {
         console.error("Error creating Carfax report:", error);
-        return Response.json({ error: "Failed to create report" }, { status: 500 });
+        return NextResponse.json({ error: "Failed to create report" }, { status: 500 });
     }
 }

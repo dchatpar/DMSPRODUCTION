@@ -8,7 +8,6 @@ import {
     CreditCard,
     Globe,
     Shield,
-    Bell,
     Mail,
     Database,
     Loader2,
@@ -16,8 +15,9 @@ import {
     CheckCircle,
     RefreshCw,
     Save,
-    Key,
+    Key
 } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
 
 interface PlatformStats {
     total_dealerships: number;
@@ -49,7 +49,7 @@ export default function PlatformSettingsPage() {
         registration_enabled: true,
         require_email_verification: true,
         default_plan: "Basic",
-        trial_days: 14,
+        trial_days: 14
     });
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -65,15 +65,8 @@ export default function PlatformSettingsPage() {
             setLoading(true);
             setError(null);
 
-            const token = localStorage.getItem("access_token");
-            if (!token) {
-                window.location.href = "/login";
-                return;
-            }
-
             // Check if user is platform admin
             const meResponse = await fetch("/api/me", {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!meResponse.ok) {
@@ -89,7 +82,6 @@ export default function PlatformSettingsPage() {
 
             // Fetch platform stats from dealerships API
             const dealershipsResponse = await fetch("/api/dealerships", {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (dealershipsResponse.ok) {
@@ -106,7 +98,7 @@ export default function PlatformSettingsPage() {
                     total_revenue: dealerships.reduce((sum: number, d: any) => {
                         const price = d.subscription?.plan_price || 0;
                         return sum + price;
-                    }, 0),
+                    }, 0)
                 });
             }
         } catch (err: any) {
@@ -125,14 +117,13 @@ export default function PlatformSettingsPage() {
         setError(null);
         setSuccess(null);
         setSaving(true);
-
         try {
-            // Simulate API call
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-            setSuccess("Platform settings saved successfully");
-        } catch (err: any) {
-            console.error("Error saving settings:", err);
-            setError(err.message || "Failed to save settings");
+            // No platform-settings persistence API yet — do not fake success.
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            setError(
+                "Platform settings are not persisted yet. Contact AdaptUs ops to change maintenance mode, trial days, or branding."
+            );
+            setSuccess(null);
         } finally {
             setSaving(false);
         }
@@ -141,7 +132,7 @@ export default function PlatformSettingsPage() {
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat("en-US", {
             style: "currency",
-            currency: "USD",
+            currency: "USD"
         }).format(amount);
     };
 
@@ -448,7 +439,7 @@ export default function PlatformSettingsPage() {
                                     Manage Dealerships
                                 </a>
                                 <a
-                                    href="/settings/subscription"
+                                    href="/platform/subscriptions"
                                     className="flex items-center gap-3 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
                                 >
                                     <CreditCard className="w-4 h-4" />
@@ -468,18 +459,24 @@ export default function PlatformSettingsPage() {
                         <div className="bg-white rounded-xl border border-gray-200 p-6">
                             <h3 className="text-sm font-medium text-gray-500 mb-4">Security</h3>
                             <div className="space-y-3">
-                                <button className="flex items-center justify-between w-full text-sm">
-                                    <span className="text-gray-600">API Keys</span>
+                                <a
+                                    href="/settings/integrations"
+                                    className="flex items-center justify-between w-full text-sm hover:text-blue-600"
+                                >
+                                    <span className="text-gray-600">API Keys / Integrations</span>
                                     <Key className="w-4 h-4 text-gray-400" />
-                                </button>
-                                <button className="flex items-center justify-between w-full text-sm">
-                                    <span className="text-gray-600">Audit Logs</span>
+                                </a>
+                                <div
+                                    className="flex items-center justify-between w-full text-sm opacity-60"
+                                    title="Coming soon"
+                                >
+                                    <span className="text-gray-600">Audit Logs (coming soon)</span>
                                     <Shield className="w-4 h-4 text-gray-400" />
-                                </button>
-                                <button className="flex items-center justify-between w-full text-sm">
-                                    <span className="text-gray-600">Notifications</span>
-                                    <Bell className="w-4 h-4 text-gray-400" />
-                                </button>
+                                </div>
+                                <p className="text-xs text-gray-400 pt-1">
+                                    In-app notification delivery settings are not configurable yet;
+                                    the header bell shows overdue invoices, due follow-ups, and tasks.
+                                </p>
                             </div>
                         </div>
 

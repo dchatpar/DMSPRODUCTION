@@ -1,18 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import {
-    X,
-    Clock,
-    User,
-    Edit,
-    Trash2,
-    CheckCircle,
-    AlertTriangle,
-    FileText,
-    Tag,
-} from "lucide-react";
+import { Edit, Trash2 } from "lucide-react";
 import ConfirmDialog from "./ConfirmDialog";
+import { toast } from "@/src/lib/toast";
+import { RecordDrawer } from "@/src/components/ui/RecordDrawer";
+import { RecordHeader } from "@/src/components/ui/RecordHeader";
+import {
+    PropertyList,
+    PropertyRow,
+    PropertyEmpty,
+    RecordNotes,
+} from "@/src/components/ui/PropertyList";
+import { ActivityTimeline } from "@/src/components/ui/ActivityTimeline";
+import { StatusBadge } from "@/src/components/ui/StatusBadge";
+import { Button } from "@/src/components/ui/Button";
+import { Badge } from "@/src/components/ui/Badge";
 
 interface UserData {
     id: string;
@@ -45,21 +48,18 @@ interface TicketDetailsModalProps {
     userPermissions?: string[];
 }
 
-const STATUS_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-    "Open": { bg: "bg-red-50", text: "text-red-700", border: "border-red-200" },
-    "In Progress": { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200" },
-    "Resolved": { bg: "bg-green-50", text: "text-green-700", border: "border-green-200" },
-    "Closed": { bg: "bg-gray-50", text: "text-gray-700", border: "border-gray-200" },
-};
-
-const PRIORITY_COLORS: Record<string, string> = {
-    Low: "bg-gray-100 text-gray-700",
-    Medium: "bg-blue-100 text-blue-700",
-    High: "bg-orange-100 text-orange-700",
-    Urgent: "bg-red-100 text-red-700",
-};
-
 const STATUS_OPTIONS = ["Open", "In Progress", "Resolved", "Closed"];
+
+function formatDate(date: string | null) {
+    if (!date) return "—";
+    return new Date(date).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
 
 export default function TicketDetailsModal({
     ticket,
@@ -75,199 +75,134 @@ export default function TicketDetailsModal({
     const canEdit = userRole === "Admin" || userPermissions.includes("tickets:write");
     const canDelete = userRole === "Admin" || userPermissions.includes("tickets:delete");
 
-    const formatDate = (date: string | null) => {
-        if (!date) return "Not set";
-        return new Date(date).toLocaleDateString("en-US", {
-            year: "numeric",
-            month: "long",
-            day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-        });
-    };
-
     const handleDelete = async () => {
         setDeleting(true);
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch(`/api/tickets/${ticket.id}`, {
                 method: "DELETE",
-                headers: { Authorization: `Bearer ${token}` },
             });
-
-            if (!response.ok) {
-                throw new Error("Failed to delete ticket");
-            }
-
+            if (!response.ok) throw new Error("Failed to delete ticket");
             setShowDeleteConfirm(false);
             onDelete();
         } catch (err) {
-            alert(err instanceof Error ? err.message : "An error occurred");
+            toast.error(err instanceof Error ? err.message : "An error occurred");
         } finally {
             setDeleting(false);
         }
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            {/* Backdrop */}
-            <div
-                className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-                onClick={onClose}
-            />
-
-            {/* Modal */}
-            <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden">
-                {/* Header */}
-                <div className="flex items-start justify-between p-6 border-b border-gray-100">
-                    <div className="flex-1 pr-4">
-                        <div className="flex items-center gap-3 mb-2">
-                            <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${PRIORITY_COLORS[ticket.priority]}`}>
-                                {ticket.priority}
-                            </span>
-                            <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${STATUS_COLORS[ticket.status].bg} ${STATUS_COLORS[ticket.status].text}`}>
-                                {ticket.status}
-                            </span>
-                        </div>
-                        <h2 className="text-xl font-semibold text-gray-900">{ticket.subject}</h2>
+        <>
+            <RecordDrawer
+                open
+                onClose={onClose}
+                header={
+                    <RecordHeader
+                        title={ticket.subject}
+                        showAvatar={false}
+                        badges={
+                            <>
+                                <StatusBadge status={ticket.status} resource="ticket" />
+                                {ticket.priority && (
+                                    <Badge variant="subtle" className="text-[11px]">
+                                        {ticket.priority}
+                                    </Badge>
+                                )}
+                            </>
+                        }
+                    />
+                }
+                actions={
+                    <>
+                        {canEdit && (
+                            <Button variant="primary" size="sm" leftIcon={<Edit className="h-3.5 w-3.5" />} onClick={onEdit}>
+                                Edit
+                            </Button>
+                        )}
+                        {canDelete && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+                                onClick={() => setShowDeleteConfirm(true)}
+                                className="text-destructive"
+                            >
+                                Delete
+                            </Button>
+                        )}
+                    </>
+                }
+                footer={
+                    <div className="flex justify-end">
+                        <Button variant="ghost" size="sm" onClick={onClose}>
+                            Close
+                        </Button>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                        <X className="w-5 h-5 text-gray-500" />
-                    </button>
-                </div>
-
-                {/* Body */}
-                <div className="p-6 space-y-6">
-                    {/* Status Change */}
+                }
+            >
+                <div className="space-y-6">
                     <div>
-                        <label className="block text-xs font-medium text-gray-500 uppercase mb-2">
-                            Change Status
-                        </label>
-                        <div className="flex flex-wrap gap-2">
+                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                            Status
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
                             {STATUS_OPTIONS.map((status) => (
-                                <button
+                                <Button
                                     key={status}
-                                    onClick={() => onStatusChange(ticket, status)}
+                                    size="sm"
+                                    variant={ticket.status === status ? "primary" : "outline"}
                                     disabled={ticket.status === status}
-                                    className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-all ${
-                                        ticket.status === status
-                                            ? `${STATUS_COLORS[status].bg} ${STATUS_COLORS[status].text} ${STATUS_COLORS[status].border} cursor-default`
-                                            : "bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-                                    }`}
+                                    onClick={() => onStatusChange(ticket, status)}
                                 >
                                     {status}
-                                </button>
+                                </Button>
                             ))}
                         </div>
                     </div>
 
-                    {/* Description */}
-                    {ticket.description && (
-                        <div>
-                            <label className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase mb-2">
-                                <FileText className="w-4 h-4" />
-                                Description
-                            </label>
-                            <p className="text-gray-700 bg-gray-50 rounded-lg p-3 text-sm whitespace-pre-wrap">
-                                {ticket.description}
-                            </p>
-                        </div>
+                    {ticket.description?.trim() && (
+                        <RecordNotes title="Description">{ticket.description}</RecordNotes>
                     )}
 
-                    {/* Details Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="flex items-start gap-3">
-                            <div className="p-2 bg-purple-50 rounded-lg">
-                                <User className="w-4 h-4 text-purple-600" />
-                            </div>
-                            <div>
-                                <p className="text-xs text-gray-500">Assigned To</p>
-                                <div className="flex items-center gap-2">
-                                    {ticket.assigned_user?.avatar ? (
-                                        <img
-                                            src={ticket.assigned_user.avatar}
-                                            alt={ticket.assigned_user.full_name}
-                                            className="w-5 h-5 rounded-full"
-                                        />
-                                    ) : (
-                                        <div className="w-5 h-5 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 text-xs font-medium">
-                                            {ticket.assigned_user?.full_name?.[0] || "?"}
-                                        </div>
-                                    )}
-                                    <p className="text-sm font-medium text-gray-900">
-                                        {ticket.assigned_user?.full_name || "Unassigned"}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
+                    <PropertyList title="Details">
+                        <PropertyRow label="Assigned to">
+                            {ticket.assigned_user?.full_name?.trim() ? (
+                                ticket.assigned_user.full_name
+                            ) : (
+                                <PropertyEmpty label="Unassigned" />
+                            )}
+                        </PropertyRow>
+                        <PropertyRow label="Created by">
+                            {ticket.created_by_user?.full_name?.trim() ? (
+                                ticket.created_by_user.full_name
+                            ) : (
+                                <PropertyEmpty />
+                            )}
+                        </PropertyRow>
+                        <PropertyRow label="Priority">{ticket.priority || <PropertyEmpty />}</PropertyRow>
+                    </PropertyList>
 
-                        <div className="flex items-start gap-3">
-                            <div className="p-2 bg-green-50 rounded-lg">
-                                <User className="w-4 h-4 text-green-600" />
-                            </div>
-                            <div>
-                                <p className="text-xs text-gray-500">Created By</p>
-                                <p className="text-sm font-medium text-gray-900">
-                                    {ticket.created_by_user?.full_name || "Unknown"}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div className="flex items-start gap-3">
-                            <div className="p-2 bg-gray-100 rounded-lg">
-                                <Clock className="w-4 h-4 text-gray-600" />
-                            </div>
-                            <div>
-                                <p className="text-xs text-gray-500">Created At</p>
-                                <p className="text-sm font-medium text-gray-900">
-                                    {formatDate(ticket.created_at)}
-                                </p>
-                            </div>
-                        </div>
-
-                        {ticket.resolved_at && (
-                            <div className="flex items-start gap-3">
-                                <div className="p-2 bg-green-100 rounded-lg">
-                                    <CheckCircle className="w-4 h-4 text-green-600" />
-                                </div>
-                                <div>
-                                    <p className="text-xs text-gray-500">Resolved At</p>
-                                    <p className="text-sm font-medium text-green-700">
-                                        {formatDate(ticket.resolved_at)}
-                                    </p>
-                                </div>
-                            </div>
-                        )}
-                    </div>
+                    <ActivityTimeline
+                        items={[
+                            {
+                                id: "created",
+                                title: "Created",
+                                timestamp: formatDate(ticket.created_at),
+                            },
+                            ...(ticket.resolved_at
+                                ? [
+                                      {
+                                          id: "resolved",
+                                          title: "Resolved",
+                                          timestamp: formatDate(ticket.resolved_at),
+                                      },
+                                  ]
+                                : []),
+                        ]}
+                    />
                 </div>
+            </RecordDrawer>
 
-                {/* Footer */}
-                <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-100 bg-gray-50">
-                    {canDelete && (
-                        <button
-                            onClick={() => setShowDeleteConfirm(true)}
-                            className="px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2"
-                        >
-                            <Trash2 className="w-4 h-4" />
-                            Delete
-                        </button>
-                    )}
-                    {canEdit && (
-                        <button
-                            onClick={onEdit}
-                            className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2"
-                        >
-                            <Edit className="w-4 h-4" />
-                            Edit Ticket
-                        </button>
-                    )}
-                </div>
-            </div>
-
-            {/* Delete Confirmation */}
             {showDeleteConfirm && (
                 <ConfirmDialog
                     isOpen={showDeleteConfirm}
@@ -280,6 +215,6 @@ export default function TicketDetailsModal({
                     onCancel={() => setShowDeleteConfirm(false)}
                 />
             )}
-        </div>
+        </>
     );
 }

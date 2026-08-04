@@ -28,6 +28,23 @@ export async function GET(req: NextRequest) {
             );
         }
 
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("dealership_id, is_platform_admin")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        }
+
+        if (!currentUser.dealership_id && !currentUser.is_platform_admin) {
+            return NextResponse.json(
+                { error: "Unauthorized - No dealership context" },
+                { status: 403 }
+            );
+        }
+
         const url = new URL(req.url);
         const limit = parseInt(url.searchParams.get("limit") || "100");
         const offset = parseInt(url.searchParams.get("offset") || "0");
@@ -40,6 +57,10 @@ export async function GET(req: NextRequest) {
             .select("*", { count: "exact" })
             .order("vendor_name", { ascending: true })
             .range(offset, offset + limit - 1);
+
+        if (!currentUser.is_platform_admin) {
+            query = query.eq("dealership_id", currentUser.dealership_id);
+        }
 
         if (q) {
             query = query.or(
@@ -94,6 +115,23 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("dealership_id, is_platform_admin")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        }
+
+        if (!currentUser.dealership_id && !currentUser.is_platform_admin) {
+            return NextResponse.json(
+                { error: "Unauthorized - No dealership context" },
+                { status: 403 }
+            );
+        }
+
         const payload = await req.json();
 
         if (!payload.vendor_name) {
@@ -120,6 +158,7 @@ export async function POST(req: NextRequest) {
                 contact_email: payload.contact_email || null,
                 contact_phone: payload.contact_phone || null,
                 notes: payload.notes || null,
+                dealership_id: currentUser.dealership_id,
             })
             .select()
             .single();

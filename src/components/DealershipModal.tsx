@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { X, Loader2, AlertCircle } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
+import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
 
 interface Dealership {
     id: string;
@@ -29,6 +31,8 @@ interface DealershipModalProps {
 }
 
 export default function DealershipModal({ mode, dealership, onClose, onSuccess }: DealershipModalProps) {
+    useOverlayDismiss(onClose);
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -43,7 +47,7 @@ export default function DealershipModal({ mode, dealership, onClose, onSuccess }
         plan_name: "Basic",
         admin_email: "",
         admin_full_name: "",
-        admin_password: "",
+        admin_password: ""
     });
 
     useEffect(() => {
@@ -59,7 +63,7 @@ export default function DealershipModal({ mode, dealership, onClose, onSuccess }
                 plan_name: dealership.subscription?.plan_name || "Basic",
                 admin_email: "",
                 admin_full_name: "",
-                admin_password: "",
+                admin_password: ""
             });
         }
     }, [dealership, mode]);
@@ -81,11 +85,6 @@ export default function DealershipModal({ mode, dealership, onClose, onSuccess }
         setLoading(true);
 
         try {
-            const token = localStorage.getItem("access_token");
-            if (!token) {
-                window.location.href = "/login";
-                return;
-            }
 
             const url = mode === "edit" && dealership
                 ? `/api/dealerships/${dealership.id}`
@@ -98,9 +97,7 @@ export default function DealershipModal({ mode, dealership, onClose, onSuccess }
                 const response = await fetch(url, {
                     method,
                     headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${token}`,
-                    },
+                        "Content-Type": "application/json" },
                     body: JSON.stringify({
                         name: formData.name,
                         slug: formData.slug,
@@ -111,8 +108,8 @@ export default function DealershipModal({ mode, dealership, onClose, onSuccess }
                         plan_name: formData.plan_name,
                         admin_email: formData.admin_email,
                         admin_full_name: formData.admin_full_name,
-                        admin_password: formData.admin_password || undefined,
-                    }),
+                        admin_password: formData.admin_password || undefined
+                    })
                 });
 
                 if (!response.ok) {
@@ -124,9 +121,7 @@ export default function DealershipModal({ mode, dealership, onClose, onSuccess }
                 const response = await fetch(url, {
                     method,
                     headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${token}`,
-                    },
+                        "Content-Type": "application/json" },
                     body: JSON.stringify({
                         name: formData.name,
                         slug: formData.slug,
@@ -134,8 +129,8 @@ export default function DealershipModal({ mode, dealership, onClose, onSuccess }
                         business_address: formData.business_address,
                         business_email: formData.business_email,
                         business_phone: formData.business_phone,
-                        status: formData.status,
-                    }),
+                        status: formData.status
+                    })
                 });
 
                 if (!response.ok) {

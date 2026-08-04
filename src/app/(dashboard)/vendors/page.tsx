@@ -16,11 +16,13 @@ import {
     FileText,
     DollarSign,
     Filter,
-    Download,
+    Download
 } from "lucide-react";
 import VendorFormModal from "@/src/components/VendorFormModal";
 import VendorDetailsModal from "@/src/components/VendorDetailsModal";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
+import { apiFetch } from "@/src/lib/fetch";
+import { toast } from "@/src/lib/toast";
 
 interface Vendor {
     id: string;
@@ -98,8 +100,6 @@ export default function VendorsPage() {
         try {
             setLoading(true);
             setError(null);
-
-            const token = localStorage.getItem("access_token");
             const offset = (currentPage - 1) * itemsPerPage;
 
             let url = `/api/vendors?limit=${itemsPerPage}&offset=${offset}`;
@@ -110,8 +110,7 @@ export default function VendorsPage() {
 
             const response = await fetch(url, {
                 headers: {
-                    Authorization: `Bearer ${token}`,
-                },
+                }
             });
 
             if (!response.ok) {
@@ -163,10 +162,8 @@ export default function VendorsPage() {
         setConfirmDialogData((prev) => ({ ...prev, loading: true }));
 
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch(`/api/vendors/${vendorId}`, {
-                method: "DELETE",
-                headers: { Authorization: `Bearer ${token}` },
+                method: "DELETE"
             });
 
             if (!response.ok) {
@@ -179,7 +176,7 @@ export default function VendorsPage() {
             setVendors((prev) => prev.filter((v) => v.id !== vendorId));
             setTotalItems((prev) => prev - 1);
         } catch (err) {
-            alert(err instanceof Error ? err.message : "An error occurred");
+            toast.error(err instanceof Error ? err.message : "An error occurred");
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
     };
@@ -193,7 +190,7 @@ export default function VendorsPage() {
             "Service Provider": "bg-orange-100 text-orange-700",
             "Parts Supplier": "bg-cyan-100 text-cyan-700",
             "General": "bg-gray-100 text-gray-700",
-            "Other": "bg-slate-100 text-slate-700",
+            "Other": "bg-slate-100 text-slate-700"
         };
         return colors[type] || "bg-gray-100 text-gray-700";
     };
@@ -202,7 +199,7 @@ export default function VendorsPage() {
         return new Date(date).toLocaleDateString("en-US", {
             year: "numeric",
             month: "short",
-            day: "numeric",
+            day: "numeric"
         });
     };
 

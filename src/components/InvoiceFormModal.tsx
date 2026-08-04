@@ -11,8 +11,10 @@ import {
     Calendar,
     User,
     Percent,
-    Clock,
+    Clock
 } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
+import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
 
 interface Customer {
     id: string;
@@ -35,7 +37,7 @@ interface Invoice {
     status: string;
     notes: string | null;
     created_at: string;
-    customer: Customer;
+    customer: Customer | null;
 }
 
 interface InvoiceFormModalProps {
@@ -49,8 +51,10 @@ export default function InvoiceFormModal({
     mode,
     invoice,
     onClose,
-    onSuccess,
+    onSuccess
 }: InvoiceFormModalProps) {
+    useOverlayDismiss(onClose);
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [loadingCustomers, setLoadingCustomers] = useState(false);
@@ -64,7 +68,7 @@ export default function InvoiceFormModal({
         payment_amount: 0,
         tax_rate: 13,
         notes: "",
-        status: "Pending",
+        status: "Pending"
     });
 
     useEffect(() => {
@@ -80,7 +84,7 @@ export default function InvoiceFormModal({
                 payment_amount: invoice.payment_amount || 0,
                 tax_rate: invoice.tax_rate || 13,
                 notes: invoice.notes || "",
-                status: invoice.status || "Pending",
+                status: invoice.status || "Pending"
             });
         } else {
             // Generate invoice number for new invoices
@@ -95,21 +99,15 @@ export default function InvoiceFormModal({
         const random = Math.floor(Math.random() * 10000).toString().padStart(4, "0");
         setFormData((prev) => ({
             ...prev,
-            invoice_number: `INV-${year}${month}-${random}`,
+            invoice_number: `INV-${year}${month}-${random}`
         }));
     };
 
     const fetchCustomers = async () => {
         setLoadingCustomers(true);
         try {
-            const token = localStorage.getItem("access_token");
-            const headers = { Authorization: `Bearer ${token}` };
-
-            const res = await fetch("/api/customers?limit=100", { headers });
-            if (res.ok) {
-                const data = await res.json();
-                setCustomers(data.data || []);
-            }
+            const data = await apiFetch<any>("/api/customers?limit=100");
+            setCustomers(data.data || []);
         } catch (err) {
             console.error("Error fetching customers:", err);
         } finally {
@@ -123,7 +121,7 @@ export default function InvoiceFormModal({
         const { name, value, type } = e.target;
         setFormData((prev) => ({
             ...prev,
-            [name]: type === "number" ? (value === "" ? "" : parseFloat(value) || 0) : value,
+            [name]: type === "number" ? (value === "" ? "" : parseFloat(value) || 0) : value
         }));
     };
 
@@ -140,7 +138,6 @@ export default function InvoiceFormModal({
         setError(null);
 
         try {
-            const token = localStorage.getItem("access_token");
             const url = mode === "add" ? "/api/invoices" : `/api/invoices/${invoice?.id}`;
             const method = mode === "add" ? "POST" : "PATCH";
 
@@ -157,22 +154,13 @@ export default function InvoiceFormModal({
                 tax_amount: tax,
                 total: total,
                 status: formData.status,
-                notes: formData.notes || null,
+                notes: formData.notes || null
             };
 
-            const response = await fetch(url, {
+            await apiFetch(url, {
                 method,
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify(payload),
+                body: payload
             });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || `Failed to ${mode} invoice`);
-            }
 
             onSuccess();
         } catch (err) {

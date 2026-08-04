@@ -1,6 +1,12 @@
 // app/api/tickets/[id]/route.ts
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
+import { assertOwnershipOrDeny, pickAllowed, requireDealershipAccess } from "@/src/lib/auth-helpers";
+
+const TICKET_ALLOWED_FIELDS = [
+    "title", "description", "status", "priority", "assigned_to", "customer_id",
+    "subject",
+] as const;
 
 // GET single ticket
 export async function GET(
@@ -8,8 +14,15 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -24,15 +37,27 @@ export async function GET(
 
         const { id } = await params;
 
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        // Narrow fetch first to assert ownership
+        const { data: existing, error: existingError } = await supabase
+            .from("tickets")
+            .select("id, dealership_id, assigned_to")
+            .eq("id", id)
+            .single();
 
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Ticket not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
         }
 
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
+
+        // Re-fetch the full row with relations
         const { data, error: dbError } = await supabase
             .from("tickets")
             .select(`
@@ -68,8 +93,15 @@ export async function PATCH(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -83,16 +115,6 @@ export async function PATCH(
         }
 
         const { id } = await params;
-
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
-        }
-
         const payload = await req.json();
 
         const validStatuses = ['Open', 'In Progress', 'Resolved', 'Closed'];
@@ -111,17 +133,35 @@ export async function PATCH(
             );
         }
 
-        const updateData: any = {};
+        // Assert ownership before any write
+        const { data: existing, error: existingError } = await supabase
+            .from("tickets")
+            .select("id, dealership_id, assigned_to")
+            .eq("id", id)
+            .single();
 
-        if (payload.subject !== undefined) updateData.subject = payload.subject;
-        if (payload.description !== undefined) updateData.description = payload.description;
-        if (payload.assigned_to !== undefined) updateData.assigned_to = payload.assigned_to;
-        if (payload.priority !== undefined) updateData.priority = payload.priority;
-        if (payload.status !== undefined) updateData.status = payload.status;
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Ticket not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
+        }
 
-        if (payload.status === 'Resolved') {
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
+
+        // Whitelist the update payload and block dealership_id changes
+        const safePayload = pickAllowed(payload, TICKET_ALLOWED_FIELDS);
+        delete (safePayload as any).dealership_id;
+
+        const updateData: any = { ...safePayload };
+
+        if (updateData.status === 'Resolved') {
             updateData.resolved_at = new Date().toISOString();
-        } else if (payload.status === 'Open' || payload.status === 'In Progress') {
+        } else if (updateData.status === 'Open' || updateData.status === 'In Progress') {
             updateData.resolved_at = null;
         }
 
@@ -161,8 +201,15 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -177,14 +224,25 @@ export async function DELETE(
 
         const { id } = await params;
 
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        // Assert ownership before any write
+        const { data: existing, error: existingError } = await supabase
+            .from("tickets")
+            .select("id, dealership_id, assigned_to")
+            .eq("id", id)
+            .single();
 
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Ticket not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
         }
+
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
 
         const { error: dbError } = await supabase
             .from("tickets")

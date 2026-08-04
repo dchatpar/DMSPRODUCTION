@@ -1,27 +1,38 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
     Store,
     Plus,
     Search,
-    MoreVertical,
     Edit,
     Trash2,
-    Eye,
-    Loader2,
     AlertCircle,
-    CheckCircle,
-    XCircle,
     Users,
-    Building2,
-    CreditCard,
-    Calendar,
     RefreshCw,
 } from "lucide-react";
 import DealershipModal from "@/src/components/DealershipModal";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
+import { toast } from "@/src/lib/toast";
+import { ListPageShell } from "@/src/components/ListPageShell";
+import { MetricStrip } from "@/src/components/ui/MetricStrip";
+import { Button } from "@/src/components/ui/Button";
+import { StatusBadge } from "@/src/components/ui/StatusBadge";
+import { FilterChip, FilterChipGroup } from "@/src/components/ui/FilterChip";
+import {
+    DataTableShell,
+    DataTableScroll,
+    DataTable,
+    DataTableHead,
+    DataTableHeaderRow,
+    DataTableTh,
+    DataTableBody,
+    DataTableRow,
+    DataTableTd,
+} from "@/src/components/ui/DataTable";
+import { SkeletonTable } from "@/src/components/ui/Skeleton";
+import { EmptyState } from "@/src/components/ui/EmptyState";
 
 interface Dealership {
     id: string;
@@ -51,6 +62,14 @@ interface ApiResponse {
     offset: number;
 }
 
+const STATUS_FILTERS = [
+    { value: "", label: "All" },
+    { value: "Active", label: "Active" },
+    { value: "Trial", label: "Trial" },
+    { value: "Suspended", label: "Suspended" },
+    { value: "Cancelled", label: "Cancelled" },
+];
+
 export default function DealershipsPage() {
     const router = useRouter();
     const [dealerships, setDealerships] = useState<Dealership[]>([]);
@@ -62,12 +81,10 @@ export default function DealershipsPage() {
     const [totalItems, setTotalItems] = useState(0);
     const [itemsPerPage] = useState(10);
 
-    // Modal states
     const [showModal, setShowModal] = useState(false);
     const [formMode, setFormMode] = useState<"add" | "edit">("add");
     const [selectedDealership, setSelectedDealership] = useState<Dealership | null>(null);
 
-    // Confirm dialog state
     const [showConfirmDialog, setShowConfirmDialog] = useState(false);
     const [confirmDialogData, setConfirmDialogData] = useState<{
         dealership: Dealership | null;
@@ -75,7 +92,8 @@ export default function DealershipsPage() {
     }>({ dealership: null, loading: false });
 
     useEffect(() => {
-        fetchDealerships();
+        void fetchDealerships();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentPage, statusFilter, searchTerm]);
 
     const fetchDealerships = async () => {
@@ -83,28 +101,15 @@ export default function DealershipsPage() {
             setLoading(true);
             setError(null);
 
-            const token = localStorage.getItem("access_token");
-            if (!token) {
-                window.location.href = "/login";
-                return;
-            }
-
             const offset = (currentPage - 1) * itemsPerPage;
-
             let url = `/api/dealerships?limit=${itemsPerPage}&offset=${offset}`;
             if (statusFilter) url += `&status=${statusFilter}`;
             if (searchTerm) url += `&q=${encodeURIComponent(searchTerm)}`;
 
-            const response = await fetch(url, {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-            });
+            const response = await fetch(url, { headers: {} });
 
             if (!response.ok) {
                 if (response.status === 401 || response.status === 403) {
-                    localStorage.removeItem("access_token");
-                    localStorage.removeItem("refresh_token");
                     window.location.href = "/login";
                     return;
                 }
@@ -114,13 +119,25 @@ export default function DealershipsPage() {
             const data: ApiResponse = await response.json();
             setDealerships(data.data);
             setTotalItems(data.count);
-        } catch (error: any) {
-            console.error("Error fetching dealerships:", error);
-            setError(error.message || "Failed to load dealerships");
+        } catch (err: unknown) {
+            console.error("Error fetching dealerships:", err);
+            setError(err instanceof Error ? err.message : "Failed to load dealerships");
         } finally {
             setLoading(false);
         }
     };
+
+    const metrics = useMemo(() => {
+        const active = dealerships.filter((d) => d.status === "Active").length;
+        const trial = dealerships.filter((d) => d.status === "Trial").length;
+        const suspended = dealerships.filter((d) => d.status === "Suspended").length;
+        return [
+            { label: "Shown", value: totalItems, format: "number" as const },
+            { label: "Active (page)", value: active, format: "number" as const, tone: "success" as const },
+            { label: "Trial (page)", value: trial, format: "number" as const, tone: "warm" as const },
+            { label: "Suspended (page)", value: suspended, format: "number" as const, tone: "destructive" as const },
+        ];
+    }, [dealerships, totalItems]);
 
     const handleAddDealership = () => {
         setFormMode("add");
@@ -145,291 +162,246 @@ export default function DealershipsPage() {
         setConfirmDialogData((prev) => ({ ...prev, loading: true }));
 
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch(`/api/dealerships/${confirmDialogData.dealership.id}`, {
                 method: "DELETE",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
+                headers: {},
             });
 
+            const data = await response.json().catch(() => ({}));
             if (!response.ok) {
-                const data = await response.json();
                 throw new Error(data.error || "Failed to delete dealership");
             }
 
+            if (data.soft_deleted) {
+                toast.success(
+                    "Soft-deleted",
+                    "Dealership cancelled. Vehicles/deals/invoices were retained."
+                );
+            } else {
+                toast.success("Deleted", "Empty dealership removed.");
+            }
+
             setShowConfirmDialog(false);
-            fetchDealerships();
-        } catch (error: any) {
-            console.error("Error deleting dealership:", error);
-            alert(error.message || "Failed to delete dealership");
+            void fetchDealerships();
+        } catch (err: unknown) {
+            console.error("Error deleting dealership:", err);
+            toast.error(err instanceof Error ? err.message : "Failed to delete dealership");
         } finally {
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
     };
 
-    const getStatusBadge = (status: string) => {
-        const styles: Record<string, string> = {
-            Active: "bg-green-100 text-green-700",
-            Trial: "bg-blue-100 text-blue-700",
-            Suspended: "bg-red-100 text-red-700",
-            Cancelled: "bg-gray-100 text-gray-700",
-            PastDue: "bg-amber-100 text-amber-700",
-        };
-        return (
-            <span className={`px-2 py-1 text-xs font-medium rounded-full ${styles[status] || "bg-gray-100 text-gray-700"}`}>
-                {status}
-            </span>
-        );
-    };
-
-    const formatDate = (dateString: string) => {
-        return new Date(dateString).toLocaleDateString("en-US", {
+    const formatDate = (dateString: string) =>
+        new Date(dateString).toLocaleDateString("en-US", {
             year: "numeric",
             month: "short",
             day: "numeric",
         });
-    };
 
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat("en-US", {
-            style: "currency",
-            currency: "USD",
-        }).format(amount);
-    };
+    const formatCurrency = (amount: number) =>
+        new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
 
-    const totalPages = Math.ceil(totalItems / itemsPerPage);
+    const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
 
     return (
-        <div className="min-h-screen bg-gray-50">
-            {/* Page Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">All Dealerships</h1>
-                    <p className="text-sm text-gray-500 mt-1">
-                        Manage all registered dealerships on the platform
-                    </p>
-                </div>
-                <div className="flex items-center gap-3">
-                    <button
-                        onClick={fetchDealerships}
-                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
-                    >
-                        <RefreshCw className="w-4 h-4" />
+        <ListPageShell
+            title="All Dealerships"
+            description="AdaptUs Platform — manage isolated tenant dealerships. Soft-delete retains inventory when a tenant has data."
+            icon={Store}
+            breadcrumbs={[
+                { label: "AdaptUs Platform", href: "/dashboard" },
+                { label: "Dealerships" },
+            ]}
+            actions={
+                <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => void fetchDealerships()}>
+                        <RefreshCw className="h-3.5 w-3.5" />
                         Refresh
-                    </button>
-                    <button
-                        onClick={handleAddDealership}
-                        className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2"
-                    >
-                        <Plus className="w-4 h-4" />
+                    </Button>
+                    <Button size="sm" onClick={handleAddDealership}>
+                        <Plus className="h-3.5 w-3.5" />
                         Add Dealership
-                    </button>
+                    </Button>
                 </div>
-            </div>
-
-            {/* Filters */}
-            <div className="px-6 py-4">
-                <div className="flex flex-col sm:flex-row gap-4">
-                    {/* Search */}
-                    <div className="relative flex-1 max-w-md">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            }
+            kpis={<MetricStrip items={metrics} loading={loading} />}
+            toolbar={
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="relative max-w-md flex-1">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                         <input
-                            type="text"
-                            placeholder="Search dealerships..."
+                            type="search"
+                            placeholder="Search dealerships…"
                             value={searchTerm}
                             onChange={(e) => {
                                 setSearchTerm(e.target.value);
                                 setCurrentPage(1);
                             }}
-                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="h-9 w-full rounded-md border border-border bg-card pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         />
                     </div>
-
-                    {/* Status Filter */}
-                    <select
-                        value={statusFilter}
-                        onChange={(e) => {
-                            setStatusFilter(e.target.value);
-                            setCurrentPage(1);
-                        }}
-                        className="px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                        <option value="">All Status</option>
-                        <option value="Active">Active</option>
-                        <option value="Trial">Trial</option>
-                        <option value="Suspended">Suspended</option>
-                        <option value="Cancelled">Cancelled</option>
-                    </select>
-                </div>
-            </div>
-
-            {/* Content */}
-            <div className="px-6 pb-6">
-                {error && (
-                    <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
-                        <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
-                        <p className="text-sm text-red-600">{error}</p>
-                    </div>
-                )}
-
-                {loading ? (
-                    <div className="bg-white rounded-lg border border-gray-200 p-8 flex flex-col items-center justify-center">
-                        <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-4" />
-                        <p className="text-sm text-gray-500">Loading dealerships...</p>
-                    </div>
-                ) : dealerships.length === 0 ? (
-                    <div className="bg-white rounded-lg border border-gray-200 p-8 flex flex-col items-center justify-center">
-                        <Store className="w-12 h-12 text-gray-400 mb-4" />
-                        <h3 className="text-lg font-medium text-gray-900 mb-1">No dealerships found</h3>
-                        <p className="text-sm text-gray-500 mb-4">
-                            {searchTerm || statusFilter
-                                ? "Try adjusting your search or filters"
-                                : "Get started by adding your first dealership"}
-                        </p>
-                        {!searchTerm && !statusFilter && (
-                            <button
-                                onClick={handleAddDealership}
-                                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                    <FilterChipGroup aria-label="Dealership status">
+                        {STATUS_FILTERS.map((opt) => (
+                            <FilterChip
+                                key={opt.value || "all"}
+                                selected={statusFilter === opt.value}
+                                onClick={() => {
+                                    setStatusFilter(opt.value);
+                                    setCurrentPage(1);
+                                }}
                             >
-                                <Plus className="w-4 h-4" />
-                                Add Dealership
-                            </button>
-                        )}
-                    </div>
-                ) : (
-                    <>
-                        {/* Table */}
-                        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                            <table className="min-w-full divide-y divide-gray-200">
-                                <thead className="bg-gray-50">
-                                    <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Dealership
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Status
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Plan
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Users
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Created
-                                        </th>
-                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Actions
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody className="bg-white divide-y divide-gray-200">
+                                {opt.label}
+                            </FilterChip>
+                        ))}
+                    </FilterChipGroup>
+                </div>
+            }
+        >
+            {error && (
+                <div className="mb-3 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                    <AlertCircle className="h-4 w-4 shrink-0" />
+                    {error}
+                </div>
+            )}
+
+            {loading ? (
+                <SkeletonTable rows={6} cols={6} />
+            ) : dealerships.length === 0 ? (
+                <EmptyState
+                    icon={Store}
+                    title="No dealerships found"
+                    description={
+                        searchTerm || statusFilter
+                            ? "Try adjusting your search or filters."
+                            : "Create the first tenant dealership on the platform."
+                    }
+                    action={
+                        !searchTerm && !statusFilter
+                            ? { label: "Add Dealership", onClick: handleAddDealership, icon: Plus }
+                            : undefined
+                    }
+                />
+            ) : (
+                <>
+                    <DataTableShell>
+                        <DataTableScroll>
+                            <DataTable>
+                                <DataTableHead>
+                                    <DataTableHeaderRow>
+                                        <DataTableTh>Dealership</DataTableTh>
+                                        <DataTableTh>Status</DataTableTh>
+                                        <DataTableTh>Plan</DataTableTh>
+                                        <DataTableTh>Users</DataTableTh>
+                                        <DataTableTh>Created</DataTableTh>
+                                        <DataTableTh className="text-right">Actions</DataTableTh>
+                                    </DataTableHeaderRow>
+                                </DataTableHead>
+                                <DataTableBody>
                                     {dealerships.map((dealership) => (
-                                        <tr key={dealership.id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                                                        <Store className="w-5 h-5 text-blue-600" />
-                                                    </div>
-                                                    <div>
-                                                        <p className="text-sm font-medium text-gray-900">
-                                                            {dealership.name}
-                                                        </p>
-                                                        <p className="text-xs text-gray-500">
-                                                            {dealership.business_email || dealership.slug}
-                                                        </p>
-                                                    </div>
+                                        <DataTableRow key={dealership.id}>
+                                            <DataTableTd>
+                                                <div className="min-w-0">
+                                                    <p className="truncate font-medium text-foreground">
+                                                        {dealership.name}
+                                                    </p>
+                                                    <p className="truncate text-[11px] text-muted-foreground">
+                                                        {dealership.business_email || dealership.slug}
+                                                    </p>
                                                 </div>
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                {getStatusBadge(dealership.status)}
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                <div className="text-sm text-gray-900">
+                                            </DataTableTd>
+                                            <DataTableTd>
+                                                <StatusBadge status={dealership.status} />
+                                            </DataTableTd>
+                                            <DataTableTd>
+                                                <div>
                                                     {dealership.subscription?.plan_name || "No Plan"}
                                                 </div>
                                                 {dealership.subscription?.plan_price !== undefined && (
-                                                    <div className="text-xs text-gray-500">
+                                                    <div className="text-[11px] text-muted-foreground">
                                                         {formatCurrency(dealership.subscription.plan_price)}/mo
                                                     </div>
                                                 )}
-                                            </td>
-                                            <td className="px-6 py-4">
+                                            </DataTableTd>
+                                            <DataTableTd>
                                                 <div className="flex items-center gap-2">
-                                                    <div className="flex items-center gap-1 text-sm text-gray-600">
-                                                        <Users className="w-4 h-4" />
+                                                    <span className="inline-flex items-center gap-1 tabular-nums text-muted-foreground">
+                                                        <Users className="h-3.5 w-3.5" />
                                                         {dealership.user_count || 0}
-                                                    </div>
-                                                    <button
-                                                        onClick={() => router.push(`/dealerships/${dealership.id}/users`)}
-                                                        className="px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
-                                                        title="View Users"
+                                                    </span>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="h-7 px-2 text-xs"
+                                                        onClick={() =>
+                                                            router.push(`/dealerships/${dealership.id}/users`)
+                                                        }
                                                     >
                                                         View
-                                                    </button>
+                                                    </Button>
                                                 </div>
-                                            </td>
-                                            <td className="px-6 py-4 text-sm text-gray-500">
+                                            </DataTableTd>
+                                            <DataTableTd className="text-muted-foreground">
                                                 {formatDate(dealership.created_at)}
-                                            </td>
-                                            <td className="px-6 py-4 text-right">
-                                                <div className="flex items-center justify-end gap-2">
-                                                    <button
+                                            </DataTableTd>
+                                            <DataTableTd className="text-right">
+                                                <div className="inline-flex items-center justify-end gap-1">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        aria-label="Edit dealership"
                                                         onClick={() => handleEditDealership(dealership)}
-                                                        className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                                                        title="Edit"
                                                     >
-                                                        <Edit className="w-4 h-4" />
-                                                    </button>
-                                                    <button
+                                                        <Edit className="h-3.5 w-3.5" />
+                                                    </Button>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        aria-label="Delete dealership"
                                                         onClick={() => handleDeleteDealership(dealership)}
-                                                        className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                                        title="Delete"
                                                     >
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </button>
+                                                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                                                    </Button>
                                                 </div>
-                                            </td>
-                                        </tr>
+                                            </DataTableTd>
+                                        </DataTableRow>
                                     ))}
-                                </tbody>
-                            </table>
-                        </div>
+                                </DataTableBody>
+                            </DataTable>
+                        </DataTableScroll>
+                    </DataTableShell>
 
-                        {/* Pagination */}
-                        {totalPages > 1 && (
-                            <div className="mt-4 flex items-center justify-between">
-                                <p className="text-sm text-gray-500">
-                                    Showing {(currentPage - 1) * itemsPerPage + 1} to{" "}
-                                    {Math.min(currentPage * itemsPerPage, totalItems)} of {totalItems} results
-                                </p>
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                                        disabled={currentPage === 1}
-                                        className="px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        Previous
-                                    </button>
-                                    <span className="text-sm text-gray-500">
-                                        Page {currentPage} of {totalPages}
-                                    </span>
-                                    <button
-                                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                                        disabled={currentPage === totalPages}
-                                        className="px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        Next
-                                    </button>
-                                </div>
+                    {totalPages > 1 && (
+                        <div className="mt-3 flex items-center justify-between">
+                            <p className="text-[13px] text-muted-foreground">
+                                {(currentPage - 1) * itemsPerPage + 1}–
+                                {Math.min(currentPage * itemsPerPage, totalItems)} of {totalItems}
+                            </p>
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={currentPage === 1}
+                                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                                >
+                                    Previous
+                                </Button>
+                                <span className="text-[13px] text-muted-foreground">
+                                    {currentPage} / {totalPages}
+                                </span>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={currentPage === totalPages}
+                                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                                >
+                                    Next
+                                </Button>
                             </div>
-                        )}
-                    </>
-                )}
-            </div>
+                        </div>
+                    )}
+                </>
+            )}
 
-            {/* Modal */}
             {showModal && (
                 <DealershipModal
                     mode={formMode}
@@ -437,24 +409,23 @@ export default function DealershipsPage() {
                     onClose={() => setShowModal(false)}
                     onSuccess={() => {
                         setShowModal(false);
-                        fetchDealerships();
+                        void fetchDealerships();
                     }}
                 />
             )}
 
-            {/* Confirm Dialog */}
             {showConfirmDialog && (
                 <ConfirmDialog
                     isOpen={showConfirmDialog}
-                    title="Delete Dealership"
-                    message={`Are you sure you want to delete "${confirmDialogData.dealership?.name}"? This action cannot be undone and will delete all associated data.`}
-                    confirmText="Delete"
+                    title="Remove dealership"
+                    message={`Remove "${confirmDialogData.dealership?.name}"? If the tenant has vehicles, deals, or invoices, it will be soft-deleted (Cancelled) and data retained — including Nova floors.`}
+                    confirmText="Remove"
                     loading={confirmDialogData.loading}
                     onConfirm={confirmDelete}
                     onCancel={() => setShowConfirmDialog(false)}
                     variant="danger"
                 />
             )}
-        </div>
+        </ListPageShell>
     );
 }

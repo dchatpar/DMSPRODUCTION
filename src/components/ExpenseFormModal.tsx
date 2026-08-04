@@ -15,8 +15,10 @@ import {
     User,
     Car,
     FileText as InvoiceIcon,
-    Users,
+    Users
 } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
+import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
 
 interface Vendor {
     id: string;
@@ -122,8 +124,10 @@ export default function ExpenseFormModal({
     mode,
     expense,
     onClose,
-    onSuccess,
+    onSuccess
 }: ExpenseFormModalProps) {
+    useOverlayDismiss(onClose);
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -151,7 +155,7 @@ export default function ExpenseFormModal({
         reference_number: "",
         notes: "",
         tax_amount: "",
-        payment_method: "",
+        payment_method: ""
     });
 
     const getLinkLabel = (type: string, id: string): string => {
@@ -191,7 +195,7 @@ export default function ExpenseFormModal({
                 reference_number: expense.reference_number || "",
                 notes: expense.notes || "",
                 tax_amount: expense.tax_amount?.toString() || "",
-                payment_method: expense.payment_method || "",
+                payment_method: expense.payment_method || ""
             });
 
             // Populate Related To links from expense data
@@ -208,23 +212,16 @@ export default function ExpenseFormModal({
 
     const fetchData = async () => {
         try {
-            const token = localStorage.getItem("access_token");
-
             const [vendorsRes, vehiclesRes, customersRes, dealsRes, invoicesRes] = await Promise.all([
                 fetch("/api/vendors?limit=1000", {
-                    headers: { Authorization: `Bearer ${token}` },
                 }),
                 fetch("/api/vehicles?limit=1000", {
-                    headers: { Authorization: `Bearer ${token}` },
                 }),
                 fetch("/api/customers?limit=1000", {
-                    headers: { Authorization: `Bearer ${token}` },
                 }),
                 fetch("/api/deals?limit=1000", {
-                    headers: { Authorization: `Bearer ${token}` },
                 }),
                 fetch("/api/invoices?limit=1000", {
-                    headers: { Authorization: `Bearer ${token}` },
                 }),
             ]);
 
@@ -283,8 +280,6 @@ export default function ExpenseFormModal({
             if (!formData.expense_date) {
                 throw new Error("Expense date is required");
             }
-
-            const token = localStorage.getItem("access_token");
             const url = expense?.id ? `/api/expenses/${expense.id}` : "/api/expenses";
             const method = expense?.id ? "PATCH" : "POST";
 
@@ -300,7 +295,7 @@ export default function ExpenseFormModal({
                 reference_number: formData.reference_number || null,
                 notes: formData.notes || null,
                 tax_amount: parseFloat(formData.tax_amount) || 0,
-                payment_method: formData.payment_method || null,
+                payment_method: formData.payment_method || null
             };
 
             // Add source_type and source_id from first link if exists
@@ -312,10 +307,8 @@ export default function ExpenseFormModal({
             const response = await fetch(url, {
                 method,
                 headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify(payload),
+                    "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
             });
 
             if (!response.ok) {

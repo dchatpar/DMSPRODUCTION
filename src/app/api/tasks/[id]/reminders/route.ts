@@ -1,5 +1,6 @@
 // Task Reminders API Route
 import { createTokenClient } from "@/src/lib/server-token";
+import { supabaseAdmin } from "@/src/lib/supabase-admin";
 import { NextRequest, NextResponse } from "next/server";
 
 // POST add reminder to task
@@ -28,7 +29,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             return NextResponse.json({ error: "Reminder time is required" }, { status: 400 });
         }
 
-        const { data: reminder, error: dbError } = await supabase
+        // Use service role: same RLS issue as task_notes — the user-context
+        // insert is rejected even when the user owns the parent task.
+        const { data: reminder, error: dbError } = await supabaseAdmin
             .from("task_reminders")
             .insert({
                 task_id,

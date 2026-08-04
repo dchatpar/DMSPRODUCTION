@@ -4,29 +4,44 @@ import { useState, useEffect } from "react";
 import {
     FileText,
     Plus,
-    Search,
-    MoreVertical,
     Edit,
     Trash2,
     Eye,
     ChevronLeft,
     ChevronRight,
-    Download,
     RefreshCw,
     Loader2,
     AlertCircle,
-    DollarSign,
-    Calendar,
-    Clock,
-    CheckCircle,
-    XCircle,
-    User,
-    Filter,
+    Filter
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import InvoiceDetailsModal from "@/src/components/InvoiceDetailsModal";
 import InvoiceFormModal from "@/src/components/InvoiceFormModal";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
+import { toast } from "@/src/lib/toast";
+import { ListPageShell } from "@/src/components/ListPageShell";
+import { ListToolbar } from "@/src/components/ListToolbar";
+import { MetricStrip } from "@/src/components/ui/MetricStrip";
+import { Button } from "@/src/components/ui/Button";
+import { EmptyState } from "@/src/components/ui/EmptyState";
+import { SkeletonTable } from "@/src/components/ui/Skeleton";
+import { StatusBadge } from "@/src/components/ui/StatusBadge";
+import { EntityLink } from "@/src/components/ui/EntityLink";
+import { RelationChip } from "@/src/components/ui/RelationChip";
+import { RowActionsMenu } from "@/src/components/ui/RowActionsMenu";
+import {
+    ClickableDataTableRow,
+    DataTable,
+    DataTableBody,
+    DataTableHead,
+    DataTableHeaderRow,
+    DataTableScroll,
+    DataTableShell,
+    DataTableTd,
+    DataTableTdNum,
+    DataTableTh,
+} from "@/src/components/ui/DataTable";
+import { cn } from "@/src/lib/utils";
 
 interface Customer {
     id: string;
@@ -50,10 +65,11 @@ interface Invoice {
     tax_rate: number;
     tax_amount: number;
     total: number;
+    amount_paid?: number | null;
     status: string;
     notes: string | null;
     created_at: string;
-    customer: Customer;
+    customer: Customer | null;
 }
 
 interface ApiResponse {
@@ -61,14 +77,12 @@ interface ApiResponse {
     count: number;
     limit: number;
     offset: number;
+    totals?: {
+        pendingAmount: number;
+        paidAmount: number;
+        overdueAmount: number;
+    };
 }
-
-const STATUS_CONFIG: Record<string, { bg: string; text: string; icon: any }> = {
-    "Pending": { bg: "bg-yellow-50", text: "text-yellow-700", icon: Clock },
-    "Paid": { bg: "bg-green-50", text: "text-green-700", icon: CheckCircle },
-    "Overdue": { bg: "bg-red-50", text: "text-red-700", icon: AlertCircle },
-    "Cancelled": { bg: "bg-gray-50", text: "text-gray-700", icon: XCircle },
-};
 
 export default function InvoicesPage() {
     const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -85,6 +99,11 @@ export default function InvoicesPage() {
     const [totalItems, setTotalItems] = useState(0);
     const [itemsPerPage] = useState(10);
     const [exportLoading, setExportLoading] = useState(false);
+    const [invoiceTotals, setInvoiceTotals] = useState({
+        pendingAmount: 0,
+        paidAmount: 0,
+        overdueAmount: 0,
+    });
 
     // Modal states
     const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -121,9 +140,7 @@ export default function InvoicesPage() {
 
     const fetchUserPermissions = async () => {
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch("/api/me", {
-                headers: { Authorization: `Bearer ${token}` },
             });
             if (response.ok) {
                 const data = await response.json();
@@ -147,13 +164,8 @@ export default function InvoicesPage() {
     const exportToExcel = async () => {
         setExportLoading(true);
         try {
-            const token = localStorage.getItem("access_token");
-            if (!token) {
-                throw new Error("Not authenticated. Please login again.");
-            }
 
             const response = await fetch("/api/invoices?limit=10000", {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!response.ok) {
@@ -170,7 +182,7 @@ export default function InvoicesPage() {
 
             const worksheetData = exportData.map((invoice: Invoice) => ({
                 "Invoice Number": invoice.invoice_number || "",
-                "Customer": invoice.customer?.name || "Unknown",
+                "Customer": invoice.customer?.name || (invoice.customer_id ? "Unlinked" : "Unlinked"),
                 "Package": invoice.package_name || "",
                 "Status": invoice.status || "",
                 "Payment Amount": invoice.payment_amount || 0,
@@ -179,7 +191,7 @@ export default function InvoicesPage() {
                 "Total": invoice.total || 0,
                 "Invoice Date": invoice.invoice_date ? new Date(invoice.invoice_date).toLocaleDateString() : "",
                 "Due Date": invoice.due_date ? new Date(invoice.due_date).toLocaleDateString() : "",
-                "Notes": invoice.notes || "",
+                "Notes": invoice.notes || ""
             }));
 
             const worksheet = XLSX.utils.json_to_sheet(worksheetData);
@@ -196,7 +208,7 @@ export default function InvoicesPage() {
             XLSX.writeFile(workbook, `invoices-export-${new Date().toISOString().split("T")[0]}.xlsx`);
         } catch (error) {
             console.error("Export error:", error);
-            alert(error instanceof Error ? error.message : "Failed to export invoices");
+            toast.error(error instanceof Error ? error.message : "Failed to export invoices");
         } finally {
             setExportLoading(false);
         }
@@ -206,8 +218,6 @@ export default function InvoicesPage() {
         try {
             setLoading(true);
             setError(null);
-
-            const token = localStorage.getItem("access_token");
             const offset = (currentPage - 1) * itemsPerPage;
 
             let url = `/api/invoices?limit=${itemsPerPage}&offset=${offset}`;
@@ -218,8 +228,7 @@ export default function InvoicesPage() {
 
             const response = await fetch(url, {
                 headers: {
-                    Authorization: `Bearer ${token}`,
-                },
+                }
             });
 
             if (!response.ok) {
@@ -229,6 +238,13 @@ export default function InvoicesPage() {
             const data: ApiResponse = await response.json();
             setInvoices(data.data);
             setTotalItems(data.count);
+            if (data.totals) {
+                setInvoiceTotals({
+                    pendingAmount: data.totals.pendingAmount || 0,
+                    paidAmount: data.totals.paidAmount || 0,
+                    overdueAmount: data.totals.overdueAmount || 0,
+                });
+            }
         } catch (err) {
             setError(err instanceof Error ? err.message : "An error occurred");
         } finally {
@@ -271,12 +287,10 @@ export default function InvoicesPage() {
         setConfirmDialogData((prev) => ({ ...prev, loading: true }));
 
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch(`/api/invoices/${invoiceId}`, {
                 method: "DELETE",
                 headers: {
-                    Authorization: `Bearer ${token}`,
-                },
+                }
             });
 
             if (!response.ok) {
@@ -295,40 +309,14 @@ export default function InvoicesPage() {
             // Re-fetch to ensure consistency
             fetchInvoices();
         } catch (err) {
-            alert(err instanceof Error ? err.message : "An error occurred");
+            toast.error(err instanceof Error ? err.message : "An error occurred");
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
     };
 
-    const handleStatusChange = async (invoice: Invoice, newStatus: string) => {
-        try {
-            const token = localStorage.getItem("access_token");
-            const response = await fetch(`/api/invoices/${invoice.id}`, {
-                method: "PATCH",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({ status: newStatus }),
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || "Failed to update invoice status");
-            }
-
-            fetchInvoices();
-        } catch (err) {
-            alert(err instanceof Error ? err.message : "An error occurred");
-        }
-    };
-
-    const getStatusConfig = (status: string) => {
-        return STATUS_CONFIG[status] || STATUS_CONFIG["Pending"];
-    };
-
     const isOverdue = (invoice: Invoice) => {
         if (invoice.status === "Paid") return false;
+        if (!invoice.due_date) return false;
         return new Date(invoice.due_date) < new Date();
     };
 
@@ -336,134 +324,154 @@ export default function InvoicesPage() {
         return new Intl.NumberFormat("en-US", {
             style: "currency",
             currency: "USD",
-            minimumFractionDigits: 2,
+            minimumFractionDigits: 2
         }).format(amount);
     };
 
-    const formatDate = (date: string) => {
+    const formatDate = (date: string | null | undefined) => {
+        if (!date) return null;
         return new Date(date).toLocaleDateString("en-US", {
             year: "numeric",
             month: "short",
-            day: "numeric",
+            day: "numeric"
         });
     };
 
-    const totalPages = Math.ceil(totalItems / itemsPerPage);
+    const renderMutedDate = (date: string | null | undefined, overdue = false) => {
+        const formatted = formatDate(date);
+        if (!formatted) {
+            return <span className="text-muted-foreground">—</span>;
+        }
+        return (
+            <span className={cn("tabular-nums", overdue ? "font-medium text-red-600" : "text-muted-foreground")}>
+                {formatted}
+                {overdue ? " (Overdue)" : null}
+            </span>
+        );
+    };
 
-    // Calculate summary stats
-    const totalPending = invoices.filter((i) => i.status === "Pending").reduce((sum, i) => sum + i.total, 0);
-    const totalPaid = invoices.filter((i) => i.status === "Paid").reduce((sum, i) => sum + i.total, 0);
-    const totalOverdue = invoices.filter((i) => isOverdue(i)).reduce((sum, i) => sum + i.total, 0);
+    const totalPages = Math.ceil(totalItems / itemsPerPage);
+    const totalPending = invoiceTotals.pendingAmount;
+    const totalPaid = invoiceTotals.paidAmount;
+    const totalOverdue = invoiceTotals.overdueAmount;
 
     return (
-        <div className="space-y-6 py-10">
-            {/* Page Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Invoices</h1>
-                    <p className="text-sm text-gray-500 mt-1">
-                        Manage invoices and track payments
-                    </p>
-                </div>
-                <div className="flex items-center gap-3">
-                    <button
-                        onClick={fetchInvoices}
-                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
-                    >
-                        <RefreshCw className="w-4 h-4" />
+        <ListPageShell
+            title="Invoices"
+            description="Manage invoices and track payments"
+            icon={FileText}
+            actions={
+                <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={fetchInvoices} disabled={loading}>
+                        <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
                         Refresh
-                    </button>
+                    </Button>
                     {canWrite("invoices") && (
-                        <button
-                            onClick={handleAdd}
-                            className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2"
-                        >
-                            <Plus className="w-4 h-4" />
+                        <Button size="sm" onClick={handleAdd}>
+                            <Plus className="h-4 w-4" />
                             Create Invoice
-                        </button>
+                        </Button>
                     )}
                 </div>
-            </div>
-
-
-            {/* Filters */}
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-                <div className="flex flex-col sm:flex-row gap-4">
-                    <div className="flex-1 relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                            type="text"
-                            placeholder="Search by invoice number, customer, or description..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        />
-                    </div>
-                    <div className="flex gap-3 flex-wrap">
-                        <select
-                            value={statusFilter}
-                            onChange={(e) => setStatusFilter(e.target.value)}
-                            className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                        >
-                            <option value="">All Status</option>
-                            <option value="Pending">Pending</option>
-                            <option value="Paid">Paid</option>
-                            <option value="Overdue">Overdue</option>
-                            <option value="Cancelled">Cancelled</option>
-                        </select>
+            }
+            kpis={
+                <MetricStrip
+                    loading={loading}
+                    items={[
+                        { label: "Pending", value: totalPending, format: "currency", tone: "warning" },
+                        { label: "Paid", value: totalPaid, format: "currency", tone: "success" },
+                        { label: "Overdue", value: totalOverdue, format: "currency", tone: "destructive" },
+                        { label: "Total", value: totalItems },
+                    ]}
+                />
+            }
+            toolbar={
+                <ListToolbar
+                    searchPlaceholder="Search by invoice number, customer, or description..."
+                    searchValue={searchTerm}
+                    onSearchChange={setSearchTerm}
+                    filters={[
+                        {
+                            id: "status",
+                            value: statusFilter,
+                            onChange: (v) => {
+                                setStatusFilter(v);
+                                setCurrentPage(1);
+                            },
+                            options: [
+                                { value: "Pending", label: "Pending" },
+                                { value: "Paid", label: "Paid" },
+                                { value: "Overdue", label: "Overdue" },
+                                { value: "Cancelled", label: "Cancelled" },
+                            ],
+                            allLabel: "All Status",
+                        },
+                    ]}
+                    onExport={exportToExcel}
+                    exportLoading={exportLoading}
+                    showPrimary={false}
+                    extraFilters={
                         <div className="relative">
                             <button
+                                type="button"
                                 onClick={() => setShowMoreFilters(!showMoreFilters)}
-                                className={`px-4 py-2 border rounded-lg transition-colors flex items-center gap-2 ${
-                                    showMoreFilters ? "bg-blue-50 border-blue-200 text-blue-600" : "border-gray-200 hover:bg-gray-50"
-                                }`}
+                                className={cn(
+                                    "inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm transition-colors",
+                                    showMoreFilters || invoiceDateFrom || invoiceDateTo
+                                        ? "border-primary/30 bg-primary-50 text-primary"
+                                        : "border-border bg-background text-foreground hover:bg-muted"
+                                )}
                             >
-                                <Filter className="w-4 h-4" />
-                                More Filters
+                                <Filter className="h-3.5 w-3.5" />
+                                Dates
                                 {(invoiceDateFrom || invoiceDateTo) && (
-                                    <span className="w-2 h-2 bg-blue-500 rounded-full" />
+                                    <span className="h-1.5 w-1.5 rounded-full bg-primary" />
                                 )}
                             </button>
                             {showMoreFilters && (
-                                <div className="absolute right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-50 p-4">
+                                <div className="absolute right-0 z-50 mt-2 w-80 rounded-lg border border-border bg-card p-4 shadow-lg">
                                     <div className="space-y-4">
                                         <div>
-                                            <label className="block text-xs font-medium text-gray-500 mb-1.5">Invoice Date Range</label>
+                                            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                                                Invoice Date Range
+                                            </label>
                                             <div className="flex flex-col gap-2">
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-xs text-gray-400 w-8">From</span>
+                                                    <span className="w-8 text-xs text-muted-foreground">From</span>
                                                     <input
                                                         type="date"
                                                         value={invoiceDateFrom}
                                                         onChange={(e) => setInvoiceDateFrom(e.target.value)}
-                                                        className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                        className="flex-1 rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
                                                     />
                                                 </div>
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-xs text-gray-400 w-8">To</span>
+                                                    <span className="w-8 text-xs text-muted-foreground">To</span>
                                                     <input
                                                         type="date"
                                                         value={invoiceDateTo}
                                                         onChange={(e) => setInvoiceDateTo(e.target.value)}
-                                                        className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                        className="flex-1 rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
                                                     />
                                                 </div>
                                             </div>
                                         </div>
                                         <div className="flex gap-2 pt-1">
                                             <button
+                                                type="button"
                                                 onClick={() => {
                                                     setInvoiceDateFrom("");
                                                     setInvoiceDateTo("");
                                                     setShowMoreFilters(false);
                                                 }}
-                                                className="flex-1 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
+                                                className="flex-1 rounded-lg border border-border px-3 py-1.5 text-xs text-foreground/80 hover:bg-muted/40"
                                             >
                                                 Clear All
                                             </button>
                                             <button
+                                                type="button"
                                                 onClick={() => setShowMoreFilters(false)}
-                                                className="flex-1 px-3 py-1.5 text-xs text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                                                className="flex-1 rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary-600"
                                             >
                                                 Apply
                                             </button>
@@ -472,271 +480,224 @@ export default function InvoicesPage() {
                                 </div>
                             )}
                         </div>
-                        <button
-                            onClick={exportToExcel}
-                            disabled={exportLoading}
-                            className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 disabled:opacity-50"
-                        >
-                            {exportLoading ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                                <Download className="w-4 h-4" />
-                            )}
-                            Export
-                        </button>
-                    </div>
-                </div>
-            </div>
-
+                    }
+                />
+            }
+        >
             {/* Table */}
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <div className="hidden lg:block overflow-x-auto">
-                    <table className="w-full">
-                        <thead className="bg-gray-50 border-b border-gray-200">
-                            <tr>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Invoice
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Customer
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Status
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Amount
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Invoice Date
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Due Date
-                                </th>
-                                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Actions
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200">
-                            {loading ? (
-                                <tr>
-                                    <td colSpan={7} className="px-4 py-12 text-center">
-                                        <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
-                                        <p className="mt-2 text-sm text-gray-500">Loading invoices...</p>
-                                    </td>
-                                </tr>
-                            ) : error ? (
-                                <tr>
-                                    <td colSpan={7} className="px-4 py-12 text-center">
-                                        <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
-                                        <p className="mt-2 text-sm text-red-600">{error}</p>
-                                        <button
-                                            onClick={fetchInvoices}
-                                            className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                                        >
-                                            Try Again
-                                        </button>
-                                    </td>
-                                </tr>
-                            ) : invoices.length === 0 ? (
-                                <tr>
-                                    <td colSpan={7} className="px-4 py-12 text-center">
-                                        <FileText className="w-12 h-12 text-gray-300 mx-auto" />
-                                        <p className="mt-2 text-sm text-gray-500">No invoices found</p>
-                                        <button
-                                            onClick={handleAdd}
-                                            className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                                        >
-                                            Create Your First Invoice
-                                        </button>
-                                    </td>
-                                </tr>
-                            ) : (
-                                invoices.map((invoice) => {
-                                    const statusConfig = getStatusConfig(invoice.status);
-                                    const overdue = isOverdue(invoice);
-                                    const StatusIcon = statusConfig.icon;
-
-                                    return (
-                                        <tr key={invoice.id} className="hover:bg-gray-50 transition-colors">
-                                            <td className="px-4 py-3">
-                                                <div className="flex items-center gap-3">
-                                                    <div className={`p-2 rounded-lg ${statusConfig.bg}`}>
-                                                        <FileText className={`w-5 h-5 ${statusConfig.text}`} />
-                                                    </div>
+            <DataTableShell>
+                <div className="hidden lg:block">
+                    <DataTableScroll>
+                        <DataTable>
+                            <DataTableHead>
+                                <DataTableHeaderRow>
+                                    <DataTableTh>Invoice</DataTableTh>
+                                    <DataTableTh>Customer</DataTableTh>
+                                    <DataTableTh>Status</DataTableTh>
+                                    <DataTableTh className="text-right">Amount</DataTableTh>
+                                    <DataTableTh>Invoice Date</DataTableTh>
+                                    <DataTableTh>Due Date</DataTableTh>
+                                    <DataTableTh className="text-right">Actions</DataTableTh>
+                                </DataTableHeaderRow>
+                            </DataTableHead>
+                            <DataTableBody>
+                                {loading ? (
+                                    <tr>
+                                        <td colSpan={7} className="p-6">
+                                            <SkeletonTable rows={8} cols={7} />
+                                        </td>
+                                    </tr>
+                                ) : error ? (
+                                    <tr>
+                                        <td colSpan={7} className="p-6">
+                                            <EmptyState
+                                                kind="error"
+                                                title="Couldn't load invoices"
+                                                description={error}
+                                                action={{ label: "Try again", onClick: fetchInvoices }}
+                                                className="border-0 bg-transparent py-10"
+                                            />
+                                        </td>
+                                    </tr>
+                                ) : invoices.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={7} className="p-6">
+                                            <EmptyState
+                                                kind="no-results"
+                                                title="No invoices found"
+                                                description="Create an invoice to get started."
+                                                action={
+                                                    canWrite("invoices")
+                                                        ? { label: "Create invoice", onClick: handleAdd, icon: Plus }
+                                                        : undefined
+                                                }
+                                                className="border-0 bg-transparent py-10"
+                                            />
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    invoices.map((invoice) => {
+                                        const overdue = isOverdue(invoice);
+                                        return (
+                                            <ClickableDataTableRow
+                                                key={invoice.id}
+                                                onRowClick={() => handleViewDetails(invoice)}
+                                            >
+                                                <DataTableTd>
                                                     <div>
-                                                        <p className="text-sm font-medium text-gray-900">
+                                                        <EntityLink
+                                                            onClick={() => handleViewDetails(invoice)}
+                                                        >
                                                             {invoice.invoice_number}
-                                                        </p>
-                                                        {invoice.package_name && (
-                                                            <p className="text-xs text-gray-500 truncate max-w-[150px]">
+                                                        </EntityLink>
+                                                        {invoice.package_name ? (
+                                                            <p className="mt-0.5 truncate max-w-[180px] text-[11px] text-muted-foreground">
                                                                 {invoice.package_name}
                                                             </p>
-                                                        )}
+                                                        ) : null}
                                                     </div>
-                                                </div>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-xs font-medium">
-                                                        {invoice.customer?.name?.[0]?.toUpperCase() || "C"}
-                                                    </div>
-                                                    <span className="text-sm font-medium text-gray-900">
-                                                        {invoice.customer?.name || "Unknown"}
-                                                    </span>
-                                                </div>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full ${statusConfig.bg} ${statusConfig.text}`}>
-                                                    <StatusIcon className="w-3.5 h-3.5" />
-                                                    {invoice.status}
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <span className="text-sm font-semibold text-gray-900">
+                                                </DataTableTd>
+                                                <DataTableTd>
+                                                    <RelationChip
+                                                        customerId={invoice.customer_id || invoice.customer?.id || null}
+                                                        name={invoice.customer?.name}
+                                                        avatarUrl={invoice.customer?.avatar}
+                                                        emptyLabel="Unlinked"
+                                                    />
+                                                </DataTableTd>
+                                                <DataTableTd>
+                                                    <StatusBadge status={invoice.status} resource="invoice" />
+                                                </DataTableTd>
+                                                <DataTableTdNum className="font-semibold">
                                                     {formatCurrency(invoice.total)}
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <span className="text-sm text-gray-600">
-                                                    {formatDate(invoice.invoice_date)}
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <span className={`text-sm ${overdue ? "text-red-600 font-medium" : "text-gray-600"}`}>
-                                                    {formatDate(invoice.due_date)}
-                                                    {overdue && " (Overdue)"}
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-3 text-right">
-                                                <div className="flex items-center justify-end gap-1">
-                                                    <button
-                                                        onClick={() => handleViewDetails(invoice)}
-                                                        className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
-                                                        title="View Details"
-                                                    >
-                                                        <Eye className="w-4 h-4 text-blue-500" />
-                                                    </button>
-                                                    {canWrite("invoices") && (
-                                                        <button
-                                                            onClick={() => handleEdit(invoice)}
-                                                            className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
-                                                            title="Edit"
-                                                        >
-                                                            <Edit className="w-4 h-4 text-amber-500" />
-                                                        </button>
-                                                    )}
-                                                    {canDelete("invoices") && (
-                                                        <button
-                                                            onClick={() => handleDelete(invoice)}
-                                                            className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
-                                                            title="Delete"
-                                                        >
-                                                            <Trash2 className="w-4 h-4 text-red-500" />
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    );
-                                })
-                            )}
-                        </tbody>
-                    </table>
+                                                </DataTableTdNum>
+                                                <DataTableTd>
+                                                    {renderMutedDate(invoice.invoice_date)}
+                                                </DataTableTd>
+                                                <DataTableTd>
+                                                    {renderMutedDate(invoice.due_date, overdue)}
+                                                </DataTableTd>
+                                                <DataTableTd className="text-right">
+                                                    <RowActionsMenu
+                                                        primary={
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleViewDetails(invoice);
+                                                                }}
+                                                                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-primary hover:bg-primary-50"
+                                                                title="View details"
+                                                            >
+                                                                <Eye className="h-4 w-4" />
+                                                            </button>
+                                                        }
+                                                        items={[
+                                                            ...(canWrite("invoices")
+                                                                ? [{
+                                                                    label: "Edit",
+                                                                    icon: <Edit className="h-3.5 w-3.5" />,
+                                                                    onClick: () => handleEdit(invoice),
+                                                                }]
+                                                                : []),
+                                                            ...(canDelete("invoices")
+                                                                ? [{
+                                                                    label: "Delete",
+                                                                    icon: <Trash2 className="h-3.5 w-3.5" />,
+                                                                    tone: "destructive" as const,
+                                                                    onClick: () => handleDelete(invoice),
+                                                                }]
+                                                                : []),
+                                                        ]}
+                                                    />
+                                                </DataTableTd>
+                                            </ClickableDataTableRow>
+                                        );
+                                    })
+                                )}
+                            </DataTableBody>
+                        </DataTable>
+                    </DataTableScroll>
                 </div>
 
                 {/* Mobile Cards */}
-                <div className="lg:hidden divide-y divide-gray-200">
+                <div className="lg:hidden divide-y divide-border">
                     {loading ? (
                         <div className="px-4 py-12 text-center">
-                            <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
-                            <p className="mt-2 text-sm text-gray-500">Loading invoices...</p>
+                            <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto" />
+                            <p className="mt-2 text-sm text-muted-foreground">Loading invoices...</p>
                         </div>
                     ) : error ? (
                         <div className="px-4 py-12 text-center">
                             <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
                             <p className="mt-2 text-sm text-red-600">{error}</p>
                             <button
+                                type="button"
                                 onClick={fetchInvoices}
-                                className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                className="mt-3 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary-600"
                             >
                                 Try Again
                             </button>
                         </div>
                     ) : invoices.length === 0 ? (
                         <div className="px-4 py-12 text-center">
-                            <FileText className="w-12 h-12 text-gray-300 mx-auto" />
-                            <p className="mt-2 text-sm text-gray-500">No invoices found</p>
-                            <button
-                                onClick={handleAdd}
-                                className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                            >
-                                Create Your First Invoice
-                            </button>
+                            <FileText className="w-12 h-12 text-muted-foreground/50 mx-auto" />
+                            <p className="mt-2 text-sm text-muted-foreground">No invoices found</p>
+                            {canWrite("invoices") ? (
+                                <button
+                                    type="button"
+                                    onClick={handleAdd}
+                                    className="mt-3 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary-600"
+                                >
+                                    Create Your First Invoice
+                                </button>
+                            ) : null}
                         </div>
                     ) : (
                         invoices.map((invoice) => {
-                            const statusConfig = getStatusConfig(invoice.status);
                             const overdue = isOverdue(invoice);
-                            const StatusIcon = statusConfig.icon;
                             return (
-                                <div key={invoice.id} className="p-4 hover:bg-gray-50 transition-colors">
-                                    <div className="flex items-start justify-between mb-3">
-                                        <div className="flex items-center gap-3">
-                                            <div className={`p-2 rounded-lg ${statusConfig.bg}`}>
-                                                <FileText className={`w-5 h-5 ${statusConfig.text}`} />
-                                            </div>
-                                            <div>
-                                                <p className="text-sm font-medium text-gray-900">{invoice.invoice_number}</p>
-                                                {invoice.package_name && (
-                                                    <p className="text-xs text-gray-500 truncate max-w-[150px]">{invoice.package_name}</p>
-                                                )}
-                                            </div>
+                                <button
+                                    type="button"
+                                    key={invoice.id}
+                                    className="w-full p-4 text-left hover:bg-muted/50 transition-colors"
+                                    onClick={() => handleViewDetails(invoice)}
+                                >
+                                    <div className="mb-3 flex items-start justify-between gap-2">
+                                        <div>
+                                            <p className="text-sm font-medium text-primary">
+                                                {invoice.invoice_number}
+                                            </p>
+                                            {invoice.package_name ? (
+                                                <p className="text-xs text-muted-foreground truncate max-w-[180px]">
+                                                    {invoice.package_name}
+                                                </p>
+                                            ) : null}
                                         </div>
-                                        <div className="flex items-center gap-1">
-                                            <button
-                                                onClick={() => handleViewDetails(invoice)}
-                                                className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
-                                            >
-                                                <Eye className="w-4 h-4 text-blue-500" />
-                                            </button>
-                                            {canWrite("invoices") && (
-                                                <button
-                                                    onClick={() => handleEdit(invoice)}
-                                                    className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
-                                                >
-                                                    <Edit className="w-4 h-4 text-amber-500" />
-                                                </button>
-                                            )}
-                                            {canDelete("invoices") && (
-                                                <button
-                                                    onClick={() => handleDelete(invoice)}
-                                                    className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
-                                                >
-                                                    <Trash2 className="w-4 h-4 text-red-500" />
-                                                </button>
-                                            )}
-                                        </div>
+                                        <StatusBadge status={invoice.status} resource="invoice" />
                                     </div>
-                                    <div className="flex flex-wrap gap-2 mb-2">
-                                        <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full ${statusConfig.bg} ${statusConfig.text}`}>
-                                            <StatusIcon className="w-3.5 h-3.5" />
-                                            {invoice.status}
+                                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                                        <RelationChip
+                                            customerId={invoice.customer_id || invoice.customer?.id}
+                                            name={invoice.customer?.name}
+                                            avatarUrl={invoice.customer?.avatar}
+                                            emptyLabel="Unlinked"
+                                        />
+                                        <span className="text-sm font-semibold tabular-nums text-foreground">
+                                            {formatCurrency(invoice.total)}
                                         </span>
-                                        <span className="text-sm font-semibold text-gray-900">{formatCurrency(invoice.total)}</span>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
+                                    <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                                         <div>
-                                            <span className="font-medium text-gray-400">Customer:</span> {invoice.customer?.name || "Unknown"}
+                                            <span className="font-medium">Invoice:</span>{" "}
+                                            {renderMutedDate(invoice.invoice_date)}
                                         </div>
                                         <div>
-                                            <span className="font-medium text-gray-400">Due:</span>{" "}
-                                            <span className={overdue ? "text-red-600 font-medium" : ""}>
-                                                {formatDate(invoice.due_date)}
-                                            </span>
+                                            <span className="font-medium">Due:</span>{" "}
+                                            {renderMutedDate(invoice.due_date, overdue)}
                                         </div>
                                     </div>
-                                </div>
+                                </button>
                             );
                         })
                     )}
@@ -744,32 +705,34 @@ export default function InvoicesPage() {
 
                 {/* Pagination */}
                 {!loading && !error && invoices.length > 0 && (
-                    <div className="px-4 py-3 border-t border-gray-200 flex items-center justify-between">
-                        <p className="text-sm text-gray-500">
+                    <div className="px-4 py-3 border-t border-border flex items-center justify-between">
+                        <p className="text-sm text-muted-foreground">
                             Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalItems)} of {totalItems} invoices
                         </p>
                         <div className="flex items-center gap-2">
                             <button
+                                type="button"
                                 onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
                                 disabled={currentPage === 1}
-                                className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                className="p-2 border border-border rounded-lg hover:bg-muted/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                             >
                                 <ChevronLeft className="w-4 h-4" />
                             </button>
-                            <span className="text-sm text-gray-600">
+                            <span className="text-sm text-foreground/80">
                                 Page {currentPage} of {totalPages}
                             </span>
                             <button
+                                type="button"
                                 onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
                                 disabled={currentPage === totalPages}
-                                className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                className="p-2 border border-border rounded-lg hover:bg-muted/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                             >
                                 <ChevronRight className="w-4 h-4" />
                             </button>
                         </div>
                     </div>
                 )}
-            </div>
+            </DataTableShell>
 
             {/* Modals */}
             {showDetailsModal && selectedInvoice && (
@@ -783,6 +746,16 @@ export default function InvoicesPage() {
                         setShowDetailsModal(false);
                         handleEdit(selectedInvoice);
                     }}
+                    onUpdated={(updated) => {
+                        setSelectedInvoice(updated);
+                        setInvoices((prev) =>
+                            prev.map((row) =>
+                                row.id === updated.id ? { ...row, ...updated } : row
+                            )
+                        );
+                    }}
+                    userRole={userRole}
+                    userPermissions={userPermissions}
                 />
             )}
 
@@ -813,6 +786,6 @@ export default function InvoicesPage() {
                     }}
                 />
             )}
-        </div>
+        </ListPageShell>
     );
 }

@@ -14,9 +14,11 @@ import {
     UserPlus,
     Users,
     MessageSquare,
-    Scan,
+    Scan
 } from "lucide-react";
 import OCRScannerModal from "./OCRScannerModal";
+import { apiFetch } from "@/src/lib/fetch";
+import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
 
 interface Customer {
     id: string;
@@ -28,6 +30,10 @@ interface Customer {
     province: string | null;  // Changed from 'state'
     postal_code: string | null;  // Changed from 'zip'
     notes: string | null;
+    marketing_consent?: boolean | null;
+    sms_consent?: boolean | null;
+    marketing_consent_at?: string | null;
+    sms_consent_at?: string | null;
     created_at: string;
     updated_at: string;
 }
@@ -37,6 +43,10 @@ interface CustomerFormModalProps {
     customer?: Customer | null;
     onClose: () => void;
     onSuccess: () => void;
+    /** Prefill name when creating (e.g. deal-link named leftovers). */
+    defaultName?: string;
+    /** Called with created/updated customer when API returns data. */
+    onSaved?: (customer: Customer) => void;
 }
 
 interface User {
@@ -51,7 +61,11 @@ export default function CustomerFormModal({
     customer,
     onClose,
     onSuccess,
+    defaultName,
+    onSaved,
 }: CustomerFormModalProps) {
+    useOverlayDismiss(onClose);
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [showOCR, setShowOCR] = useState(false);
@@ -59,7 +73,7 @@ export default function CustomerFormModal({
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
     const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
     const [formData, setFormData] = useState({
-        name: "",
+        name: mode === "add" && defaultName ? defaultName : "",
         email: "",
         phone: "",
         address: "",
@@ -68,18 +82,16 @@ export default function CustomerFormModal({
         postal_code: "",  // Changed from 'zip'
         notes: "",
         assigned_to: "",
+        marketing_consent: false,
+        sms_consent: false,
     });
 
     useEffect(() => {
         // Fetch current user info and users list
         const fetchData = async () => {
-            const token = localStorage.getItem("access_token");
-            if (!token) return;
-
             try {
                 // Get current user
                 const meResponse = await fetch("/api/me", {
-                    headers: { Authorization: `Bearer ${token}` },
                 });
                 if (meResponse.ok) {
                     const meData = await meResponse.json();
@@ -89,7 +101,6 @@ export default function CustomerFormModal({
                     // If Admin/Manager, fetch all users in dealership to assign
                     if (meData.data?.role === "Admin" || meData.data?.role === "Manager") {
                         const usersResponse = await fetch("/api/users", {
-                            headers: { Authorization: `Bearer ${token}` },
                         });
                         if (usersResponse.ok) {
                             const usersData = await usersResponse.json();
@@ -114,18 +125,27 @@ export default function CustomerFormModal({
                 province: customer.province || "",
                 postal_code: customer.postal_code || "",
                 notes: customer.notes || "",
-                assigned_to: (customer as any)?.assigned_to || "",
+                assigned_to: (customer as { assigned_to?: string })?.assigned_to || "",
+                marketing_consent: Boolean(customer.marketing_consent),
+                sms_consent: Boolean(customer.sms_consent),
             });
+        } else if (mode === "add") {
+            setFormData((prev) => ({
+                ...prev,
+                marketing_consent: false,
+                sms_consent: false,
+            }));
         }
     }, [mode, customer]);
 
     const handleChange = (
         e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
     ) => {
-        const { name, value } = e.target;
+        const { name, value, type } = e.target;
+        const checked = (e.target as HTMLInputElement).checked;
         setFormData((prev) => ({
             ...prev,
-            [name]: value,
+            [name]: type === "checkbox" ? checked : value,
         }));
     };
 
@@ -135,11 +155,10 @@ export default function CustomerFormModal({
         setError(null);
 
         try {
-            const token = localStorage.getItem("access_token");
             const url = mode === "add" ? "/api/customers" : `/api/customers/${customer?.id}`;
             const method = mode === "add" ? "POST" : "PATCH";
 
-            const payload: Record<string, any> = {
+            const payload: Record<string, unknown> = {
                 name: formData.name,
                 email: formData.email || null,
                 phone: formData.phone || null,
@@ -148,6 +167,8 @@ export default function CustomerFormModal({
                 province: formData.province || null,  // Changed from 'state'
                 postal_code: formData.postal_code || null,  // Changed from 'zip'
                 notes: formData.notes || null,
+                marketing_consent: Boolean(formData.marketing_consent),
+                sms_consent: Boolean(formData.sms_consent),
             };
 
             // Include assigned_to if Admin/Manager set it
@@ -158,10 +179,8 @@ export default function CustomerFormModal({
             const response = await fetch(url, {
                 method,
                 headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify(payload),
+                    "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
             });
 
             if (!response.ok) {
@@ -169,6 +188,10 @@ export default function CustomerFormModal({
                 throw new Error(errorData.error || `Failed to ${mode} customer`);
             }
 
+            const result = await response.json().catch(() => null);
+            if (result?.data && onSaved) {
+                onSaved(result.data as Customer);
+            }
             onSuccess();
         } catch (err) {
             setError(err instanceof Error ? err.message : "An error occurred");
@@ -367,6 +390,41 @@ export default function CustomerFormModal({
                                 </div>
                             </div>
 
+                            {/* CASL consent — unchecked by default */}
+                            <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-4">
+                                <p className="text-sm font-medium text-gray-900">Communication consent (CASL)</p>
+                                <label className="flex items-start gap-3 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        name="marketing_consent"
+                                        checked={formData.marketing_consent}
+                                        onChange={handleChange}
+                                        className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span className="text-sm text-gray-700">
+                                        Marketing email consent
+                                        <span className="block text-xs text-gray-500">
+                                            Unchecked by default. Timestamp stored when checked.
+                                        </span>
+                                    </span>
+                                </label>
+                                <label className="flex items-start gap-3 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        name="sms_consent"
+                                        checked={formData.sms_consent}
+                                        onChange={handleChange}
+                                        className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span className="text-sm text-gray-700">
+                                        SMS / text consent
+                                        <span className="block text-xs text-gray-500">
+                                            Required before any SMS send. Unchecked by default.
+                                        </span>
+                                    </span>
+                                </label>
+                            </div>
+
                             {/* Assign To - Only shown for Admin/Manager */}
                             {(currentUserRole === "Admin" || currentUserRole === "Manager") && users.length > 0 && (
                                 <div>
@@ -439,7 +497,7 @@ export default function CustomerFormModal({
                                 address: data.address || prev.address,
                                 city: data.city || prev.city,
                                 province: data.province || prev.province,
-                                postal_code: data.postal_code || prev.postal_code,
+                                postal_code: data.postal_code || prev.postal_code
                             }));
                         }
                         setShowOCR(false);
@@ -448,7 +506,7 @@ export default function CustomerFormModal({
                         if (data.first_name || data.last_name) {
                             setFormData((prev) => ({
                                 ...prev,
-                                name: `${data.first_name || ""} ${data.last_name || ""}`.trim(),
+                                name: `${data.first_name || ""} ${data.last_name || ""}`.trim()
                             }));
                         }
                     }}

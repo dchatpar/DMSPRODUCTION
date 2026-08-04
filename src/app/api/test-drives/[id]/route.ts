@@ -1,6 +1,17 @@
 // app/api/test-drives/[id]/route.ts
-import { createTokenClient } from "@/src/lib/server-token";
+//
+// P1-1 fix: all four handlers use `pickSupabaseClient` so platform admins
+// get the service-role client (RLS bypass for cross-dealership ops) while
+// regular users keep the request-scoped RLS client.
 import { NextRequest, NextResponse } from "next/server";
+import { assertOwnershipOrDeny, pickAllowed, pickSupabaseClient, requireDealershipAccess } from "@/src/lib/auth-helpers";
+
+const TEST_DRIVE_ALLOWED_FIELDS = [
+    "scheduled_at", "status", "outcome", "notes", "customer_id", "vehicle_id",
+    "end_time", "signature_image_url",
+    // Schema-actual columns used by the test_drives table
+    "scheduled_date", "start_time", "lead_id", "user_id",
+] as const;
 
 // Helper function to enrich a test drive with related data
 async function enrichTestDrive(supabase: any, testDrive: any) {
@@ -34,10 +45,18 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
-            supabase = createTokenClient(req);
+            const picked = pickSupabaseClient(req, auth.profile);
+            supabase = picked.supabase;
         } catch (error: any) {
             if (error?.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
@@ -48,17 +67,29 @@ export async function GET(
             throw error;
         }
 
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
-        }
-
         const { id } = await params;
 
+        // Narrow fetch first to assert ownership
+        const { data: existing, error: existingError } = await supabase
+            .from("test_drives")
+            .select("id, dealership_id")
+            .eq("id", id)
+            .single();
+
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Test drive not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
+        }
+
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
+
+        // Re-fetch the full row
         const { data: testDrive, error: dbError } = await supabase
             .from("test_drives")
             .select("*")
@@ -93,10 +124,18 @@ export async function PUT(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
-            supabase = createTokenClient(req);
+            const picked = pickSupabaseClient(req, auth.profile);
+            supabase = picked.supabase;
         } catch (error: any) {
             if (error?.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
@@ -105,15 +144,6 @@ export async function PUT(
                 );
             }
             throw error;
-        }
-
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
         }
 
         const { id } = await params;
@@ -148,6 +178,26 @@ export async function PUT(
             );
         }
 
+        // Assert ownership before any write
+        const { data: existing, error: existingError } = await supabase
+            .from("test_drives")
+            .select("id, dealership_id")
+            .eq("id", id)
+            .single();
+
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Test drive not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
+        }
+
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
+
         // Build update data - use actual schema column names
         const updateData = {
             vehicle_id: payload.vehicle_id,
@@ -155,6 +205,8 @@ export async function PUT(
             lead_id: payload.lead_id || null,
             user_id: payload.user_id || null,
             scheduled_date: payload.scheduled_date,
+            start_time: payload.start_time || payload.scheduled_date,
+            end_time: payload.end_time || payload.scheduled_date,
             status: payload.status || "Scheduled",
             notes: payload.notes || null,
             outcome: payload.outcome || null,
@@ -195,10 +247,18 @@ export async function PATCH(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
-            supabase = createTokenClient(req);
+            const picked = pickSupabaseClient(req, auth.profile);
+            supabase = picked.supabase;
         } catch (error: any) {
             if (error?.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
@@ -209,31 +269,8 @@ export async function PATCH(
             throw error;
         }
 
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
-        }
-
         const { id } = await params;
         const payload = await req.json();
-
-        // Allowed fields for update - use actual schema column names
-        const allowedFields = [
-            "customer_id", "lead_id", "vehicle_id", "user_id",
-            "scheduled_date", "notes", "outcome", "status"
-        ];
-        const updateFields = Object.keys(payload).filter(key => allowedFields.includes(key));
-
-        if (updateFields.length === 0) {
-            return NextResponse.json(
-                { error: "No valid fields to update" },
-                { status: 400 }
-            );
-        }
 
         // If both customer_id and lead_id are being updated, validate
         if (payload.customer_id && payload.lead_id) {
@@ -243,15 +280,40 @@ export async function PATCH(
             );
         }
 
-        // Build update object
-        const updateData: Record<string, any> = {};
-        for (const field of updateFields) {
-            updateData[field] = payload[field];
+        // Assert ownership before any write
+        const { data: existing, error: existingError } = await supabase
+            .from("test_drives")
+            .select("id, dealership_id")
+            .eq("id", id)
+            .single();
+
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Test drive not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
+        }
+
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
+
+        // Whitelist the update payload and block dealership_id changes
+        const safePayload = pickAllowed(payload, TEST_DRIVE_ALLOWED_FIELDS);
+        delete (safePayload as any).dealership_id;
+
+        if (Object.keys(safePayload).length === 0) {
+            return NextResponse.json(
+                { error: "No valid fields to update" },
+                { status: 400 }
+            );
         }
 
         const { data: updatedTestDrive, error: dbError } = await supabase
             .from("test_drives")
-            .update(updateData)
+            .update(safePayload)
             .eq("id", id)
             .select("*")
             .single();
@@ -284,10 +346,18 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
-            supabase = createTokenClient(req);
+            const picked = pickSupabaseClient(req, auth.profile);
+            supabase = picked.supabase;
         } catch (error: any) {
             if (error?.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
@@ -298,29 +368,9 @@ export async function DELETE(
             throw error;
         }
 
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
-        }
-
-        // Get current user's permissions
-        const { data: currentUser } = await supabase
-            .from("users")
-            .select("role, dealership_id, is_platform_admin, user_permissions")
-            .eq("id", user.id)
-            .single();
-
-        if (!currentUser) {
-            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
-        }
-
-        const userRole = currentUser.role;
-        const userPerms = currentUser.user_permissions || [];
-        const isPlatformAdmin = currentUser.is_platform_admin;
+        const userRole = auth.profile.role;
+        const userPerms = (auth.profile as any).user_permissions || [];
+        const isPlatformAdmin = auth.profile.is_platform_admin;
 
         // Check test_drives:delete permission
         const canDelete = isPlatformAdmin ||
@@ -337,6 +387,26 @@ export async function DELETE(
         }
 
         const { id } = await params;
+
+        // Assert ownership before any write
+        const { data: existing, error: existingError } = await supabase
+            .from("test_drives")
+            .select("id, dealership_id")
+            .eq("id", id)
+            .single();
+
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Test drive not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
+        }
+
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
 
         const { error: dbError } = await supabase
             .from("test_drives")

@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { X, Loader2, AlertCircle, Link as LinkIcon, Plus, Trash2, User, Car, FileText, Users, Calendar, DollarSign } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
+import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
 
 interface UserData {
     id: string;
@@ -97,6 +99,8 @@ const LINK_TYPES = [
 ];
 
 export default function TaskFormModal({ mode, task, users = [], onClose, onSuccess }: TaskFormModalProps) {
+    useOverlayDismiss(onClose);
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [tags, setTags] = useState<string[]>(task?.tags || []);
@@ -123,7 +127,7 @@ export default function TaskFormModal({ mode, task, users = [], onClose, onSucce
         reminder_at: "",
         priority: "Medium",
         status: "Pending",
-        notes: "",
+        notes: ""
     });
 
     useEffect(() => {
@@ -137,7 +141,7 @@ export default function TaskFormModal({ mode, task, users = [], onClose, onSucce
                 reminder_at: task.reminder_at ? task.reminder_at.split("T")[0] : "",
                 priority: task.priority || "Medium",
                 status: task.status || "Pending",
-                notes: task.notes || "",
+                notes: task.notes || ""
             });
             setTags(task.tags || []);
             // Load existing links - reset first, then set if exists
@@ -147,7 +151,7 @@ export default function TaskFormModal({ mode, task, users = [], onClose, onSucce
                 const existingLinks: TaskLink[] = task.task_links.map((link: any) => ({
                     link_type: link.link_type,
                     linked_id: link.linked_id,
-                    linked_label: `${link.link_type}: ${link.linked_id.slice(0, 8)}...`,
+                    linked_label: `${link.link_type}: ${link.linked_id.slice(0, 8)}...`
                 }));
                 console.log("Setting existing links:", JSON.stringify(existingLinks, null, 2));
                 setLinks(existingLinks);
@@ -173,43 +177,22 @@ export default function TaskFormModal({ mode, task, users = [], onClose, onSucce
     }, [newLinkType, showLinkForm]);
 
     const fetchAllLinkData = async () => {
-        const token = localStorage.getItem("access_token");
-        const headers = { Authorization: `Bearer ${token}` };
-
         try {
             const [custRes, leadRes, vehRes, dealRes, invRes, tdRes] = await Promise.all([
-                fetch("/api/customers?limit=100", { headers }),
-                fetch("/api/leads?limit=100", { headers }),
-                fetch("/api/vehicles?limit=100", { headers }),
-                fetch("/api/deals?limit=100", { headers }),
-                fetch("/api/invoices?limit=100", { headers }),
-                fetch("/api/test-drives?limit=100", { headers }),
+                apiFetch<any>("/api/customers?limit=100"),
+                apiFetch<any>("/api/leads?limit=100"),
+                apiFetch<any>("/api/vehicles?limit=100"),
+                apiFetch<any>("/api/deals?limit=100"),
+                apiFetch<any>("/api/invoices?limit=100"),
+                apiFetch<any>("/api/test-drives?limit=100"),
             ]);
 
-            if (custRes.ok) {
-                const custData = await custRes.json();
-                setCustomers(custData.data || []);
-            }
-            if (leadRes.ok) {
-                const leadData = await leadRes.json();
-                setLeads(leadData.data || []);
-            }
-            if (vehRes.ok) {
-                const vehData = await vehRes.json();
-                setVehicles(vehData.data || []);
-            }
-            if (dealRes.ok) {
-                const dealData = await dealRes.json();
-                setDeals(dealData.data || []);
-            }
-            if (invRes.ok) {
-                const invData = await invRes.json();
-                setInvoices(invData.data || []);
-            }
-            if (tdRes.ok) {
-                const tdData = await tdRes.json();
-                setTestDrives(tdData.data || []);
-            }
+            setCustomers(custRes.data || []);
+            setLeads(leadRes.data || []);
+            setVehicles(vehRes.data || []);
+            setDeals(dealRes.data || []);
+            setInvoices(invRes.data || []);
+            setTestDrives(tdRes.data || []);
 
             // Update link labels after fetching all data
             setLinks(prevLinks =>
@@ -225,52 +208,32 @@ export default function TaskFormModal({ mode, task, users = [], onClose, onSucce
 
     const fetchLinkOptions = async () => {
         setLoadingOptions(true);
-        const token = localStorage.getItem("access_token");
-        const headers = { Authorization: `Bearer ${token}` };
 
         try {
             switch (newLinkType) {
                 case "customer":
-                    const custRes = await fetch("/api/customers?limit=100", { headers });
-                    if (custRes.ok) {
-                        const custData = await custRes.json();
-                        setCustomers(custData.data || []);
-                    }
+                    const custRes = await apiFetch<any>("/api/customers?limit=100");
+                    setCustomers(custRes.data || []);
                     break;
                 case "lead":
-                    const leadRes = await fetch("/api/leads?limit=100", { headers });
-                    if (leadRes.ok) {
-                        const leadData = await leadRes.json();
-                        setLeads(leadData.data || []);
-                    }
+                    const leadRes = await apiFetch<any>("/api/leads?limit=100");
+                    setLeads(leadRes.data || []);
                     break;
                 case "vehicle":
-                    const vehRes = await fetch("/api/vehicles?limit=100", { headers });
-                    if (vehRes.ok) {
-                        const vehData = await vehRes.json();
-                        setVehicles(vehData.data || []);
-                    }
+                    const vehRes = await apiFetch<any>("/api/vehicles?limit=100");
+                    setVehicles(vehRes.data || []);
                     break;
                 case "deal":
-                    const dealRes = await fetch("/api/deals?limit=100", { headers });
-                    if (dealRes.ok) {
-                        const dealData = await dealRes.json();
-                        setDeals(dealData.data || []);
-                    }
+                    const dealRes = await apiFetch<any>("/api/deals?limit=100");
+                    setDeals(dealRes.data || []);
                     break;
                 case "invoice":
-                    const invRes = await fetch("/api/invoices?limit=100", { headers });
-                    if (invRes.ok) {
-                        const invData = await invRes.json();
-                        setInvoices(invData.data || []);
-                    }
+                    const invRes = await apiFetch<any>("/api/invoices?limit=100");
+                    setInvoices(invRes.data || []);
                     break;
                 case "test_drive":
-                    const tdRes = await fetch("/api/test-drives?limit=100", { headers });
-                    if (tdRes.ok) {
-                        const tdData = await tdRes.json();
-                        setTestDrives(tdData.data || []);
-                    }
+                    const tdRes = await apiFetch<any>("/api/test-drives?limit=100");
+                    setTestDrives(tdRes.data || []);
                     break;
             }
         } catch (err) {
@@ -323,7 +286,6 @@ export default function TaskFormModal({ mode, task, users = [], onClose, onSucce
         setError(null);
 
         try {
-            const token = localStorage.getItem("access_token");
             const payload: any = {
                 title: formData.title.trim(),
                 description: formData.description.trim() || null,
@@ -333,7 +295,7 @@ export default function TaskFormModal({ mode, task, users = [], onClose, onSucce
                 priority: formData.priority,
                 status: formData.status,
                 notes: formData.notes.trim() || null,
-                tags: tags,
+                tags: tags
             };
 
             console.log("Current links state at submit:", JSON.stringify(links, null, 2));
@@ -346,19 +308,10 @@ export default function TaskFormModal({ mode, task, users = [], onClose, onSucce
             const url = mode === "edit" && task?.id ? `/api/tasks/${task.id}` : "/api/tasks";
             const method = mode === "edit" ? "PATCH" : "POST";
 
-            const response = await fetch(url, {
+            await apiFetch(url, {
                 method,
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify(payload),
+                body: payload
             });
-
-            if (!response.ok) {
-                const data = await response.json();
-                throw new Error(data.error || "Failed to save task");
-            }
 
             onSuccess();
         } catch (err) {

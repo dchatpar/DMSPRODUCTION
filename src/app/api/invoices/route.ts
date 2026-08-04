@@ -29,6 +29,23 @@ export async function GET(req: NextRequest) {
             );
         }
 
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("role, dealership_id, is_platform_admin")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        }
+
+        if (!currentUser.dealership_id && !currentUser.is_platform_admin) {
+            return NextResponse.json(
+                { error: "Unauthorized - No dealership context" },
+                { status: 403 }
+            );
+        }
+
         const url = new URL(req.url);
         const limit = parseInt(url.searchParams.get("limit") || "50");
         const offset = parseInt(url.searchParams.get("offset") || "0");
@@ -46,6 +63,10 @@ export async function GET(req: NextRequest) {
             .order("created_at", { ascending: false })
             .range(offset, offset + limit - 1);
 
+        if (!currentUser.is_platform_admin) {
+            query = query.eq("dealership_id", currentUser.dealership_id);
+        }
+
         if (status) query = query.eq("status", status);
         if (q) {
             // Search only on invoice columns since PostgREST doesn't support FK refs in .or()
@@ -58,11 +79,85 @@ export async function GET(req: NextRequest) {
 
         if (dbError) throw dbError;
 
+        // Hydrate customer joins when PostgREST returns null but customer_id is set.
+        const rows = data || [];
+        const missingCustomerIds = [
+            ...new Set(
+                rows
+                    .filter((row: { customer_id?: string | null; customer?: unknown }) =>
+                        Boolean(row.customer_id) && !row.customer
+                    )
+                    .map((row: { customer_id: string }) => row.customer_id)
+            ),
+        ];
+        if (missingCustomerIds.length > 0) {
+            let customerLookup = supabase
+                .from("customers")
+                .select("id, name, email, phone")
+                .in("id", missingCustomerIds);
+            if (!currentUser.is_platform_admin) {
+                customerLookup = customerLookup.eq(
+                    "dealership_id",
+                    currentUser.dealership_id
+                );
+            }
+            const { data: foundCustomers } = await customerLookup;
+            const byId = new Map(
+                (foundCustomers || []).map((c: { id: string }) => [c.id, c])
+            );
+            for (const row of rows) {
+                if (row.customer_id && !row.customer && byId.has(row.customer_id)) {
+                    row.customer = byId.get(row.customer_id);
+                }
+            }
+        }
+
+        // Aggregate totals across the filtered set (not just the current page).
+        let totalsQuery = supabase
+            .from("invoices")
+            .select("total, status, due_date");
+
+        if (!currentUser.is_platform_admin) {
+            totalsQuery = totalsQuery.eq("dealership_id", currentUser.dealership_id);
+        }
+        if (status) totalsQuery = totalsQuery.eq("status", status);
+        if (q) {
+            totalsQuery = totalsQuery.or(
+                `invoice_number.ilike.%${q}%,notes.ilike.%${q}%`
+            );
+        }
+        if (invoiceDateFrom) totalsQuery = totalsQuery.gte("invoice_date", invoiceDateFrom);
+        if (invoiceDateTo) totalsQuery = totalsQuery.lte("invoice_date", invoiceDateTo);
+
+        const { data: totalsRows } = await totalsQuery;
+        const now = Date.now();
+        let pendingAmount = 0;
+        let paidAmount = 0;
+        let overdueAmount = 0;
+        for (const row of totalsRows || []) {
+            const line = Number(row.total || 0);
+            if (row.status === "Paid") {
+                paidAmount += line;
+            } else if (row.status === "Cancelled") {
+                // exclude from pending/overdue KPIs
+            } else {
+                pendingAmount += line;
+                if (row.due_date && new Date(row.due_date).getTime() < now) {
+                    overdueAmount += line;
+                }
+            }
+        }
+
         return NextResponse.json({
-            data: data || [],
+            data: rows,
             count: count || 0,
             limit,
             offset,
+            totals: {
+                pendingAmount,
+                paidAmount,
+                overdueAmount,
+            },
         });
     } catch (error: any) {
         console.error("Error fetching invoices:", error);
@@ -100,6 +195,17 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        // Get user profile
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("role, dealership_id, is_platform_admin, user_permissions")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        }
+
         const payload = await req.json();
 
         // Validate required fields
@@ -123,26 +229,45 @@ export async function POST(req: NextRequest) {
         }
 
         // Calculate tax and total if not provided
-        const taxRate = payload.tax_rate ?? 13;
+        const taxRate = payload.tax_rate !== undefined && payload.tax_rate !== null
+            ? parseFloat(payload.tax_rate)
+            : 13;
         const paymentAmount = parseFloat(payload.payment_amount) || 0;
-        const taxAmount = (paymentAmount * taxRate) / 100;
-        const total = paymentAmount + taxAmount;
+        const taxAmount = payload.tax_amount !== undefined ? parseFloat(payload.tax_amount) : (paymentAmount * taxRate) / 100;
+        const total = payload.total !== undefined ? parseFloat(payload.total) : paymentAmount + taxAmount;
+
+        if (!currentUser.dealership_id && !currentUser.is_platform_admin) {
+            return NextResponse.json(
+                { error: "Unauthorized - No dealership context" },
+                { status: 403 }
+            );
+        }
+
+        const insertRow: Record<string, unknown> = {
+            invoice_number: payload.invoice_number,
+            customer_id: payload.customer_id,
+            deal_id: payload.deal_id || null,
+            invoice_date: payload.invoice_date || new Date().toISOString().split("T")[0],
+            due_date: payload.due_date || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+            payment_amount: paymentAmount,
+            tax_rate: Number.isFinite(taxRate) ? taxRate : 13,
+            tax_amount: taxAmount,
+            total: total,
+            amount_paid: 0,
+            status: payload.status || "Pending",
+            notes: payload.notes || null,
+            package_name: payload.package_name ?? null,
+            dealership_id: currentUser.dealership_id,
+        };
+
+        // line_items allowed by schema (same as PUT whitelist on [id] route)
+        if (payload.line_items !== undefined) {
+            insertRow.line_items = payload.line_items;
+        }
 
         const { data, error: dbError } = await supabase
             .from("invoices")
-            .insert({
-                invoice_number: payload.invoice_number,
-                customer_id: payload.customer_id,
-                invoice_date: payload.invoice_date || new Date().toISOString().split("T")[0],
-                due_date: payload.due_date || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-                package_name: payload.package_name || null,
-                payment_amount: paymentAmount,
-                tax_rate: taxRate,
-                tax_amount: taxAmount,
-                total: total,
-                status: payload.status || 'Pending',
-                notes: payload.notes || null,
-            })
+            .insert(insertRow)
             .select(`
                 *,
                 customer:customers(id, name, email, phone)

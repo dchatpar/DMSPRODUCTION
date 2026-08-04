@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { supabaseBrowser } from "@/src/lib/supabase-browser";
+import Link from "next/link";
 import {
     PieChart,
     Pie,
@@ -22,28 +22,37 @@ import {
     User,
     DollarSign,
     FileText,
-    TrendingUp,
     Clock,
     ArrowUpRight,
-    ArrowDownRight,
     Calendar,
-    Mail,
-    MoreVertical,
     Loader2,
     AlertCircle,
     Package,
-    Building2,
-    TrendingDown,
-    UserCheck,
+    TrendingUp,
     Briefcase,
     Target,
-    CheckCircle,
-    AlertTriangle,
+    Inbox,
+    Flame,
+    Plus,
+    Phone,
+    Mail,
+    LayoutDashboard,
+    type LucideIcon,
 } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
+import { StatCard } from "@/src/components/ui/StatCard";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/src/components/ui/Card";
+import { PageHeader } from "@/src/components/ui/PageHeader";
+import { StatusBadge } from "@/src/components/ui/StatusBadge";
+import { Avatar } from "@/src/components/ui/Avatar";
+import { Skeleton } from "@/src/components/ui/Skeleton";
+import { EmptyState } from "@/src/components/ui/EmptyState";
+import { Button } from "@/src/components/ui/Button";
+import { cn, formatCurrency, timeAgo } from "@/src/lib/utils";
 
-const COLORS = ["#3B82F6", "#8B5CF6", "#EC4899", "#F59E0B", "#10B981", "#6366F1", "#EF4444", "#14B8A6"];
+const CHART_COLORS = ["#2563EB", "#0D9488", "#EA580C", "#CA8A04", "#059669", "#475569", "#DC2626", "#0891B2"];
 
-// Types
+// ── Types ────────────────────────────────────────────────────────────
 interface UserProfile {
     id: string;
     full_name: string;
@@ -52,7 +61,6 @@ interface UserProfile {
     dealership_id: string;
     is_platform_admin: boolean;
 }
-
 interface DashboardStats {
     totalVehicles: number;
     totalCustomers: number;
@@ -61,1223 +69,797 @@ interface DashboardStats {
     totalInvoices: number;
     activeVehicles: number;
     pendingInvoices: number;
+    /** Sum of sale_price across all deals — real revenue, unlike totalSales (a count). */
+    totalRevenue?: number;
 }
-
 interface RecentSale {
     id: string;
     sale_price: number;
     deal_date: string;
     deal_status: string;
-    vehicle: {
-        make: string;
-        year: number;
-        model: string;
-    };
-    customer: {
-        name: string;
-    };
-    salesperson: {
-        full_name: string;
-    };
+    vehicle?: { make?: string; year?: number; model?: string };
+    customer?: { name?: string; avatar?: string | null };
+    salesperson?: { full_name?: string; avatar?: string | null };
 }
-
 interface RecentLead {
     id: string;
     source: string;
     status: string;
     lead_creation_date: string;
-    customer: {
-        name: string;
-    };
-    assigned_user: {
-        full_name: string;
-    };
+    customer?: { name?: string; avatar?: string | null };
+    assigned_user?: { full_name?: string; avatar?: string | null };
     notes?: string;
 }
-
 interface DashboardData {
     stats: DashboardStats;
-    changes: {
-        vehicles: number;
-        customers: number;
-        leads: number;
-        sales: number;
-        invoices: number;
-        activeVehicles: number;
-    };
+    changes: { vehicles: number; customers: number; leads: number; sales: number; invoices: number; activeVehicles: number };
     recentSales: RecentSale[];
     recentLeads: RecentLead[];
 }
+interface ChartData { name: string; value: number }
 
-interface ChartData {
-    name: string;
-    value: number;
-    fill?: string;
+// ── Today item ───────────────────────────────────────────────────────
+function TodayItem({
+    icon: Icon,
+    tint,
+    label,
+    value,
+    href,
+}: {
+    icon: LucideIcon;
+    tint: string;
+    label: string;
+    value: string | number;
+    href: string;
+}) {
+    return (
+        <Link
+            href={href}
+            className="group flex items-center gap-3 rounded-xl border border-border bg-card/80 p-3 transition-all hover:border-primary/40 hover:bg-card hover:shadow-sm"
+        >
+            <div className={cn("inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg", tint)}>
+                <Icon className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-medium text-muted-foreground">{label}</p>
+                <p className="truncate text-h4 text-foreground">{value}</p>
+            </div>
+            <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-foreground" />
+        </Link>
+    );
 }
 
+// ── Stat card config ─────────────────────────────────────────────────
+function buildStatCards(stats: DashboardStats, changes: DashboardData["changes"]) {
+    // Master guide: 5 StatCards
+    return [
+        { title: "Active Inventory", value: stats.activeVehicles, icon: Car, tint: "bg-primary-50 text-primary", delta: changes.activeVehicles, subtitle: `${stats.totalVehicles} total`, href: "/inventory?status=Active" },
+        { title: "Open Leads", value: stats.totalLeads, icon: User, tint: "bg-status-sold-50 text-status-sold", delta: changes.leads, subtitle: "In pipeline", href: "/leads" },
+        { title: "Sales Revenue", value: stats.totalRevenue ?? stats.totalSales, icon: DollarSign, tint: "bg-success-50 text-success", delta: changes.sales, subtitle: `${stats.totalSales} deals`, href: "/deals", format: "currency" as const },
+        { title: "Customers", value: stats.totalCustomers, icon: Users, tint: "bg-info-50 text-info", delta: changes.customers, subtitle: "In directory", href: "/customers" },
+        { title: "Pending Invoices", value: stats.pendingInvoices, icon: FileText, tint: "bg-warning-50 text-warning", delta: changes.invoices, subtitle: `${stats.totalInvoices} total`, href: "/invoices" },
+    ];
+}
+
+// ── Main page ────────────────────────────────────────────────────────
 export default function DashboardPage() {
+    const router = useRouter();
     const [data, setData] = useState<DashboardData | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
     const [leadsSourceData, setLeadsSourceData] = useState<ChartData[]>([]);
     const [inventoryData, setInventoryData] = useState<ChartData[]>([]);
     const [salesStatusData, setSalesStatusData] = useState<ChartData[]>([]);
     const [expensesData, setExpensesData] = useState<ChartData[]>([]);
+    const [topVehicles, setTopVehicles] = useState<{ name: string; price: number; days: number }[]>([]);
+    const [upcomingFollowUps, setUpcomingFollowUps] = useState<any[]>([]);
     const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-
-    // Salesperson/Staff personal data
-    const [myLeads, setMyLeads] = useState<any[]>([]);
-    const [myDeals, setMyDeals] = useState<any[]>([]);
     const [myTasks, setMyTasks] = useState<any[]>([]);
-
-    // Manager team data
-    const [teamStats, setTeamStats] = useState<any>(null);
-
-    const router = useRouter();
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        async function fetchDashboard() {
+        let cancelled = false;
+        async function fetchAll() {
             try {
-                const { data: sessionData } = await supabaseBrowser.auth.getSession();
-                const token = sessionData?.session?.access_token;
+                const meRes = await apiFetch<{ data: UserProfile }>("/api/me", { silent: true });
+                if (cancelled) return;
+                const profile = meRes.data;
+                setUserProfile(profile);
 
-                if (!token) {
-                    router.push("/login");
-                    return;
-                }
+                const isPlatformAdmin = profile?.is_platform_admin;
+                const userRole = profile?.role;
 
-                // First, get user profile to determine role
-                const meRes = await fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } });
-                if (meRes.status === 401) {
-                    await supabaseBrowser.auth.signOut();
-                    router.push("/login");
-                    return;
-                }
-                const meData = await meRes.json();
-                setUserProfile(meData.data);
-
-                const isPlatformAdmin = meData.data?.is_platform_admin;
-                const userRole = meData.data?.role;
-
-                // Fetch data based on role
                 if (isPlatformAdmin) {
-                    // Platform Admin - fetch platform analytics
-                    const analyticsRes = await fetch("/api/platform/analytics", { headers: { Authorization: `Bearer ${token}` } });
-                    if (analyticsRes.ok) {
-                        const analyticsData = await analyticsRes.json();
-                        setData({
-                            stats: {
-                                totalVehicles: analyticsData.dealerships?.total || 0,
-                                totalCustomers: analyticsData.users?.total || 0,
-                                totalLeads: 0,
-                                totalSales: 0,
-                                totalInvoices: 0,
-                                activeVehicles: 0,
-                                pendingInvoices: 0,
-                            },
-                            changes: { vehicles: 0, customers: 0, leads: 0, sales: 0, invoices: 0, activeVehicles: 0 },
-                            recentSales: [],
-                            recentLeads: [],
-                        });
-                    }
+                    const analytics = await apiFetch<any>("/api/platform/analytics", { silent: true });
+                    if (cancelled) return;
+                    setData({
+                        stats: {
+                            totalVehicles: analytics?.dealerships?.total ?? 0,
+                            totalCustomers: analytics?.users?.total ?? 0,
+                            totalLeads: 0,
+                            totalSales: 0,
+                            totalInvoices: 0,
+                            activeVehicles: 0,
+                            pendingInvoices: 0,
+                        },
+                        changes: { vehicles: 0, customers: 0, leads: 0, sales: 0, invoices: 0, activeVehicles: 0 },
+                        recentSales: [],
+                        recentLeads: [],
+                    });
                 } else if (userRole === "Salesperson" || userRole === "Staff") {
-                    // Salesperson/Staff - fetch personal data only
-                    const [myTasksRes] = await Promise.all([
-                        fetch("/api/tasks?my_tasks=true&limit=10", { headers: { Authorization: `Bearer ${token}` } }),
-                    ]);
-
-                    if (myTasksRes.ok) {
-                        const tasksData = await myTasksRes.json();
-                        setMyTasks(tasksData.data || []);
-                    }
+                    const tasksRes = await apiFetch<{ data: any[] }>("/api/tasks?my_tasks=true&limit=20", { silent: true });
+                    if (cancelled) return;
+                    setMyTasks(tasksRes.data ?? []);
                 } else {
-                    // Admin/Manager - fetch full dealership data
-                    const [dashboardRes, leadsRes, vehiclesRes, dealsRes, expensesRes] = await Promise.all([
-                        fetch("/api/dashboard", { headers: { Authorization: `Bearer ${token}` } }),
-                        fetch("/api/leads?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
-                        fetch("/api/vehicles?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
-                        fetch("/api/deals?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
-                        fetch("/api/expenses?limit=1000", { headers: { Authorization: `Bearer ${token}` } }),
+                    const [dash, leads, vehicles, deals, expenses, followUps] = await Promise.all([
+                        apiFetch<DashboardData>("/api/dashboard", { silent: true }),
+                        apiFetch<{ data: any[] }>("/api/leads?limit=1000", { silent: true }),
+                        apiFetch<{ data: any[] }>("/api/vehicles?limit=1000", { silent: true }),
+                        apiFetch<{ data: any[] }>("/api/deals?limit=1000", { silent: true }),
+                        apiFetch<{ data: any[] }>("/api/expenses?limit=1000", { silent: true }),
+                        apiFetch<{ data: any[] }>("/api/follow-ups?limit=20", { silent: true }).catch(() => ({ data: [] })),
                     ]);
+                    if (cancelled) return;
+                    // /api/dashboard returns stats at the TOP level (no { data } wrapper)
+                    const d = dash;
+                    const vehicleRows = vehicles.data ?? [];
+                    setData({
+                        stats: {
+                            totalVehicles: d?.stats?.totalVehicles ?? vehicleRows.length ?? 0,
+                            totalCustomers: d?.stats?.totalCustomers ?? 0,
+                            totalLeads: d?.stats?.totalLeads ?? leads.data?.length ?? 0,
+                            totalSales: d?.stats?.totalSales ?? deals.data?.length ?? 0,
+                            totalRevenue: d?.stats?.totalRevenue ?? 0,
+                            totalInvoices: d?.stats?.totalInvoices ?? 0,
+                            activeVehicles: d?.stats?.activeVehicles ?? vehicleRows.filter((v: any) => v.status === "Active").length ?? 0,
+                            pendingInvoices: d?.stats?.pendingInvoices ?? 0,
+                        },
+                        changes: d?.changes ?? { vehicles: 0, customers: 0, leads: 0, sales: 0, invoices: 0, activeVehicles: 0 },
+                        recentSales: d?.recentSales ?? [],
+                        recentLeads: d?.recentLeads ?? leads.data?.slice(0, 5) ?? [],
+                    });
 
-                    if (dashboardRes.status === 401) {
-                        await supabaseBrowser.auth.signOut();
-                        router.push("/login");
-                        return;
-                    }
-
-                    if (!dashboardRes.ok) throw new Error("Failed to fetch dashboard data");
-
-                    const json = await dashboardRes.json();
-                    setData(json);
-
-                    // Process leads data for source chart
-                    if (leadsRes.ok) {
-                        const leadsJson = await leadsRes.json();
-                        const sourceCounts: Record<string, number> = {};
-                        leadsJson.data?.forEach((l: any) => {
-                            if (l.source) {
-                                sourceCounts[l.source] = (sourceCounts[l.source] || 0) + 1;
-                            }
-                        });
-                        const sorted = Object.entries(sourceCounts)
-                            .map(([name, value]) => ({ name, value }))
-                            .sort((a, b) => b.value - a.value)
-                            .slice(0, 6);
-                        setLeadsSourceData(sorted);
-                    }
-
-                    // Process vehicles data for inventory chart
-                    if (vehiclesRes.ok) {
-                        const vehiclesJson = await vehiclesRes.json();
-                        const statusCounts: Record<string, number> = {};
-                        vehiclesJson.data?.forEach((v: any) => {
-                            const status = v.status || "Unknown";
-                            statusCounts[status] = (statusCounts[status] || 0) + 1;
-                        });
-                        const chartData = Object.entries(statusCounts)
-                            .map(([name, value]) => ({ name, value }))
-                            .filter(item => item.value > 0);
-                        setInventoryData(chartData);
-                    }
-
-                    // Process deals data for sales status chart
-                    if (dealsRes.ok) {
-                        const dealsJson = await dealsRes.json();
-                        const statusCounts: Record<string, number> = {};
-                        dealsJson.data?.forEach((d: any) => {
-                            const status = d.deal_status || "Unknown";
-                            statusCounts[status] = (statusCounts[status] || 0) + 1;
-                        });
-                        const chartData = Object.entries(statusCounts)
-                            .map(([name, value]) => ({ name, value }))
-                            .filter(item => item.value > 0);
-                        setSalesStatusData(chartData);
-                    }
-
-                    // Process expenses data for category chart
-                    if (expensesRes.ok) {
-                        const expensesJson = await expensesRes.json();
-                        const categoryCounts: Record<string, number> = {};
-                        expensesJson.data?.forEach((e: any) => {
-                            const category = e.category || "Unknown";
-                            categoryCounts[category] = (categoryCounts[category] || 0) + 1;
-                        });
-                        const chartData = Object.entries(categoryCounts)
-                            .map(([name, value]) => ({ name, value }))
-                            .sort((a, b) => b.value - a.value)
-                            .slice(0, 6);
-                        setExpensesData(chartData);
-                    }
+                    // Build chart data
+                    setLeadsSourceData(buildLeadsSourceData(leads.data ?? []));
+                    setInventoryData(buildInventoryData(vehicleRows));
+                    setSalesStatusData(buildSalesStatusData(deals.data ?? []));
+                    setExpensesData(buildExpensesData(expenses.data ?? []));
+                    setTopVehicles(buildTopVehicles(vehicleRows));
+                    setUpcomingFollowUps(
+                        (followUps.data ?? [])
+                            .filter((f: any) => (f.status || "").toLowerCase() !== "completed")
+                            .slice(0, 5)
+                    );
                 }
-            } catch (err) {
-                setError(err instanceof Error ? err.message : "An error occurred");
+            } catch (e: any) {
+                if (!cancelled) setError(e?.message || "Failed to load dashboard");
             } finally {
-                setLoading(false);
+                if (!cancelled) setLoading(false);
             }
         }
+        fetchAll();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
-        fetchDashboard();
-    }, [router]);
-
-    // Render based on role
-    const isPlatformAdmin = userProfile?.is_platform_admin;
-    const userRole = userProfile?.role;
-
+    // ── Loading state ──
     if (loading) {
         return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <div className="flex flex-col items-center gap-4">
-                    <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
-                    <p className="text-sm text-slate-600">Loading dashboard...</p>
+            <div className="mx-auto max-w-[1600px] space-y-5 p-4 sm:p-6 lg:p-8">
+                <PageHeader title="Dashboard" description="Loading your dealership overview…" />
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                        <Skeleton key={i} className="h-28" />
+                    ))}
+                </div>
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    <Skeleton className="h-64" />
+                    <Skeleton className="h-64" />
                 </div>
             </div>
         );
     }
 
+    // ── Error state ──
     if (error) {
         return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <div className="text-center">
-                    <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-3" />
-                    <div className="text-red-600 text-sm font-medium mb-2">Error loading dashboard</div>
-                    <p className="text-slate-600 text-sm">{error}</p>
-                    <button
-                        onClick={() => window.location.reload()}
-                        className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors"
-                    >
-                        Retry
-                    </button>
-                </div>
+            <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto">
+                <EmptyState
+                    kind="error"
+                    title="Couldn't load dashboard"
+                    description={error}
+                    action={{ label: "Retry", onClick: () => window.location.reload() }}
+                />
             </div>
         );
     }
 
-    if (!data && !isPlatformAdmin && (userRole === "Salesperson" || userRole === "Staff")) {
-        // Show personal dashboard for Salesperson/Staff
-        return (
-            <PersonalDashboard
-                userProfile={userProfile}
-                myTasks={myTasks}
-            />
-        );
+    // ── Personal dashboard for Salesperson/Staff ──
+    if (userProfile && (userProfile.role === "Salesperson" || userProfile.role === "Staff")) {
+        return <PersonalDashboard userProfile={userProfile} myTasks={myTasks} />;
     }
 
-    if (isPlatformAdmin) {
-        // Show platform admin dashboard
-        return (
-            <PlatformAdminDashboard userProfile={userProfile} />
-        );
+    // ── Platform admin ──
+    if (userProfile?.is_platform_admin) {
+        return <PlatformAdminDashboard userProfile={userProfile} />;
     }
 
-    // Default: Admin/Manager Dashboard (existing code)
-
-    if (loading) {
+    // ── Admin / Manager dashboard ──
+    if (!data) {
         return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <div className="flex flex-col items-center gap-4">
-                    <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
-                    <p className="text-sm text-slate-600">Loading dashboard...</p>
-                </div>
+            <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto">
+                <EmptyState kind="no-results" title="No data yet" description="Add some data to see your dashboard." />
             </div>
         );
     }
+    return (
+        <ManagerDashboard
+            data={data}
+            userProfile={userProfile}
+            leadsSourceData={leadsSourceData}
+            inventoryData={inventoryData}
+            salesStatusData={salesStatusData}
+            expensesData={expensesData}
+            topVehicles={topVehicles}
+            upcomingFollowUps={upcomingFollowUps}
+        />
+    );
+}
 
-    if (error) {
-        return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <div className="text-center">
-                    <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-3" />
-                    <div className="text-red-600 text-sm font-medium mb-2">Error loading dashboard</div>
-                    <p className="text-slate-600 text-sm">{error}</p>
-                    <button
-                        onClick={() => window.location.reload()}
-                        className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors"
-                    >
-                        Retry
-                    </button>
-                </div>
-            </div>
-        );
-    }
-
-    if (!data) return null;
-
+// ── Manager / Admin dashboard ────────────────────────────────────────
+function ManagerDashboard({
+    data,
+    userProfile,
+    leadsSourceData,
+    inventoryData,
+    salesStatusData,
+    expensesData,
+    topVehicles,
+    upcomingFollowUps,
+}: {
+    data: DashboardData;
+    userProfile: UserProfile | null;
+    leadsSourceData: ChartData[];
+    inventoryData: ChartData[];
+    salesStatusData: ChartData[];
+    expensesData: ChartData[];
+    topVehicles: { name: string; price: number; days: number }[];
+    upcomingFollowUps: any[];
+}) {
+    const router = useRouter();
     const { stats, changes, recentSales, recentLeads } = data;
-
-    const statCards = [
-        {
-            title: "Total Vehicles",
-            value: stats.totalVehicles,
-            icon: Car,
-            color: "blue",
-            change: changes.vehicles,
-            subtitle: "Active: " + stats.activeVehicles,
-        },
-        {
-            title: "Total Customers",
-            value: stats.totalCustomers,
-            icon: Users,
-            color: "green",
-            change: changes.customers,
-            subtitle: "In system",
-        },
-        {
-            title: "Total Leads",
-            value: stats.totalLeads,
-            icon: User,
-            color: "purple",
-            change: changes.leads,
-            subtitle: "In progress",
-        },
-        {
-            title: "Total Sales",
-            value: stats.totalSales,
-            icon: DollarSign,
-            color: "orange",
-            change: changes.sales,
-            subtitle: "This quarter",
-        },
-        {
-            title: "Total Invoices",
-            value: stats.totalInvoices,
-            icon: FileText,
-            color: "red",
-            change: changes.invoices,
-            subtitle: stats.pendingInvoices + " pending",
-        },
-        {
-            title: "Active Vehicles",
-            value: stats.activeVehicles,
-            icon: Package,
-            color: "teal",
-            change: changes.activeVehicles,
-            subtitle: "Available",
-        },
-    ];
-
-    const getStatusColor = (status: string) => {
-        const colors: Record<string, string> = {
-            "Negotiation": "bg-yellow-100 text-yellow-800",
-            "Closed": "bg-green-100 text-green-800",
-            "In Progress": "bg-blue-100 text-blue-800",
-            "Lost": "bg-red-100 text-red-800",
-            "Pending": "bg-orange-100 text-orange-800",
-            "New": "bg-purple-100 text-purple-800",
-            "Completed": "bg-emerald-100 text-emerald-800",
-            "Active": "bg-blue-100 text-blue-800",
-            "Sold": "bg-green-100 text-green-800",
-            "Finance": "bg-purple-100 text-purple-800",
-            "Down Payment": "bg-amber-100 text-amber-800",
-            "Paid Off": "bg-emerald-100 text-emerald-800",
-            "Cancelled": "bg-gray-100 text-gray-800",
-        };
-        return colors[status] || "bg-gray-100 text-gray-800";
-    };
-
-    const getColorStyles = (color: string) => {
-        const styles: Record<string, { bg: string; text: string; hover: string }> = {
-            blue: { bg: "bg-blue-50", text: "text-blue-600", hover: "hover:bg-blue-100" },
-            green: { bg: "bg-green-50", text: "text-green-600", hover: "hover:bg-green-100" },
-            purple: { bg: "bg-purple-50", text: "text-purple-600", hover: "hover:bg-purple-100" },
-            orange: { bg: "bg-orange-50", text: "text-orange-600", hover: "hover:bg-orange-100" },
-            red: { bg: "bg-red-50", text: "text-red-600", hover: "hover:bg-red-100" },
-            teal: { bg: "bg-teal-50", text: "text-teal-600", hover: "hover:bg-teal-100" },
-        };
-        return styles[color] || styles.blue;
-    };
+    const statCards = buildStatCards(stats, changes);
+    const firstName = userProfile?.full_name?.split(" ")[0] ?? "there";
 
     return (
-        <div className="space-y-6">
-            {/* Page Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
-                    <p className="text-sm text-slate-600 mt-1">
-                        Welcome back! Here&apos;s your dealership overview.
-                    </p>
-                </div>
-                <div className="flex items-center gap-3">
-                    <button
-                        onClick={() => router.push("/reports")}
-                        className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 flex items-center gap-2 transition-colors"
-                    >
-                        <FileText className="w-4 h-4" />
-                        View Reports
-                    </button>
-                </div>
+        <div className="mx-auto max-w-[1600px] space-y-4 px-4 py-6 sm:px-6 lg:px-8">
+            <PageHeader
+                title="Dashboard"
+                description={`Welcome back, ${firstName}. Here's how your dealership is doing.`}
+                icon={LayoutDashboard}
+                actions={
+                    <>
+                        <Button variant="outline" size="sm" leftIcon={<FileText className="h-4 w-4" />} onClick={() => router.push("/reports")}>
+                            View reports
+                        </Button>
+                        <Button size="sm" leftIcon={<Plus className="h-4 w-4" />} onClick={() => router.push("/inventory/new")}>
+                            New vehicle
+                        </Button>
+                    </>
+                }
+                meta={
+                    <span className="flex items-center gap-1 text-muted-foreground">
+                        <Clock className="h-3.5 w-3.5" />
+                        Updated {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                }
+            />
+
+            {/* KPI grid — 5 StatCards */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5">
+                {statCards.map((stat) => (
+                    <StatCard
+                        key={stat.title}
+                        label={stat.title}
+                        value={stat.value}
+                        icon={stat.icon}
+                        iconClassName={stat.tint}
+                        delta={stat.delta}
+                        deltaLabel={stat.subtitle}
+                        href={stat.href}
+                        format={stat.format}
+                    />
+                ))}
             </div>
 
-            {/* Stats Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-                {statCards.map((stat, index) => {
-                    const Icon = stat.icon;
-                    const isTrendUp = stat.change >= 0;
-                    const colors = getColorStyles(stat.color);
-                    const changeText = stat.change >= 0 ? `+${stat.change}%` : `${stat.change}%`;
-
-                    return (
-                        <div
-                            key={index}
-                            className="bg-white rounded-xl border border-slate-200/60 p-4 hover:shadow-md transition-all duration-200 group"
-                        >
-                            <div className="flex items-center justify-between mb-3">
-                                <div className={`p-2 rounded-lg ${colors.bg} ${colors.hover} transition-colors`}>
-                                    <Icon className={`w-5 h-5 ${colors.text}`} />
-                                </div>
-                                <div className="flex items-center gap-1">
-                                    {isTrendUp ? (
-                                        <ArrowUpRight className="w-3.5 h-3.5 text-green-600" />
-                                    ) : (
-                                        <ArrowDownRight className="w-3.5 h-3.5 text-red-600" />
-                                    )}
-                                    <span className={`text-xs font-medium ${isTrendUp ? "text-green-600" : "text-red-600"}`}>
-                                        {changeText}
-                                    </span>
-                                </div>
-                            </div>
-                            <div className="space-y-1">
-                                <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
-                                <p className="text-xs text-slate-600 font-medium">{stat.title}</p>
-                                {stat.subtitle && (
-                                    <p className="text-[10px] text-slate-400">{stat.subtitle}</p>
-                                )}
-                            </div>
-                        </div>
-                    );
-                })}
+            {/* Quick actions */}
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <QuickAction icon={Plus} tint="bg-primary-50 text-primary" label="Add vehicle" sub="Intake wizard" onClick={() => router.push("/inventory/new")} />
+                <QuickAction icon={User} tint="bg-status-sold-50 text-status-sold" label="New lead" sub="Lead center" onClick={() => router.push("/leads")} />
+                <QuickAction icon={DollarSign} tint="bg-success-50 text-success" label="New deal" sub="5-step create" onClick={() => router.push("/deals/new")} />
+                <QuickAction icon={Calendar} tint="bg-warning-50 text-warning" label="Calendar" sub="Appointments" onClick={() => router.push("/calendar")} />
             </div>
 
-            {/* Charts Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6">
-                {/* Leads by Source */}
-                <div className="bg-white rounded-xl border border-slate-200/60 p-4">
-                    <div className="flex items-center justify-between mb-4">
+            {/* Today panel */}
+            <Card className="border-border/80 bg-card/80 backdrop-blur-sm">
+                <CardHeader className="border-b border-border/60 bg-transparent py-3">
+                    <div className="flex items-center gap-2">
+                        <Flame className="h-4 w-4 text-warning" />
                         <div>
-                            <h3 className="font-semibold text-slate-900">Leads by Source</h3>
-                            <p className="text-xs text-slate-500">Top channels</p>
+                            <CardTitle className="text-base">Today</CardTitle>
+                            <CardDescription>What needs your attention</CardDescription>
                         </div>
                     </div>
+                </CardHeader>
+                <CardContent className="pt-4">
+                    <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3">
+                        <TodayItem
+                            icon={Inbox}
+                            tint="bg-status-pending-50 text-status-pending"
+                            label="Active leads in pipeline"
+                            value={stats.totalLeads}
+                            href="/leads"
+                        />
+                        <TodayItem
+                            icon={FileText}
+                            tint="bg-warning-50 text-warning"
+                            label="Pending invoices"
+                            value={stats.pendingInvoices}
+                            href="/invoices"
+                        />
+                        <TodayItem
+                            icon={Target}
+                            tint="bg-status-active-50 text-status-active"
+                            label="Vehicles ready to sell"
+                            value={stats.activeVehicles}
+                            href="/inventory?status=Active"
+                        />
+                    </div>
+                </CardContent>
+            </Card>
+
+            {/* Charts */}
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
+                <ChartCard title="Leads by Source" subtitle="Top channels">
                     {leadsSourceData.length > 0 ? (
                         <>
                             <div className="h-[200px]">
                                 <ResponsiveContainer width="100%" height="100%">
                                     <BarChart data={leadsSourceData} layout="vertical">
-                                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
-                                        <XAxis type="number" tick={{ fontSize: 11 }} />
-                                        <YAxis type="category" dataKey="name" width={70} tick={{ fontSize: 10 }} />
-                                        <Tooltip />
+                                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="hsl(var(--border))" />
+                                        <XAxis type="number" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} stroke="hsl(var(--border))" />
+                                        <YAxis type="category" dataKey="name" width={70} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} stroke="hsl(var(--border))" />
+                                        <Tooltip contentStyle={{ backgroundColor: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} />
                                         <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                                             {leadsSourceData.map((_, idx) => (
-                                                <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
+                                                <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
                                             ))}
                                         </Bar>
                                     </BarChart>
                                 </ResponsiveContainer>
                             </div>
-                            <div className="mt-3 space-y-1">
+                            <ul className="mt-3 space-y-1">
                                 {leadsSourceData.slice(0, 4).map((item, idx) => (
-                                    <div key={item.name} className="flex items-center justify-between text-xs">
+                                    <li key={item.name} className="flex items-center justify-between text-xs">
                                         <div className="flex items-center gap-2">
-                                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
-                                            <span className="text-slate-600">{item.name}</span>
+                                            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] }} />
+                                            <span className="text-muted-foreground">{item.name}</span>
                                         </div>
-                                        <span className="font-medium text-slate-900">{item.value}</span>
-                                    </div>
+                                        <span className="font-medium text-foreground">{item.value}</span>
+                                    </li>
                                 ))}
-                            </div>
+                            </ul>
                         </>
                     ) : (
-                        <div className="flex items-center justify-center h-[200px] text-slate-400 text-sm">
-                            No leads data
-                        </div>
+                        <EmptyState kind="no-results" title="No lead data" description="Add leads to see this chart." className="py-8" />
                     )}
-                </div>
+                </ChartCard>
 
-                {/* Inventory Status */}
-                <div className="bg-white rounded-xl border border-slate-200/60 p-4">
-                    <div className="flex items-center justify-between mb-4">
-                        <div>
-                            <h3 className="font-semibold text-slate-900">Inventory Status</h3>
-                            <p className="text-xs text-slate-500">Vehicle breakdown</p>
-                        </div>
-                    </div>
+                <ChartCard title="Inventory Status" subtitle="Vehicle breakdown">
                     {inventoryData.length > 0 ? (
-                        <>
-                            <div className="h-[200px]">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <PieChart>
-                                        <Pie
-                                            data={inventoryData}
-                                            cx="50%"
-                                            cy="50%"
-                                            innerRadius={50}
-                                            outerRadius={80}
-                                            paddingAngle={2}
-                                            dataKey="value"
-                                        >
-                                            {inventoryData.map((_, idx) => (
-                                                <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
-                                            ))}
-                                        </Pie>
-                                        <Tooltip />
-                                    </PieChart>
-                                </ResponsiveContainer>
-                            </div>
-                            <div className="mt-2 space-y-1">
-                                {inventoryData.map((item, idx) => (
-                                    <div key={item.name} className="flex items-center justify-between text-xs">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
-                                            <span className="text-slate-600">{item.name}</span>
-                                        </div>
-                                        <span className="font-medium text-slate-900">{item.value}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </>
+                        <div className="h-[240px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie data={inventoryData} cx="50%" cy="50%" innerRadius={50} outerRadius={90} paddingAngle={2} dataKey="value">
+                                        {inventoryData.map((_, idx) => (
+                                            <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip contentStyle={{ backgroundColor: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} />
+                                    <Legend wrapperStyle={{ fontSize: 11, color: "hsl(var(--muted-foreground))" }} />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
                     ) : (
-                        <div className="flex items-center justify-center h-[200px] text-slate-400 text-sm">
-                            No inventory data
-                        </div>
+                        <EmptyState kind="no-results" title="No inventory" description="Add vehicles to see this chart." className="py-8" />
                     )}
-                </div>
+                </ChartCard>
 
-                {/* Sales by Status */}
-                <div className="bg-white rounded-xl border border-slate-200/60 p-4">
-                    <div className="flex items-center justify-between mb-4">
-                        <div>
-                            <h3 className="font-semibold text-slate-900">Deal Status</h3>
-                            <p className="text-xs text-slate-500">Pipeline overview</p>
-                        </div>
-                    </div>
+                <ChartCard title="Sales funnel" subtitle="Pipeline by stage">
                     {salesStatusData.length > 0 ? (
-                        <>
-                            <div className="h-[200px]">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <PieChart>
-                                        <Pie
-                                            data={salesStatusData}
-                                            cx="50%"
-                                            cy="50%"
-                                            innerRadius={50}
-                                            outerRadius={80}
-                                            paddingAngle={2}
-                                            dataKey="value"
-                                        >
-                                            {salesStatusData.map((_, idx) => (
-                                                <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
-                                            ))}
-                                        </Pie>
-                                        <Tooltip />
-                                    </PieChart>
-                                </ResponsiveContainer>
-                            </div>
-                            <div className="mt-2 space-y-1">
-                                {salesStatusData.map((item, idx) => (
-                                    <div key={item.name} className="flex items-center justify-between text-xs">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
-                                            <span className="text-slate-600">{item.name}</span>
-                                        </div>
-                                        <span className="font-medium text-slate-900">{item.value}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </>
-                    ) : (
-                        <div className="flex items-center justify-center h-[200px] text-slate-400 text-sm">
-                            No deals data
+                        <div className="h-[240px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={salesStatusData}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                                    <XAxis dataKey="name" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} stroke="hsl(var(--border))" />
+                                    <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} stroke="hsl(var(--border))" />
+                                    <Tooltip contentStyle={{ backgroundColor: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} />
+                                    <Bar dataKey="value" fill={CHART_COLORS[0]} radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
                         </div>
+                    ) : (
+                        <EmptyState kind="no-results" title="No sales" description="Close deals to see this chart." className="py-8" />
                     )}
-                </div>
+                </ChartCard>
 
-                {/* Expenses by Category */}
-                <div className="bg-white rounded-xl border border-slate-200/60 p-4">
-                    <div className="flex items-center justify-between mb-4">
-                        <div>
-                            <h3 className="font-semibold text-slate-900">Expenses</h3>
-                            <p className="text-xs text-slate-500">By category</p>
-                        </div>
-                    </div>
+                <ChartCard title="Expenses by Category" subtitle="Top spend">
                     {expensesData.length > 0 ? (
-                        <>
-                            <div className="h-[200px]">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={expensesData}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                        <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                                        <YAxis tick={{ fontSize: 10 }} />
-                                        <Tooltip />
-                                        <Bar dataKey="value" fill="#EF4444" radius={[4, 4, 0, 0]} />
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </div>
-                            <div className="mt-2 space-y-1">
-                                {expensesData.slice(0, 4).map((item, idx) => (
-                                    <div key={item.name} className="flex items-center justify-between text-xs">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
-                                            <span className="text-slate-600 truncate max-w-[100px]">{item.name}</span>
-                                        </div>
-                                        <span className="font-medium text-slate-900">{item.value}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </>
-                    ) : (
-                        <div className="flex items-center justify-center h-[200px] text-slate-400 text-sm">
-                            No expenses data
+                        <div className="h-[240px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie data={expensesData} cx="50%" cy="50%" innerRadius={50} outerRadius={90} paddingAngle={2} dataKey="value">
+                                        {expensesData.map((_, idx) => (
+                                            <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip contentStyle={{ backgroundColor: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} />
+                                    <Legend wrapperStyle={{ fontSize: 11, color: "hsl(var(--muted-foreground))" }} />
+                                </PieChart>
+                            </ResponsiveContainer>
                         </div>
+                    ) : (
+                        <EmptyState kind="no-results" title="No expenses" description="Log expenses to see this chart." className="py-8" />
                     )}
-                </div>
+                </ChartCard>
             </div>
 
-            {/* Recent Activity Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Recent Sales */}
-                <div className="bg-white rounded-xl border border-slate-200/60 overflow-hidden">
-                    <div className="p-4 border-b border-slate-200/60 flex items-center justify-between">
+            {/* Recent activity + follow-ups + top vehicles */}
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <Card className="p-0">
+                    <CardHeader className="px-5 py-4">
                         <div>
-                            <h3 className="font-semibold text-slate-900">Recent Sales</h3>
-                            <p className="text-xs text-slate-600">Latest deals</p>
+                            <CardTitle>Recent sales</CardTitle>
+                            <CardDescription>Latest 5 closed or in-progress deals</CardDescription>
                         </div>
-                        <button
-                            onClick={() => router.push("/deals")}
-                            className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
-                        >
-                            View All
-                            <ArrowUpRight className="w-3 h-3" />
-                        </button>
-                    </div>
-                    <div className="divide-y divide-slate-200/60 max-h-[400px] overflow-y-auto">
+                        <Button variant="ghost" size="sm" onClick={() => router.push("/deals")}>
+                            View all
+                            <ArrowUpRight className="ml-1 h-3.5 w-3.5" />
+                        </Button>
+                    </CardHeader>
+                    <CardContent>
                         {recentSales.length === 0 ? (
-                            <div className="p-8 text-center text-slate-500">
-                                <DollarSign className="w-12 h-12 mx-auto mb-3 text-slate-300" />
-                                <p className="text-sm">No recent sales</p>
-                            </div>
+                            <EmptyState kind="first-use" title="No sales yet" description="Closed deals will appear here." action={{ label: "Add a deal", href: "/deals/new" }} className="py-8" />
                         ) : (
-                            recentSales.map((sale) => (
-                                <div key={sale.id} className="p-4 hover:bg-slate-50 transition-colors">
-                                    <div className="flex items-start justify-between">
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                                <p className="font-medium text-slate-900 truncate">
-                                                    {sale.vehicle.year} {sale.vehicle.make} {sale.vehicle.model}
-                                                </p>
-                                                <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getStatusColor(sale.deal_status)}`}>
-                                                    {sale.deal_status}
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center gap-3 mt-1 text-xs text-slate-600 flex-wrap">
-                                                <span className="flex items-center gap-1">
-                                                    <Users className="w-3 h-3" />
-                                                    {sale.customer.name}
-                                                </span>
-                                                <span className="flex items-center gap-1">
-                                                    <DollarSign className="w-3 h-3" />
-                                                    ${sale.sale_price.toLocaleString()}
-                                                </span>
-                                                <span className="flex items-center gap-1">
-                                                    <Calendar className="w-3 h-3" />
-                                                    {new Date(sale.deal_date).toLocaleDateString()}
-                                                </span>
-                                            </div>
+                            <ul className="divide-y divide-border">
+                                {recentSales.slice(0, 5).map((sale) => (
+                                    <li key={sale.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                                        <Avatar name={sale.customer?.name} src={sale.customer?.avatar} size="md" />
+                                        <div className="min-w-0 flex-1">
+                                            <p className="truncate text-sm font-medium text-foreground">
+                                                {sale.customer?.name ?? "Unknown customer"}
+                                            </p>
+                                            <p className="truncate text-xs text-muted-foreground">
+                                                {sale.vehicle?.year} {sale.vehicle?.make} {sale.vehicle?.model}
+                                            </p>
                                         </div>
-                                        <button className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
-                                            <MoreVertical className="w-4 h-4 text-slate-400" />
-                                        </button>
-                                    </div>
-                                </div>
-                            ))
+                                        <div className="text-right">
+                                            <p className="text-sm font-semibold text-foreground tabular-nums">
+                                                {formatCurrency(sale.sale_price)}
+                                            </p>
+                                            <p className="text-xs text-muted-foreground">
+                                                {timeAgo(sale.deal_date)}
+                                            </p>
+                                        </div>
+                                        <StatusBadge status={sale.deal_status} resource="deal" />
+                                    </li>
+                                ))}
+                            </ul>
                         )}
-                    </div>
-                </div>
+                    </CardContent>
+                </Card>
 
-                {/* Recent Leads */}
-                <div className="bg-white rounded-xl border border-slate-200/60 overflow-hidden">
-                    <div className="p-4 border-b border-slate-200/60 flex items-center justify-between">
+                <Card className="p-0">
+                    <CardHeader className="px-5 py-4">
                         <div>
-                            <h3 className="font-semibold text-slate-900">Recent Leads</h3>
-                            <p className="text-xs text-slate-600">New inquiries</p>
+                            <CardTitle>Recent leads</CardTitle>
+                            <CardDescription>Latest 5 prospects</CardDescription>
                         </div>
-                        <button
-                            onClick={() => router.push("/leads")}
-                            className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
-                        >
-                            View All
-                            <ArrowUpRight className="w-3 h-3" />
-                        </button>
-                    </div>
-                    <div className="divide-y divide-slate-200/60 max-h-[400px] overflow-y-auto">
+                        <Button variant="ghost" size="sm" onClick={() => router.push("/leads")}>
+                            View all
+                            <ArrowUpRight className="ml-1 h-3.5 w-3.5" />
+                        </Button>
+                    </CardHeader>
+                    <CardContent>
                         {recentLeads.length === 0 ? (
-                            <div className="p-8 text-center text-slate-500">
-                                <User className="w-12 h-12 mx-auto mb-3 text-slate-300" />
-                                <p className="text-sm">No recent leads</p>
-                            </div>
+                            <EmptyState kind="first-use" title="No leads yet" description="New prospects will appear here." action={{ label: "Add a lead", href: "/leads" }} className="py-8" />
                         ) : (
-                            recentLeads.map((lead) => (
-                                <div key={lead.id} className="p-4 hover:bg-slate-50 transition-colors">
-                                    <div className="flex items-start justify-between">
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                                <p className="font-medium text-slate-900 truncate">
-                                                    {lead.customer.name}
-                                                </p>
-                                                <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getStatusColor(lead.status)}`}>
-                                                    {lead.status}
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center gap-3 mt-1 text-xs text-slate-600 flex-wrap">
-                                                <span className="flex items-center gap-1">
-                                                    <Mail className="w-3 h-3" />
-                                                    {lead.source}
-                                                </span>
-                                                <span className="flex items-center gap-1">
-                                                    <Users className="w-3 h-3" />
-                                                    {lead.assigned_user?.full_name}
-                                                </span>
-                                                <span className="flex items-center gap-1">
-                                                    <Clock className="w-3 h-3" />
-                                                    {new Date(lead.lead_creation_date).toLocaleDateString()}
-                                                </span>
-                                            </div>
-                                            {lead.notes && (
-                                                <p className="mt-1 text-xs text-slate-500 truncate">
-                                                    {lead.notes}
-                                                </p>
-                                            )}
+                            <ul className="divide-y divide-border">
+                                {recentLeads.slice(0, 5).map((lead) => (
+                                    <li key={lead.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                                        <Avatar name={lead.customer?.name} src={lead.customer?.avatar} size="md" />
+                                        <div className="min-w-0 flex-1">
+                                            <p className="truncate text-sm font-medium text-foreground">
+                                                {lead.customer?.name ?? "Unknown"}
+                                            </p>
+                                            <p className="truncate text-xs text-muted-foreground">
+                                                {lead.source} · {timeAgo(lead.lead_creation_date)}
+                                            </p>
                                         </div>
-                                        <button className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
-                                            <MoreVertical className="w-4 h-4 text-slate-400" />
-                                        </button>
-                                    </div>
-                                </div>
-                            ))
+                                        {lead.assigned_user && (
+                                            <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground">
+                                                <Avatar name={lead.assigned_user.full_name} src={lead.assigned_user.avatar} size="xs" />
+                                                <span className="truncate max-w-[100px]">{lead.assigned_user.full_name}</span>
+                                            </div>
+                                        )}
+                                        <StatusBadge status={lead.status} resource="lead" />
+                                    </li>
+                                ))}
+                            </ul>
                         )}
-                    </div>
-                </div>
+                    </CardContent>
+                </Card>
+
+                <Card className="p-0">
+                    <CardHeader className="px-5 py-4">
+                        <div>
+                            <CardTitle>Upcoming follow-ups</CardTitle>
+                            <CardDescription>Next actions due</CardDescription>
+                        </div>
+                        <Button variant="ghost" size="sm" onClick={() => router.push("/follow-ups")}>
+                            View all
+                            <ArrowUpRight className="ml-1 h-3.5 w-3.5" />
+                        </Button>
+                    </CardHeader>
+                    <CardContent>
+                        {upcomingFollowUps.length === 0 ? (
+                            <EmptyState kind="first-use" title="No follow-ups" description="Scheduled follow-ups show here." action={{ label: "Open follow-ups", href: "/follow-ups" }} className="py-8" />
+                        ) : (
+                            <ul className="divide-y divide-border">
+                                {upcomingFollowUps.map((fu: any) => (
+                                    <li key={fu.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                                        <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-warning-50 text-warning">
+                                            <Phone className="h-4 w-4" />
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="truncate text-sm font-medium text-foreground">
+                                                {fu.customer?.name || fu.subject || "Follow-up"}
+                                            </p>
+                                            <p className="truncate text-xs text-muted-foreground">
+                                                {fu.follow_up_date
+                                                    ? new Date(fu.follow_up_date).toLocaleDateString()
+                                                    : "No date"}
+                                                {fu.priority ? ` · ${fu.priority}` : ""}
+                                            </p>
+                                        </div>
+                                        <StatusBadge status={fu.status || "Pending"} resource="task" />
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </CardContent>
+                </Card>
+
+                <Card className="p-0">
+                    <CardHeader className="px-5 py-4">
+                        <div>
+                            <CardTitle>Top vehicles</CardTitle>
+                            <CardDescription>Highest retail, active stock</CardDescription>
+                        </div>
+                        <Button variant="ghost" size="sm" onClick={() => router.push("/inventory")}>
+                            Inventory
+                            <ArrowUpRight className="ml-1 h-3.5 w-3.5" />
+                        </Button>
+                    </CardHeader>
+                    <CardContent>
+                        {topVehicles.length === 0 ? (
+                            <EmptyState kind="first-use" title="No active vehicles" description="Add inventory to see top units." action={{ label: "Add vehicle", href: "/inventory/new" }} className="py-8" />
+                        ) : (
+                            <ul className="divide-y divide-border">
+                                {topVehicles.map((v, idx) => (
+                                    <li key={`${v.name}-${idx}`} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                                        <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-primary-50 text-primary">
+                                            <Package className="h-4 w-4" />
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="truncate text-sm font-medium text-foreground">{v.name}</p>
+                                            <p className="text-xs text-muted-foreground">{v.days}d in stock</p>
+                                        </div>
+                                        <p className="text-sm font-semibold tabular-nums text-foreground">
+                                            {formatCurrency(v.price)}
+                                        </p>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </CardContent>
+                </Card>
             </div>
         </div>
     );
 }
 
-// =============================================================================
-// PERSONAL DASHBOARD - For Salesperson and Staff
-// =============================================================================
+// ── Personal dashboard (Salesperson/Staff) ──────────────────────────
 function PersonalDashboard({ userProfile, myTasks }: { userProfile: UserProfile | null; myTasks: any[] }) {
     const router = useRouter();
-    const getStatusColor = (status: string) => {
-        const colors: Record<string, string> = {
-            "Pending": "bg-yellow-100 text-yellow-800",
-            "In Progress": "bg-blue-100 text-blue-800",
-            "Completed": "bg-green-100 text-green-800",
-            "Cancelled": "bg-gray-100 text-gray-800",
-            "Not Started": "bg-slate-100 text-slate-800",
-        };
-        return colors[status] || "bg-gray-100 text-gray-800";
-    };
-
-    const getPriorityColor = (priority: string) => {
-        const colors: Record<string, string> = {
-            "Urgent": "bg-red-100 text-red-800",
-            "High": "bg-orange-100 text-orange-800",
-            "Medium": "bg-blue-100 text-blue-800",
-            "Low": "bg-slate-100 text-slate-800",
-        };
-        return colors[priority] || "bg-gray-100 text-gray-800";
-    };
-
     const pendingTasks = myTasks.filter((t: any) => t.status !== "Completed" && t.status !== "Cancelled");
     const completedTasks = myTasks.filter((t: any) => t.status === "Completed");
+    const firstName = userProfile?.full_name?.split(" ")[0] ?? "there";
 
     return (
-        <div className="space-y-6">
-            {/* Page Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-900">My Dashboard</h1>
-                    <p className="text-sm text-slate-600 mt-1">
-                        Welcome back, {userProfile?.full_name || 'User'}!
-                    </p>
-                </div>
+        <div className="mx-auto max-w-[1600px] space-y-5 p-4 sm:p-6 lg:p-8">
+            <PageHeader
+                title="My dashboard"
+                description={`Welcome back, ${firstName}. Here's what's on your plate.`}
+                actions={
+                    <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => router.push("/leads")}>
+                        New lead
+                    </Button>
+                }
+            />
+
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <StatCard label="My tasks" value={myTasks.length} icon={Briefcase} iconClassName="bg-primary-50 text-primary" deltaLabel={`${pendingTasks.length} pending`} href="/tasks" />
+                <StatCard label="Pending" value={pendingTasks.length} icon={Clock} iconClassName="bg-warning-50 text-warning" href="/tasks" />
+                <StatCard label="Completed" value={completedTasks.length} icon={TrendingUp} iconClassName="bg-success-50 text-success" href="/tasks" />
+                <StatCard label="My leads" value={0} icon={User} iconClassName="bg-info-50 text-info" href="/leads" />
             </div>
 
-            {/* Personal Stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                <div className="bg-white rounded-xl border border-slate-200/60 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-blue-50 rounded-lg">
-                            <Target className="w-5 h-5 text-blue-600" />
-                        </div>
-                        <div>
-                            <p className="text-2xl font-bold text-slate-900">{pendingTasks.length}</p>
-                            <p className="text-xs text-slate-600">Pending Tasks</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-xl border border-slate-200/60 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-green-50 rounded-lg">
-                            <CheckCircle className="w-5 h-5 text-green-600" />
-                        </div>
-                        <div>
-                            <p className="text-2xl font-bold text-slate-900">{completedTasks.length}</p>
-                            <p className="text-xs text-slate-600">Completed Tasks</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-xl border border-slate-200/60 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-purple-50 rounded-lg">
-                            <User className="w-5 h-5 text-purple-600" />
-                        </div>
-                        <div>
-                            <p className="text-2xl font-bold text-slate-900">{userProfile?.role || 'Staff'}</p>
-                            <p className="text-xs text-slate-600">Your Role</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-xl border border-slate-200/60 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-amber-50 rounded-lg">
-                            <Clock className="w-5 h-5 text-amber-600" />
-                        </div>
-                        <div>
-                            <p className="text-2xl font-bold text-slate-900">
-                                {pendingTasks.filter((t: any) => t.priority === 'Urgent').length}
-                            </p>
-                            <p className="text-xs text-slate-600">Urgent Tasks</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Quick Actions */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <button
-                    onClick={() => router.push("/leads")}
-                    className="bg-white rounded-xl border border-slate-200/60 p-4 hover:shadow-md transition-all flex items-center gap-3"
-                >
-                    <div className="p-2 bg-purple-50 rounded-lg">
-                        <User className="w-5 h-5 text-purple-600" />
-                    </div>
-                    <div className="text-left">
-                        <p className="font-medium text-slate-900">My Leads</p>
-                        <p className="text-xs text-slate-500">View assigned leads</p>
-                    </div>
-                </button>
-
-                <button
-                    onClick={() => router.push("/tasks")}
-                    className="bg-white rounded-xl border border-slate-200/60 p-4 hover:shadow-md transition-all flex items-center gap-3"
-                >
-                    <div className="p-2 bg-blue-50 rounded-lg">
-                        <CheckCircle className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <div className="text-left">
-                        <p className="font-medium text-slate-900">My Tasks</p>
-                        <p className="text-xs text-slate-500">View all tasks</p>
-                    </div>
-                </button>
-
-                <button
-                    onClick={() => router.push("/customers")}
-                    className="bg-white rounded-xl border border-slate-200/60 p-4 hover:shadow-md transition-all flex items-center gap-3"
-                >
-                    <div className="p-2 bg-green-50 rounded-lg">
-                        <Users className="w-5 h-5 text-green-600" />
-                    </div>
-                    <div className="text-left">
-                        <p className="font-medium text-slate-900">Customers</p>
-                        <p className="text-xs text-slate-500">View customers</p>
-                    </div>
-                </button>
-
-                <button
-                    onClick={() => router.push("/tools")}
-                    className="bg-white rounded-xl border border-slate-200/60 p-4 hover:shadow-md transition-all flex items-center gap-3"
-                >
-                    <div className="p-2 bg-amber-50 rounded-lg">
-                        <Briefcase className="w-5 h-5 text-amber-600" />
-                    </div>
-                    <div className="text-left">
-                        <p className="font-medium text-slate-900">Tools</p>
-                        <p className="text-xs text-slate-500">VIN lookup, OCR</p>
-                    </div>
-                </button>
-            </div>
-
-            {/* My Tasks Section */}
-            <div className="bg-white rounded-xl border border-slate-200/60 overflow-hidden">
-                <div className="p-4 border-b border-slate-200/60 flex items-center justify-between">
-                    <div>
-                        <h3 className="font-semibold text-slate-900">My Tasks</h3>
-                        <p className="text-xs text-slate-600">Your pending and recent tasks</p>
-                    </div>
-                    <button
-                        onClick={() => router.push("/tasks")}
-                        className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
-                    >
-                        View All
-                        <ArrowUpRight className="w-3 h-3" />
-                    </button>
-                </div>
-                <div className="divide-y divide-slate-200/60 max-h-[400px] overflow-y-auto">
-                    {myTasks.length === 0 ? (
-                        <div className="p-8 text-center text-slate-500">
-                            <CheckCircle className="w-12 h-12 mx-auto mb-3 text-slate-300" />
-                            <p className="text-sm">No tasks assigned to you</p>
-                        </div>
+            <Card className="p-0">
+                <CardHeader className="px-5 py-4">
+                    <CardTitle>My open tasks</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    {pendingTasks.length === 0 ? (
+                        <EmptyState kind="first-use" title="All caught up" description="No pending tasks." className="py-8" />
                     ) : (
-                        myTasks.slice(0, 10).map((task: any) => (
-                            <div key={task.id} className="p-4 hover:bg-slate-50 transition-colors">
-                                <div className="flex items-start justify-between">
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2 flex-wrap">
-                                            <p className="font-medium text-slate-900 truncate">{task.title}</p>
-                                            <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getStatusColor(task.status)}`}>
-                                                {task.status}
-                                            </span>
-                                            <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getPriorityColor(task.priority)}`}>
-                                                {task.priority}
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center gap-3 mt-1 text-xs text-slate-600 flex-wrap">
-                                            {task.due_date && (
-                                                <span className="flex items-center gap-1">
-                                                    <Calendar className="w-3 h-3" />
-                                                    Due: {new Date(task.due_date).toLocaleDateString()}
-                                                </span>
-                                            )}
-                                            {task.assigned_user && (
-                                                <span className="flex items-center gap-1">
-                                                    <User className="w-3 h-3" />
-                                                    {task.assigned_user.full_name}
-                                                </span>
-                                            )}
-                                        </div>
+                        <ul className="divide-y divide-border">
+                            {pendingTasks.slice(0, 10).map((task: any) => (
+                                <li key={task.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                                    <Avatar name={task.title} size="md" />
+                                    <div className="min-w-0 flex-1">
+                                        <p className="truncate text-sm font-medium text-foreground">{task.title}</p>
+                                        {task.description && <p className="truncate text-xs text-muted-foreground">{task.description}</p>}
                                     </div>
-                                </div>
-                            </div>
-                        ))
+                                    {task.due_date && (
+                                        <span className="text-xs text-muted-foreground hidden sm:inline">
+                                            <Calendar className="mr-1 inline h-3 w-3" />
+                                            {new Date(task.due_date).toLocaleDateString()}
+                                        </span>
+                                    )}
+                                    <StatusBadge status={task.status} resource="task" />
+                                </li>
+                            ))}
+                        </ul>
                     )}
-                </div>
+                </CardContent>
+            </Card>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <QuickAction icon={User} tint="bg-primary-50 text-primary" label="My leads" sub="View assigned leads" onClick={() => router.push("/leads")} />
+                <QuickAction icon={Briefcase} tint="bg-info-50 text-info" label="My deals" sub="View assigned deals" onClick={() => router.push("/deals")} />
+                <QuickAction icon={Calendar} tint="bg-warning-50 text-warning" label="Test drives" sub="Upcoming" onClick={() => router.push("/test-drives")} />
             </div>
         </div>
     );
 }
 
-// =============================================================================
-// PLATFORM ADMIN DASHBOARD
-// =============================================================================
+function QuickAction({ icon: Icon, tint, label, sub, onClick }: { icon: LucideIcon; tint: string; label: string; sub: string; onClick: () => void }) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className="group flex items-center gap-3 rounded-2xl border border-border bg-card p-4 text-left transition-all hover:border-primary/40 hover:shadow-sm"
+        >
+            <div className={cn("inline-flex h-10 w-10 items-center justify-center rounded-lg", tint)}>
+                <Icon className="h-5 w-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-foreground">{label}</p>
+                <p className="text-xs text-muted-foreground">{sub}</p>
+            </div>
+            <ArrowUpRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-foreground" />
+        </button>
+    );
+}
+
+// ── Platform admin dashboard ────────────────────────────────────────
 function PlatformAdminDashboard({ userProfile }: { userProfile: UserProfile | null }) {
     const router = useRouter();
-    const [analytics, setAnalytics] = useState<any>(null);
-    const [loadingAnalytics, setLoadingAnalytics] = useState(true);
-
-    useEffect(() => {
-        async function fetchPlatformAnalytics() {
-            try {
-                const token = localStorage.getItem("access_token");
-                if (!token) return;
-
-                const res = await fetch("/api/platform/analytics", { headers: { Authorization: `Bearer ${token}` } });
-                if (res.ok) {
-                    const data = await res.json();
-                    setAnalytics(data);
-                }
-            } catch (err) {
-                console.error("Error fetching platform analytics:", err);
-            } finally {
-                setLoadingAnalytics(false);
-            }
-        }
-        fetchPlatformAnalytics();
-    }, []);
-
-    if (loadingAnalytics) {
-        return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-            </div>
-        );
-    }
-
     return (
-        <div className="space-y-6">
-            {/* Page Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-900">Platform Dashboard</h1>
-                    <p className="text-sm text-slate-600 mt-1">
-                        Welcome back, {userProfile?.full_name || 'Platform Admin'}!
-                    </p>
-                </div>
-            </div>
-
-            {/* Platform Stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-                <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl p-5 text-white">
-                    <div className="flex items-center gap-3">
-                        <Building2 className="w-8 h-8 text-white/80" />
-                        <div>
-                            <p className="text-3xl font-bold">{analytics?.dealerships?.total || 0}</p>
-                            <p className="text-sm text-white/80">Total Dealerships</p>
-                        </div>
-                    </div>
-                    <div className="mt-3 flex gap-2">
-                        <span className="px-2 py-1 bg-white/20 rounded text-xs">
-                            {analytics?.dealerships?.active || 0} Active
-                        </span>
-                        <span className="px-2 py-1 bg-white/20 rounded text-xs">
-                            {analytics?.dealerships?.suspended || 0} Suspended
-                        </span>
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-xl border border-slate-200/60 p-5">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-green-50 rounded-lg">
-                            <Users className="w-6 h-6 text-green-600" />
-                        </div>
-                        <div>
-                            <p className="text-2xl font-bold text-slate-900">{analytics?.users?.total || 0}</p>
-                            <p className="text-sm text-slate-600">Total Users</p>
-                        </div>
-                    </div>
-                    <div className="mt-2">
-                        <span className="text-xs text-green-600 font-medium">
-                            {analytics?.users?.active || 0} Active
-                        </span>
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-xl border border-slate-200/60 p-5">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-purple-50 rounded-lg">
-                            <UserCheck className="w-6 h-6 text-purple-600" />
-                        </div>
-                        <div>
-                            <p className="text-2xl font-bold text-slate-900">{analytics?.logins?.today || 0}</p>
-                            <p className="text-sm text-slate-600">Logins Today</p>
-                        </div>
-                    </div>
-                    <div className="mt-2">
-                        <span className="text-xs text-slate-500">
-                            {analytics?.logins?.this_period || 0} this month
-                        </span>
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-xl border border-slate-200/60 p-5">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-amber-50 rounded-lg">
-                            <DollarSign className="w-6 h-6 text-amber-600" />
-                        </div>
-                        <div>
-                            <p className="text-2xl font-bold text-slate-900">
-                                ${((analytics?.revenue?.total_monthly || 0)).toLocaleString()}
-                            </p>
-                            <p className="text-sm text-slate-600">Monthly Revenue</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-xl border border-slate-200/60 p-5">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-red-50 rounded-lg">
-                            <AlertTriangle className="w-6 h-6 text-red-600" />
-                        </div>
-                        <div>
-                            <p className="text-2xl font-bold text-slate-900">{analytics?.dealerships?.trial || 0}</p>
-                            <p className="text-sm text-slate-600">On Trial</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Quick Links */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
-                <button
-                    onClick={() => router.push("/platform/audit-logs")}
-                    className="bg-white rounded-xl border border-slate-200/60 p-4 hover:shadow-md transition-all flex flex-col items-center gap-2"
-                >
-                    <div className="p-2 bg-blue-50 rounded-lg">
-                        <FileText className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <p className="text-sm font-medium text-slate-900">Audit Logs</p>
-                </button>
-
-                <button
-                    onClick={() => router.push("/platform/login-history")}
-                    className="bg-white rounded-xl border border-slate-200/60 p-4 hover:shadow-md transition-all flex flex-col items-center gap-2"
-                >
-                    <div className="p-2 bg-green-50 rounded-lg">
-                        <Clock className="w-5 h-5 text-green-600" />
-                    </div>
-                    <p className="text-sm font-medium text-slate-900">Login History</p>
-                </button>
-
-                <button
-                    onClick={() => router.push("/platform/analytics")}
-                    className="bg-white rounded-xl border border-slate-200/60 p-4 hover:shadow-md transition-all flex flex-col items-center gap-2"
-                >
-                    <div className="p-2 bg-purple-50 rounded-lg">
-                        <TrendingUp className="w-5 h-5 text-purple-600" />
-                    </div>
-                    <p className="text-sm font-medium text-slate-900">Analytics</p>
-                </button>
-
-                <button
-                    onClick={() => router.push("/platform/impersonate")}
-                    className="bg-white rounded-xl border border-slate-200/60 p-4 hover:shadow-md transition-all flex flex-col items-center gap-2"
-                >
-                    <div className="p-2 bg-amber-50 rounded-lg">
-                        <UserCheck className="w-5 h-5 text-amber-600" />
-                    </div>
-                    <p className="text-sm font-medium text-slate-900">Impersonate</p>
-                </button>
-
-                <button
-                    onClick={() => router.push("/platform/subscriptions")}
-                    className="bg-white rounded-xl border border-slate-200/60 p-4 hover:shadow-md transition-all flex flex-col items-center gap-2"
-                >
-                    <div className="p-2 bg-red-50 rounded-lg">
-                        <DollarSign className="w-5 h-5 text-red-600" />
-                    </div>
-                    <p className="text-sm font-medium text-slate-900">Subscriptions</p>
-                </button>
-
-                <button
-                    onClick={() => router.push("/platform/reset-password")}
-                    className="bg-white rounded-xl border border-slate-200/60 p-4 hover:shadow-md transition-all flex flex-col items-center gap-2"
-                >
-                    <div className="p-2 bg-gray-50 rounded-lg">
-                        <User className="w-5 h-5 text-gray-600" />
-                    </div>
-                    <p className="text-sm font-medium text-slate-900">Reset Password</p>
-                </button>
-            </div>
-
-            {/* Top Dealerships */}
-            <div className="bg-white rounded-xl border border-slate-200/60 overflow-hidden">
-                <div className="p-4 border-b border-slate-200/60 flex items-center justify-between">
-                    <div>
-                        <h3 className="font-semibold text-slate-900">Top Dealerships</h3>
-                        <p className="text-xs text-slate-600">By users and deals closed</p>
-                    </div>
-                    <button
-                        onClick={() => router.push("/dealerships")}
-                        className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
-                    >
-                        View All
-                        <ArrowUpRight className="w-3 h-3" />
-                    </button>
-                </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full">
-                        <thead className="bg-gray-50 border-b border-slate-200/60">
-                            <tr>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Dealership</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Users</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Deals Closed</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-200/60">
-                            {(analytics?.top_dealerships || []).map((d: any) => (
-                                <tr key={d.id} className="hover:bg-slate-50">
-                                    <td className="px-4 py-3">
-                                        <p className="font-medium text-slate-900">{d.name}</p>
-                                    </td>
-                                    <td className="px-4 py-3">
-                                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                                            d.status === 'Active' ? 'bg-green-100 text-green-800' :
-                                            d.status === 'Suspended' ? 'bg-red-100 text-red-800' :
-                                            'bg-yellow-100 text-yellow-800'
-                                        }`}>
-                                            {d.status}
-                                        </span>
-                                    </td>
-                                    <td className="px-4 py-3 text-slate-600">{d.user_count}</td>
-                                    <td className="px-4 py-3 text-slate-600">{d.deals_closed}</td>
-                                </tr>
-                            ))}
-                            {(!analytics?.top_dealerships || analytics.top_dealerships.length === 0) && (
-                                <tr>
-                                    <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
-                                        No dealership data available
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+        <div className="mx-auto max-w-[1600px] space-y-5 p-4 sm:p-6 lg:p-8">
+            <PageHeader
+                title="Platform dashboard"
+                description="Cross-dealership overview. Only visible to platform admins."
+                actions={
+                    <>
+                        <Button variant="outline" leftIcon={<FileText className="h-4 w-4" />} onClick={() => router.push("/platform/analytics")}>
+                            Platform analytics
+                        </Button>
+                        <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => router.push("/dealerships")}>
+                            Manage dealerships
+                        </Button>
+                    </>
+                }
+            />
+            <EmptyState
+                kind="no-results"
+                title="Platform analytics coming up"
+                description="Visit the Analytics page for full cross-dealership reporting."
+                action={{ label: "Open analytics", href: "/platform/analytics" }}
+            />
         </div>
     );
+}
+
+// ── Reusable chart card ─────────────────────────────────────────────
+function ChartCard({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+    return (
+        <Card className="p-0">
+            <CardHeader className="px-5 py-4">
+                <div>
+                    <CardTitle>{title}</CardTitle>
+                    {subtitle && <CardDescription>{subtitle}</CardDescription>}
+                </div>
+            </CardHeader>
+            <CardContent className="pt-0">{children}</CardContent>
+        </Card>
+    );
+}
+
+// ── Data aggregators ────────────────────────────────────────────────
+function buildLeadsSourceData(leads: any[]): ChartData[] {
+    const counts: Record<string, number> = {};
+    for (const lead of leads) {
+        const s = lead.source || "Unknown";
+        counts[s] = (counts[s] || 0) + 1;
+    }
+    return Object.entries(counts)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 6);
+}
+function buildInventoryData(vehicles: any[]): ChartData[] {
+    const counts: Record<string, number> = {};
+    for (const v of vehicles) {
+        const s = v.status || "Unknown";
+        counts[s] = (counts[s] || 0) + 1;
+    }
+    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+}
+function buildSalesStatusData(deals: any[]): ChartData[] {
+    const counts: Record<string, number> = {};
+    for (const d of deals) {
+        const s = d.deal_status || d.status || "Unknown";
+        counts[s] = (counts[s] || 0) + 1;
+    }
+    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+}
+function buildExpensesData(expenses: any[]): ChartData[] {
+    const counts: Record<string, number> = {};
+    for (const e of expenses) {
+        const c = e.category || "Other";
+        counts[c] = (counts[c] || 0) + 1;
+    }
+    return Object.entries(counts)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 6);
+}
+
+function buildTopVehicles(vehicles: any[]): { name: string; price: number; days: number }[] {
+    const now = Date.now();
+    return vehicles
+        .filter((v) => (v.status || "") === "Active")
+        .map((v) => {
+            const created = v.created_at ? new Date(v.created_at).getTime() : now;
+            const days = Math.max(0, Math.floor((now - created) / (1000 * 60 * 60 * 24)));
+            return {
+                name: `${v.year ?? ""} ${v.make ?? ""} ${v.model ?? ""}`.trim() || "Vehicle",
+                price: Number(v.retail_price) || 0,
+                days,
+            };
+        })
+        .sort((a, b) => b.price - a.price)
+        .slice(0, 5);
 }

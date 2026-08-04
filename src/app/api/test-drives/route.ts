@@ -246,6 +246,8 @@ export async function POST(req: NextRequest) {
             lead_id: payload.lead_id || null,
             user_id: payload.user_id || user.id,
             scheduled_date: payload.scheduled_date,
+            start_time: payload.start_time || payload.scheduled_date,
+            end_time: payload.end_time || payload.scheduled_date,
             status: payload.status || "Scheduled",
             notes: payload.notes || null,
             outcome: payload.outcome || null,

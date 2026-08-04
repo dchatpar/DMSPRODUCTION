@@ -189,43 +189,75 @@ CREATE TABLE IF NOT EXISTS vehicles (
     description TEXT,
     features TEXT[],
     carfax_report_url TEXT,
+    purchased_from TEXT,
+    fuel_capacity TEXT,
+    city_fuel TEXT,
+    highway_fuel TEXT,
+    doors INTEGER,
+    passengers INTEGER,
+    msrp NUMERIC(12,2),
+    title_status TEXT,
+    special_price NUMERIC(12,2),
+    warranty TEXT,
+    disclosure TEXT,
+    known_damage BOOLEAN NOT NULL DEFAULT false,
+    internal_notes TEXT,
+    youtube_url TEXT,
+    inspection_report_url TEXT,
     dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Vehicles table (updated with dealership_id)
-CREATE TABLE IF NOT EXISTS vehicles (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    vin TEXT UNIQUE NOT NULL,
-    stock_number TEXT,
-    year INTEGER NOT NULL,
-    make TEXT NOT NULL,
-    model TEXT NOT NULL,
-    trim TEXT,
-    odometer INTEGER DEFAULT 0,
-    condition TEXT DEFAULT 'Used' CHECK (condition IN ('New', 'Used', 'Certified')),
-    status TEXT DEFAULT 'Active' CHECK (status IN ('Active', 'Sold', 'Pending', 'Traded')),
-    exterior_color TEXT,
-    interior_color TEXT,
-    fuel_type TEXT,
-    transmission TEXT,
-    drivetrain TEXT,
-    engine TEXT,
-    body_style TEXT,
-    purchase_price NUMERIC(12,2) DEFAULT 0,
-    retail_price NUMERIC(12,2) DEFAULT 0,
-    extra_costs NUMERIC(12,2) DEFAULT 0,
-    taxes NUMERIC(12,2) DEFAULT 0,
-    image_gallery TEXT[],
-    images TEXT,
-    description TEXT,
-    features TEXT[],
-    carfax_report_url TEXT,
-    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- Idempotent Hillz parity columns (safe on existing deployments)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vehicles' AND column_name = 'purchased_from') THEN
+        ALTER TABLE vehicles ADD COLUMN purchased_from TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vehicles' AND column_name = 'fuel_capacity') THEN
+        ALTER TABLE vehicles ADD COLUMN fuel_capacity TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vehicles' AND column_name = 'city_fuel') THEN
+        ALTER TABLE vehicles ADD COLUMN city_fuel TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vehicles' AND column_name = 'highway_fuel') THEN
+        ALTER TABLE vehicles ADD COLUMN highway_fuel TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vehicles' AND column_name = 'doors') THEN
+        ALTER TABLE vehicles ADD COLUMN doors INTEGER;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vehicles' AND column_name = 'passengers') THEN
+        ALTER TABLE vehicles ADD COLUMN passengers INTEGER;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vehicles' AND column_name = 'msrp') THEN
+        ALTER TABLE vehicles ADD COLUMN msrp NUMERIC(12,2);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vehicles' AND column_name = 'title_status') THEN
+        ALTER TABLE vehicles ADD COLUMN title_status TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vehicles' AND column_name = 'special_price') THEN
+        ALTER TABLE vehicles ADD COLUMN special_price NUMERIC(12,2);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vehicles' AND column_name = 'warranty') THEN
+        ALTER TABLE vehicles ADD COLUMN warranty TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vehicles' AND column_name = 'disclosure') THEN
+        ALTER TABLE vehicles ADD COLUMN disclosure TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vehicles' AND column_name = 'known_damage') THEN
+        ALTER TABLE vehicles ADD COLUMN known_damage BOOLEAN NOT NULL DEFAULT false;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vehicles' AND column_name = 'internal_notes') THEN
+        ALTER TABLE vehicles ADD COLUMN internal_notes TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vehicles' AND column_name = 'youtube_url') THEN
+        ALTER TABLE vehicles ADD COLUMN youtube_url TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vehicles' AND column_name = 'inspection_report_url') THEN
+        ALTER TABLE vehicles ADD COLUMN inspection_report_url TEXT;
+    END IF;
+END $$;
 
 -- Customers table
 CREATE TABLE IF NOT EXISTS customers (
@@ -240,11 +272,48 @@ CREATE TABLE IF NOT EXISTS customers (
     status TEXT DEFAULT 'Active' CHECK (status IN ('Active', 'Inactive')),
     source TEXT,
     notes TEXT,
+    marketing_consent BOOLEAN NOT NULL DEFAULT false,
+    sms_consent BOOLEAN NOT NULL DEFAULT false,
+    marketing_consent_at TIMESTAMPTZ,
+    sms_consent_at TIMESTAMPTZ,
+    marketing_consent_ip TEXT,
+    sms_consent_ip TEXT,
+    marketing_unsubscribed_at TIMESTAMPTZ,
+    marketing_consent_source TEXT,
     assigned_to UUID REFERENCES users(id) ON DELETE SET NULL,
     dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Idempotent CASL consent columns
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'customers' AND column_name = 'marketing_consent') THEN
+        ALTER TABLE customers ADD COLUMN marketing_consent BOOLEAN NOT NULL DEFAULT false;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'customers' AND column_name = 'sms_consent') THEN
+        ALTER TABLE customers ADD COLUMN sms_consent BOOLEAN NOT NULL DEFAULT false;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'customers' AND column_name = 'marketing_consent_at') THEN
+        ALTER TABLE customers ADD COLUMN marketing_consent_at TIMESTAMPTZ;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'customers' AND column_name = 'sms_consent_at') THEN
+        ALTER TABLE customers ADD COLUMN sms_consent_at TIMESTAMPTZ;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'customers' AND column_name = 'marketing_consent_ip') THEN
+        ALTER TABLE customers ADD COLUMN marketing_consent_ip TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'customers' AND column_name = 'sms_consent_ip') THEN
+        ALTER TABLE customers ADD COLUMN sms_consent_ip TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'customers' AND column_name = 'marketing_unsubscribed_at') THEN
+        ALTER TABLE customers ADD COLUMN marketing_unsubscribed_at TIMESTAMPTZ;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'customers' AND column_name = 'marketing_consent_source') THEN
+        ALTER TABLE customers ADD COLUMN marketing_consent_source TEXT;
+    END IF;
+END $$;
 
 -- Sales Deals table
 CREATE TABLE IF NOT EXISTS sales_deals (
@@ -287,6 +356,14 @@ CREATE TABLE IF NOT EXISTS invoices (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Wave M0/M3 invoice columns (idempotent for existing DBs)
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS tax_rate NUMERIC(5,2) DEFAULT 13;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS package_name TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS line_items JSONB;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS amount_paid NUMERIC(12,2) DEFAULT 0;
+ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS commission_rate NUMERIC(5,2);
+ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS commission_amount NUMERIC(12,2);
 
 -- Leads table
 CREATE TABLE IF NOT EXISTS leads (
@@ -618,16 +695,22 @@ CREATE TABLE IF NOT EXISTS expense_activity (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Bill of Sale table
+-- Bill of Sale table (Ontario BOS + legacy required columns)
 CREATE TABLE IF NOT EXISTS bill_of_sale (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     deal_id UUID REFERENCES sales_deals(id) ON DELETE SET NULL,
+    customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
     document_number TEXT UNIQUE,
     sale_date DATE DEFAULT CURRENT_DATE,
     buyer_name TEXT NOT NULL,
     buyer_address TEXT,
+    buyer_phone TEXT,
+    buyer_email TEXT,
+    buyer_dl_number TEXT,
     seller_name TEXT,
     vehicle_id UUID REFERENCES vehicles(id) ON DELETE SET NULL,
+    vehicle_description TEXT,
+    sale_type TEXT,
     vin TEXT,
     year INTEGER,
     make TEXT,
@@ -636,10 +719,89 @@ CREATE TABLE IF NOT EXISTS bill_of_sale (
     tax_amount NUMERIC(12,2) DEFAULT 0,
     total_amount NUMERIC(12,2) NOT NULL,
     odometer INTEGER,
+    odometer_reading INTEGER,
     is_financed BOOLEAN DEFAULT false,
     lender_name TEXT,
     lender_address TEXT,
-    status TEXT DEFAULT 'Draft' CHECK (status IN ('Draft', 'Signed', 'Completed', 'Cancelled')),
+    status TEXT DEFAULT 'Draft' CHECK (status IN ('Draft', 'Signed', 'Completed', 'Cancelled', 'Sold')),
+    payment_status TEXT DEFAULT 'Not Paid',
+    warranty_period TEXT,
+    -- Section B: Pricing
+    price_vehicle NUMERIC(12,2) DEFAULT 0,
+    additional_equipment NUMERIC(12,2) DEFAULT 0,
+    services_warranties NUMERIC(12,2) DEFAULT 0,
+    documentation_fees NUMERIC(12,2) DEFAULT 0,
+    vsa_levy_recovery NUMERIC(12,2) DEFAULT 0,
+    extra_fee_1_taxable NUMERIC(12,2) DEFAULT 0,
+    discount NUMERIC(12,2) DEFAULT 0,
+    subtotal NUMERIC(12,2) DEFAULT 0,
+    trade_in_allowance NUMERIC(12,2) DEFAULT 0,
+    net_difference NUMERIC(12,2) DEFAULT 0,
+    -- GST/PST
+    gst_rate NUMERIC(5,2) DEFAULT 5.00,
+    gst_amount NUMERIC(12,2) DEFAULT 0,
+    pst_rate NUMERIC(5,2) DEFAULT 7.00,
+    pst_amount NUMERIC(12,2) DEFAULT 0,
+    purchase_price_with_gst_pst NUMERIC(12,2) DEFAULT 0,
+    gst_enabled BOOLEAN DEFAULT true,
+    pst_enabled BOOLEAN DEFAULT true,
+    -- Section C: Additional fees
+    licence_fee NUMERIC(12,2) DEFAULT 0,
+    gasoline_fee NUMERIC(12,2) DEFAULT 0,
+    finance_fee NUMERIC(12,2) DEFAULT 0,
+    lien_payout NUMERIC(12,2) DEFAULT 0,
+    extra_fee_2_non_taxable NUMERIC(12,2) DEFAULT 0,
+    sub_total NUMERIC(12,2) DEFAULT 0,
+    deposit NUMERIC(12,2) DEFAULT 0,
+    down_payments NUMERIC(12,2) DEFAULT 0,
+    down_payment NUMERIC(12,2) DEFAULT 0,
+    insurance_life NUMERIC(12,2) DEFAULT 0,
+    insurance_gap NUMERIC(12,2) DEFAULT 0,
+    rst_on_insurance NUMERIC(12,2) DEFAULT 0,
+    total_purchase_price NUMERIC(12,2) DEFAULT 0,
+    ppsa_fee NUMERIC(12,2) DEFAULT 0,
+    admin_fee NUMERIC(12,2) DEFAULT 0,
+    amount_to_finance NUMERIC(12,2) DEFAULT 0,
+    total_balance_due NUMERIC(12,2) DEFAULT 0,
+    -- Section D: Financing
+    payment_type TEXT,
+    cost_of_borrowing NUMERIC(12,2) DEFAULT 0,
+    payment_start_date DATE,
+    finance_amount NUMERIC(12,2) DEFAULT 0,
+    finance_term INTEGER,
+    interest_rate NUMERIC(5,2),
+    finance_company TEXT,
+    payment_frequency TEXT,
+    number_of_payments INTEGER,
+    -- Section E: Trade-in vehicle
+    trade_in_year INTEGER,
+    trade_in_make TEXT,
+    trade_in_model TEXT,
+    trade_in_series TEXT,
+    trade_in_cylinders INTEGER,
+    trade_in_odometer INTEGER,
+    trade_in_kms_miles TEXT DEFAULT 'KMS',
+    trade_in_exterior_color TEXT,
+    trade_in_interior_color TEXT,
+    trade_in_vin TEXT,
+    trade_in_stock_number TEXT,
+    trade_in_owing_to TEXT,
+    trade_in_odometer_delivery INTEGER DEFAULT 0,
+    trade_in_disclosure TEXT,
+    notes TEXT,
+    is_new_version BOOLEAN DEFAULT false,
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS bill_of_sale_payments (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    bill_of_sale_id UUID NOT NULL REFERENCES bill_of_sale(id) ON DELETE CASCADE,
+    payment_name TEXT NOT NULL DEFAULT '',
+    payment_type TEXT NOT NULL DEFAULT '',
+    amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+    payment_date DATE DEFAULT CURRENT_DATE,
     dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -658,6 +820,7 @@ CREATE TABLE IF NOT EXISTS social_media_posts (
     published_date TIMESTAMPTZ,
     status TEXT DEFAULT 'Draft' CHECK (status IN ('Draft', 'Scheduled', 'Published', 'Failed')),
     notes TEXT,
+    vehicle_id UUID REFERENCES vehicles(id) ON DELETE SET NULL,
     dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -792,6 +955,10 @@ CREATE INDEX IF NOT EXISTS idx_tasks_dealership_id ON tasks(dealership_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_dealership_id ON tickets(dealership_id);
 CREATE INDEX IF NOT EXISTS idx_follow_ups_dealership_id ON follow_ups(dealership_id);
 CREATE INDEX IF NOT EXISTS idx_bill_of_sale_dealership_id ON bill_of_sale(dealership_id);
+CREATE INDEX IF NOT EXISTS idx_bill_of_sale_customer_id ON bill_of_sale(customer_id);
+CREATE INDEX IF NOT EXISTS idx_bill_of_sale_deal_id ON bill_of_sale(deal_id);
+CREATE INDEX IF NOT EXISTS idx_bill_of_sale_payments_bill_id ON bill_of_sale_payments(bill_of_sale_id);
+CREATE INDEX IF NOT EXISTS idx_bill_of_sale_payments_dealership_id ON bill_of_sale_payments(dealership_id);
 CREATE INDEX IF NOT EXISTS idx_social_media_posts_dealership_id ON social_media_posts(dealership_id);
 CREATE INDEX IF NOT EXISTS idx_facebook_business_account_dealership_id ON facebook_business_account(dealership_id);
 CREATE INDEX IF NOT EXISTS idx_purchase_from_public_dealership_id ON purchase_from_public(dealership_id);
@@ -951,6 +1118,7 @@ ALTER TABLE follow_up_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE follow_up_activity ENABLE ROW LEVEL SECURITY;
 ALTER TABLE expense_activity ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bill_of_sale ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bill_of_sale_payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE social_media_posts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE facebook_business_account ENABLE ROW LEVEL SECURITY;
 ALTER TABLE purchase_from_public ENABLE ROW LEVEL SECURITY;
@@ -1264,6 +1432,23 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'bill_of_sale_delete_policy' AND polrelid = 'bill_of_sale'::regclass) THEN
         CREATE POLICY bill_of_sale_delete_policy ON bill_of_sale FOR DELETE USING (dealership_id = get_user_dealership_id());
+    END IF;
+END $$;
+
+-- Bill of Sale Payments policies - filtered by dealership_id
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'bill_of_sale_payments_select_policy' AND polrelid = 'bill_of_sale_payments'::regclass) THEN
+        CREATE POLICY bill_of_sale_payments_select_policy ON bill_of_sale_payments FOR SELECT USING (dealership_id = get_user_dealership_id() OR is_platform_admin() = true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'bill_of_sale_payments_insert_policy' AND polrelid = 'bill_of_sale_payments'::regclass) THEN
+        CREATE POLICY bill_of_sale_payments_insert_policy ON bill_of_sale_payments FOR INSERT WITH CHECK (dealership_id = get_user_dealership_id() OR is_platform_admin() = true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'bill_of_sale_payments_update_policy' AND polrelid = 'bill_of_sale_payments'::regclass) THEN
+        CREATE POLICY bill_of_sale_payments_update_policy ON bill_of_sale_payments FOR UPDATE USING (dealership_id = get_user_dealership_id() OR is_platform_admin() = true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'bill_of_sale_payments_delete_policy' AND polrelid = 'bill_of_sale_payments'::regclass) THEN
+        CREATE POLICY bill_of_sale_payments_delete_policy ON bill_of_sale_payments FOR DELETE USING (dealership_id = get_user_dealership_id() OR is_platform_admin() = true);
     END IF;
 END $$;
 
@@ -1652,6 +1837,69 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'login_history_insert_policy' AND polrelid = 'login_history'::regclass) THEN
         CREATE POLICY login_history_insert_policy ON login_history FOR INSERT
             WITH CHECK (true); -- Allow anyone to insert (for login tracking)
+    END IF;
+END $$;
+
+-- ============================================================================
+-- QUOTATIONS (Phase C ROI)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS quotations (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    quote_number TEXT,
+    customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+    vehicle_id UUID REFERENCES vehicles(id) ON DELETE SET NULL,
+    salesperson_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    status TEXT DEFAULT 'Draft' CHECK (status IN ('Draft', 'Sent', 'Accepted', 'Expired', 'Converted', 'Cancelled')),
+    sale_price NUMERIC(12,2) NOT NULL DEFAULT 0,
+    down_payment NUMERIC(12,2) DEFAULT 0,
+    trade_in_value NUMERIC(12,2) DEFAULT 0,
+    finance_term INTEGER,
+    interest_rate NUMERIC(5,2),
+    finance_company TEXT,
+    tax_rate NUMERIC(5,2) DEFAULT 13,
+    admin_fee NUMERIC(12,2) DEFAULT 0,
+    monthly_payment NUMERIC(12,2),
+    notes TEXT,
+    valid_until DATE,
+    converted_deal_id UUID REFERENCES sales_deals(id) ON DELETE SET NULL,
+    dealership_id UUID REFERENCES dealerships(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS finance_term INTEGER;
+ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS interest_rate NUMERIC(5,2);
+ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS finance_company TEXT;
+ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS deal_date DATE DEFAULT CURRENT_DATE;
+ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS trade_in_value NUMERIC(12,2) DEFAULT 0;
+
+CREATE INDEX IF NOT EXISTS idx_quotations_dealership_id ON quotations(dealership_id);
+CREATE INDEX IF NOT EXISTS idx_quotations_customer_id ON quotations(customer_id);
+CREATE INDEX IF NOT EXISTS idx_quotations_vehicle_id ON quotations(vehicle_id);
+CREATE INDEX IF NOT EXISTS idx_quotations_status ON quotations(status);
+CREATE INDEX IF NOT EXISTS idx_quotations_created_at ON quotations(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sales_deals_customer_null ON sales_deals(dealership_id) WHERE customer_id IS NULL;
+
+DROP TRIGGER IF EXISTS update_quotations_updated_at ON quotations;
+CREATE TRIGGER update_quotations_updated_at BEFORE UPDATE ON quotations FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+ALTER TABLE quotations ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'quotations_select_policy' AND polrelid = 'quotations'::regclass) THEN
+        CREATE POLICY quotations_select_policy ON quotations FOR SELECT USING (dealership_id = get_user_dealership_id() OR is_platform_admin());
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'quotations_insert_policy' AND polrelid = 'quotations'::regclass) THEN
+        CREATE POLICY quotations_insert_policy ON quotations FOR INSERT WITH CHECK (dealership_id = get_user_dealership_id() OR is_platform_admin());
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'quotations_update_policy' AND polrelid = 'quotations'::regclass) THEN
+        CREATE POLICY quotations_update_policy ON quotations FOR UPDATE USING (dealership_id = get_user_dealership_id() OR is_platform_admin());
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'quotations_delete_policy' AND polrelid = 'quotations'::regclass) THEN
+        CREATE POLICY quotations_delete_policy ON quotations FOR DELETE USING (dealership_id = get_user_dealership_id() OR is_platform_admin());
     END IF;
 END $$;
 

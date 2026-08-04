@@ -1,4 +1,9 @@
 // app/api/bill-of-sale/route.ts
+import {
+    BILL_OF_SALE_ALLOWED_FIELDS,
+    mapBillOfSaleLegacyFields,
+} from "@/src/lib/bill-of-sale-fields";
+import { pickAllowed } from "@/src/lib/auth-helpers";
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -39,8 +44,10 @@ export async function GET(req: NextRequest) {
             .select(`
                 *,
                 vehicle:vehicles(id, vin, year, make, model, retail_price, image_gallery),
-                customer:customers(id, name, email, phone),
-                deal:sales_deals(id, deal_status, sale_price)
+                deal:sales_deals(
+                    id, deal_status, sale_price,
+                    customer:customers(id, name, email, phone)
+                )
             `, { count: "exact" })
             .order("created_at", { ascending: false })
             .range(offset, offset + limit - 1);
@@ -122,7 +129,17 @@ export async function POST(req: NextRequest) {
 
         // Extract payments before insert
         const payments = payload.payments || [];
+        const customerName =
+            payload.buyer_name ||
+            payload.customer?.name ||
+            payload.customer_name ||
+            null;
+
         delete payload.payments;
+        delete payload.customer;
+        delete payload.vehicle;
+        delete payload.deal;
+        delete payload.id;
 
         // Convert empty date strings to null
         const cleanPayload = { ...payload };
@@ -130,14 +147,13 @@ export async function POST(req: NextRequest) {
             cleanPayload.payment_start_date = null;
         }
 
-        // Set defaults
+        const safePayload = pickAllowed(cleanPayload, BILL_OF_SALE_ALLOWED_FIELDS);
+        const mapped = mapBillOfSaleLegacyFields(safePayload, customerName);
+
         const billData = {
-            ...cleanPayload,
-            gst_rate: cleanPayload.gst_rate || 5.00,
-            pst_rate: cleanPayload.pst_rate || 7.00,
-            gst_enabled: cleanPayload.gst_enabled !== false,
-            status: cleanPayload.status || 'Draft',
-            payment_status: cleanPayload.payment_status || 'Not Paid',
+            ...mapped,
+            pst_rate: mapped.pst_rate ?? 7.0,
+            status: mapped.status ?? "Draft",
         };
 
         const { data, error: dbError } = await supabase
@@ -146,8 +162,10 @@ export async function POST(req: NextRequest) {
             .select(`
                 *,
                 vehicle:vehicles(id, vin, year, make, model, retail_price, image_gallery),
-                customer:customers(id, name, email, phone),
-                deal:sales_deals(id, deal_status, sale_price)
+                deal:sales_deals(
+                    id, deal_status, sale_price,
+                    customer:customers(id, name, email, phone)
+                )
             `)
             .single();
 

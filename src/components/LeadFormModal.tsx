@@ -15,8 +15,10 @@ import {
     Car,
     Building,
     MessageSquare,
-    Plus,
+    Plus
 } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
+import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
 
 interface Lead {
     id: string;
@@ -62,8 +64,10 @@ export default function LeadFormModal({
     mode,
     lead,
     onClose,
-    onSuccess,
+    onSuccess
 }: LeadFormModalProps) {
+    useOverlayDismiss(onClose);
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [customers, setCustomers] = useState<any[]>([]);
@@ -79,7 +83,7 @@ export default function LeadFormModal({
         status: "Not Started",
         interest_vehicle_id: "",
         assigned_to: "",
-        notes: "",
+        notes: ""
     });
 
     useEffect(() => {
@@ -94,25 +98,20 @@ export default function LeadFormModal({
                 status: lead.status,
                 interest_vehicle_id: lead.interest_vehicle_id || "",
                 assigned_to: lead.assigned_to || "",
-                notes: lead.notes || "",
+                notes: lead.notes || ""
             });
         }
     }, [mode, lead]);
 
     const fetchFormData = async () => {
         try {
-            const token = localStorage.getItem("access_token");
-
             // Fetch customers, vehicles, and users in parallel
             const [customersRes, vehiclesRes, usersRes] = await Promise.all([
                 fetch("/api/customers?limit=1000", {
-                    headers: { Authorization: `Bearer ${token}` },
                 }),
                 fetch("/api/vehicles?limit=1000&status=Active", {
-                    headers: { Authorization: `Bearer ${token}` },
                 }),
                 fetch("/api/users?limit=1000", {
-                    headers: { Authorization: `Bearer ${token}` },
                 }),
             ]);
 
@@ -136,7 +135,7 @@ export default function LeadFormModal({
         const { name, value } = e.target;
         setFormData((prev) => ({
             ...prev,
-            [name]: value,
+            [name]: value
         }));
     };
 
@@ -155,14 +154,11 @@ export default function LeadFormModal({
         setError(null);
 
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch("/api/customers", {
                 method: "POST",
                 headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify(newCustomer),
+                    "Content-Type": "application/json" },
+                body: JSON.stringify(newCustomer)
             });
 
             if (!response.ok) {
@@ -174,7 +170,6 @@ export default function LeadFormModal({
 
             // Refresh customers list
             const customersRes = await fetch("/api/customers?limit=1000", {
-                headers: { Authorization: `Bearer ${token}` },
             });
             const customersData = await customersRes.json();
             setCustomers(customersData.data || []);
@@ -196,7 +191,6 @@ export default function LeadFormModal({
         setError(null);
 
         try {
-            const token = localStorage.getItem("access_token");
             const url = mode === "add" ? "/api/leads" : `/api/leads/${lead?.id}`;
             const method = mode === "add" ? "POST" : "PATCH";
 
@@ -206,16 +200,14 @@ export default function LeadFormModal({
                 status: formData.status,
                 interest_vehicle_id: formData.interest_vehicle_id || null,
                 assigned_to: formData.assigned_to || null,
-                notes: formData.notes || null,
+                notes: formData.notes || null
             };
 
             const response = await fetch(url, {
                 method,
                 headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify(payload),
+                    "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
             });
 
             if (!response.ok) {
@@ -310,7 +302,7 @@ export default function LeadFormModal({
                                 </div>
 
                                 {showAddCustomer ? (
-                                    <div className="border border-blue-200 rounded-lg p-4 bg-blue-50 space-y-3">
+                                    <div className="border border-blue-200 rounded-lg p-4 bg-blue-50 space-y-4">
                                         <div className="flex items-center justify-between">
                                             <span className="text-sm font-medium text-blue-700">Add New Customer</span>
                                             <button

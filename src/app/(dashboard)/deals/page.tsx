@@ -1,37 +1,44 @@
-"use client";
+﻿"use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
     FileText,
     Plus,
-    Search,
-    Filter,
-    MoreVertical,
     Edit,
     Trash2,
     Eye,
     ChevronLeft,
     ChevronRight,
-    Download,
     RefreshCw,
     Loader2,
     AlertCircle,
-    DollarSign,
     Calendar,
     User,
     Car,
-    Clock,
-    CheckCircle,
-    XCircle,
-    LayoutGrid,
-    List,
     FileSignature,
+    UserPlus,
+    Calculator,
 } from "lucide-react";
 import DealDetailsModal from "@/src/components/DealDetailsModal";
 import DealFormModal from "@/src/components/DealFormModal";
+import DealsKanban from "@/src/components/DealsKanban";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
 import BillOfSaleModal from "@/src/components/BillOfSaleModal";
+import LinkCustomerQueue from "@/src/components/LinkCustomerQueue";
 import * as XLSX from "xlsx";
+import { apiFetch } from "@/src/lib/fetch";
+import { toast } from "@/src/lib/toast";
+import { ListPageShell } from "@/src/components/ListPageShell";
+import { ListToolbar } from "@/src/components/ListToolbar";
+import { MetricStrip } from "@/src/components/ui/MetricStrip";
+import { EmptyState } from "@/src/components/ui/EmptyState";
+import { Button } from "@/src/components/ui/Button";
+import { SkeletonTable } from "@/src/components/ui/Skeleton";
+import { EntityLink } from "@/src/components/ui/EntityLink";
+import { RelationChip } from "@/src/components/ui/RelationChip";
+import { firstImageUrl } from "@/src/lib/vehicle-image";
+import { isDealStagnant } from "@/src/lib/business/lead-score";
 
 interface Vehicle {
     id: string;
@@ -65,21 +72,22 @@ interface Salesperson {
 
 interface Deal {
     id: string;
-    vehicle_id: string;
-    customer_id: string;
+    vehicle_id: string | null;
+    customer_id: string | null;
     deal_status: string;
     finance_term: number | null;
     interest_rate: number | null;
     down_payment: number;
+    trade_in_value?: number | null;
     sale_price: number;
-    salesperson_id: string;
+    salesperson_id: string | null;
     finance_company: string | null;
     notes: string | null;
     deal_date: string;
     created_at: string;
-    vehicle: Vehicle;
-    customer: Customer;
-    salesperson: Salesperson;
+    vehicle: Vehicle | null;
+    customer: Customer | null;
+    salesperson: Salesperson | null;
 }
 
 interface ApiResponse {
@@ -94,14 +102,24 @@ type ViewMode = "table" | "kanban";
 const DEAL_STAGES = ["Negotiation", "Down Payment", "Finance", "Paid Off", "Cancelled"];
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-    "Negotiation": { bg: "bg-yellow-50", text: "text-yellow-700", border: "border-yellow-200" },
-    "Down Payment": { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200" },
+    "Negotiation": { bg: "bg-warning-50", text: "text-warning", border: "border-yellow-200" },
+    "Down Payment": { bg: "bg-primary-50", text: "text-primary", border: "border-blue-200" },
     "Finance": { bg: "bg-indigo-50", text: "text-indigo-700", border: "border-indigo-200" },
-    "Paid Off": { bg: "bg-green-50", text: "text-green-700", border: "border-green-200" },
-    "Cancelled": { bg: "bg-red-50", text: "text-red-700", border: "border-red-200" },
+    "Paid Off": { bg: "bg-success-50", text: "text-success", border: "border-green-200" },
+    "Cancelled": { bg: "bg-destructive-50", text: "text-destructive", border: "border-red-200" }
 };
 
 export default function DealsPage() {
+    return (
+        <Suspense fallback={<SkeletonTable rows={8} />}>
+            <DealsPageInner />
+        </Suspense>
+    );
+}
+
+function DealsPageInner() {
+    const router = useRouter();
+    const searchParams = useSearchParams();
     const [deals, setDeals] = useState<Deal[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -110,7 +128,7 @@ export default function DealsPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [totalItems, setTotalItems] = useState(0);
     const [exportLoading, setExportLoading] = useState(false);
-    const [itemsPerPage] = useState(10);
+    const [itemsPerPage] = useState(20);
     const [viewMode, setViewMode] = useState<ViewMode>("table");
     // User permissions
     const [userPermissions, setUserPermissions] = useState<string[]>([]);
@@ -146,17 +164,38 @@ export default function DealsPage() {
     const [billOfSaleModalMode, setBillOfSaleModalMode] = useState<"add" | "edit" | "view">("add");
     const [billOfSaleData, setBillOfSaleData] = useState<any>(null);
     const [loadingBillOfSale, setLoadingBillOfSale] = useState(false);
+    const [showLinkQueue, setShowLinkQueue] = useState(false);
+    const [unlinkedCount, setUnlinkedCount] = useState(0);
 
     useEffect(() => {
         fetchDeals();
         fetchUserPermissions();
+        fetchUnlinkedCount();
     }, [currentPage, statusFilter, searchTerm]);
+
+    // Deep-link: /deals?unlinked=true opens the link queue
+    useEffect(() => {
+        const flag = searchParams?.get("unlinked");
+        if (flag === "true" || flag === "1") {
+            setShowLinkQueue(true);
+        }
+    }, [searchParams]);
+
+    const fetchUnlinkedCount = async () => {
+        try {
+            const response = await fetch("/api/deals?unlinked=true&limit=1");
+            if (response.ok) {
+                const data = await response.json();
+                setUnlinkedCount(data.count || 0);
+            }
+        } catch {
+            // non-blocking
+        }
+    };
 
     const fetchUserPermissions = async () => {
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch("/api/me", {
-                headers: { Authorization: `Bearer ${token}` },
             });
             if (response.ok) {
                 const data = await response.json();
@@ -172,8 +211,6 @@ export default function DealsPage() {
         try {
             setLoading(true);
             setError(null);
-
-            const token = localStorage.getItem("access_token");
             const offset = (currentPage - 1) * itemsPerPage;
 
             let url = `/api/deals?limit=${itemsPerPage}&offset=${offset}`;
@@ -182,8 +219,7 @@ export default function DealsPage() {
 
             const response = await fetch(url, {
                 headers: {
-                    Authorization: `Bearer ${token}`,
-                },
+                }
             });
 
             if (!response.ok) {
@@ -203,13 +239,8 @@ export default function DealsPage() {
     const exportToExcel = async () => {
         setExportLoading(true);
         try {
-            const token = localStorage.getItem("access_token");
-            if (!token) {
-                throw new Error("Not authenticated. Please login again.");
-            }
 
             const response = await fetch("/api/deals?limit=10000", {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!response.ok) {
@@ -225,7 +256,7 @@ export default function DealsPage() {
             }
 
             const worksheetData = exportData.map((deal: any) => ({
-                "Customer": deal.customer?.name || "Unknown",
+                "Customer": deal.customer?.name || (deal.customer_id ? "Unlinked" : "Cash"),
                 "Email": deal.customer?.email || "",
                 "Phone": deal.customer?.phone || "",
                 "Vehicle": deal.vehicle ? `${deal.vehicle.year} ${deal.vehicle.make} ${deal.vehicle.model}` : "",
@@ -238,7 +269,7 @@ export default function DealsPage() {
                 "Deal Status": deal.deal_status || "",
                 "Salesperson": deal.salesperson?.full_name || "",
                 "Notes": deal.notes || "",
-                "Deal Date": deal.deal_date ? new Date(deal.deal_date).toLocaleDateString() : "",
+                "Deal Date": deal.deal_date ? new Date(deal.deal_date).toLocaleDateString() : ""
             }));
 
             const worksheet = XLSX.utils.json_to_sheet(worksheetData);
@@ -255,15 +286,14 @@ export default function DealsPage() {
             XLSX.writeFile(workbook, `deals-export-${new Date().toISOString().split("T")[0]}.xlsx`);
         } catch (error) {
             console.error("Export error:", error);
-            alert(error instanceof Error ? error.message : "Failed to export deals");
+            toast.error(error instanceof Error ? error.message : "Failed to export deals");
         } finally {
             setExportLoading(false);
         }
     };
 
     const handleViewDetails = (deal: Deal) => {
-        setSelectedDeal(deal);
-        setShowDetailsModal(true);
+        router.push(`/deals/${deal.id}`);
     };
 
     const handleEdit = (deal: Deal) => {
@@ -273,9 +303,7 @@ export default function DealsPage() {
     };
 
     const handleAdd = () => {
-        setSelectedDeal(null);
-        setFormMode("add");
-        setShowFormModal(true);
+        router.push("/deals/new");
     };
 
     const handleFormSuccess = () => {
@@ -292,10 +320,8 @@ export default function DealsPage() {
     const handleOpenBillOfSale = async (deal: Deal) => {
         setLoadingBillOfSale(true);
         try {
-            const token = localStorage.getItem("access_token");
             // Check if bill of sale exists for this deal
             const response = await fetch(`/api/bill-of-sale?deal_id=${deal.id}`, {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (response.ok) {
@@ -333,12 +359,10 @@ export default function DealsPage() {
         setConfirmDialogData((prev) => ({ ...prev, loading: true }));
 
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch(`/api/deals/${dealId}`, {
                 method: "DELETE",
                 headers: {
-                    Authorization: `Bearer ${token}`,
-                },
+                }
             });
 
             if (!response.ok) {
@@ -357,21 +381,18 @@ export default function DealsPage() {
             // Re-fetch to ensure consistency
             fetchDeals();
         } catch (err) {
-            alert(err instanceof Error ? err.message : "An error occurred");
+            toast.error(err instanceof Error ? err.message : "An error occurred");
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
     };
 
     const handleStatusChange = async (deal: Deal, newStatus: string) => {
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch(`/api/deals/${deal.id}`, {
                 method: "PATCH",
                 headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({ deal_status: newStatus }),
+                    "Content-Type": "application/json" },
+                body: JSON.stringify({ deal_status: newStatus })
             });
 
             if (!response.ok) {
@@ -381,31 +402,32 @@ export default function DealsPage() {
 
             fetchDeals();
         } catch (err) {
-            alert(err instanceof Error ? err.message : "An error occurred");
+            toast.error(err instanceof Error ? err.message : "An error occurred");
         }
     };
 
     const getStatusColor = (status: string) => {
-        return STATUS_COLORS[status]?.bg.replace("-50", "-100") || "bg-gray-100";
+        return STATUS_COLORS[status]?.bg.replace("-50", "-100") || "bg-muted";
     };
 
     const getStatusTextColor = (status: string) => {
-        return STATUS_COLORS[status]?.text || "text-gray-700";
+        return STATUS_COLORS[status]?.text || "text-foreground/90";
     };
 
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat("en-US", {
             style: "currency",
             currency: "USD",
-            minimumFractionDigits: 0,
+            minimumFractionDigits: 0
         }).format(amount);
     };
 
-    const formatDate = (date: string) => {
+    const formatDate = (date: string | null | undefined) => {
+        if (!date) return "â€”";
         return new Date(date).toLocaleDateString("en-US", {
             year: "numeric",
             month: "short",
-            day: "numeric",
+            day: "numeric"
         });
     };
 
@@ -417,266 +439,279 @@ export default function DealsPage() {
         return acc;
     }, {} as Record<string, Deal[]>);
 
+    const negotiationCount = dealsByStatus["Negotiation"]?.length || 0;
+    const stagnantCount = deals.filter((d) => isDealStagnant(d)).length;
+    const pipelineValue = deals.reduce((sum, d) => sum + (d.sale_price || 0), 0);
+
     return (
-        <div className="space-y-6 py-10">
-            {/* Page Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Deals</h1>
-                    <p className="text-sm text-gray-500 mt-1">
-                        Manage your sales pipeline and track deal progress
-                    </p>
-                </div>
-                <div className="flex items-center gap-3">
-                    {/* View Toggle */}
-                    <div className="flex bg-gray-100 rounded-lg p-1">
-                        <button
-                            onClick={() => setViewMode("table")}
-                            className={`p-1.5 rounded-md transition-colors ${viewMode === "table"
-                                    ? "bg-white shadow-sm text-blue-600"
-                                    : "text-gray-500 hover:text-gray-700"
-                                }`}
-                            title="Table View"
-                        >
-                            <List className="w-4 h-4" />
-                        </button>
-                        <button
-                            onClick={() => setViewMode("kanban")}
-                            className={`p-1.5 rounded-md transition-colors ${viewMode === "kanban"
-                                    ? "bg-white shadow-sm text-blue-600"
-                                    : "text-gray-500 hover:text-gray-700"
-                                }`}
-                            title="Kanban View"
-                        >
-                            <LayoutGrid className="w-4 h-4" />
-                        </button>
+        <ListPageShell
+            title="Deals"
+            description="Sales deals and closing pipeline"
+            icon={FileText}
+            meta={
+                !loading && !error ? (
+                    <span className="text-sm text-muted-foreground">
+                        {totalItems.toLocaleString()} deal{totalItems === 1 ? "" : "s"}
+                        {statusFilter ? ` Â· ${statusFilter}` : ""}
+                    </span>
+                ) : undefined
+            }
+            actions={
+                    <div className="flex items-center gap-2">
+                        <Button variant="outline" size="sm" onClick={fetchDeals} disabled={loading}>
+                            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                            Refresh
+                        </Button>
+                        {canWrite("deals") && unlinkedCount > 0 && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                    setShowLinkQueue(true);
+                                    router.replace("/deals?unlinked=true");
+                                }}
+                                className="border-warning/40 text-warning hover:bg-warning-50"
+                            >
+                                <UserPlus className="h-4 w-4" />
+                                Link customers ({unlinkedCount})
+                            </Button>
+                        )}
+                        {canWrite("deals") && (
+                            <Button size="sm" onClick={handleAdd}>
+                                <Plus className="h-4 w-4" />
+                                New Deal
+                            </Button>
+                        )}
                     </div>
-                    <button
-                        onClick={fetchDeals}
-                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
-                    >
-                        <RefreshCw className="w-4 h-4" />
-                        Refresh
-                    </button>
-                    {canWrite("deals") && (
-                        <button
-                            onClick={handleAdd}
-                            className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2"
-                        >
-                            <Plus className="w-4 h-4" />
-                            New Deal
-                        </button>
-                    )}
-                </div>
-            </div>
-
-            {/* Filters */}
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-                <div className="flex flex-col sm:flex-row gap-4">
-                    <div className="flex-1 relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                            type="text"
-                            placeholder="Search deals by vehicle, customer, or notes..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        />
-                    </div>
-                    <div className="flex gap-3 flex-wrap">
-                        <select
-                            value={statusFilter}
-                            onChange={(e) => setStatusFilter(e.target.value)}
-                            className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                        >
-                            <option value="">All Status</option>
-                            <option value="Negotiation">Negotiation</option>
-                            <option value="Down Payment">Down Payment</option>
-                            <option value="Finance">Finance</option>
-                            <option value="Paid Off">Paid Off</option>
-                            <option value="Cancelled">Cancelled</option>
-                        </select>
-                        <button className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2">
-                            <Filter className="w-4 h-4" />
-                            More Filters
-                        </button>
-                        <button
-                            onClick={exportToExcel}
-                            disabled={exportLoading}
-                            className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 disabled:opacity-50"
-                        >
-                            {exportLoading ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                                <Download className="w-4 h-4" />
-                            )}
-                            Export
-                        </button>
-                    </div>
-                </div>
-            </div>
-
+            }
+            kpis={
+                <MetricStrip
+                    loading={loading}
+                    items={[
+                        { label: "Total", value: totalItems },
+                        { label: "Negotiation", value: negotiationCount, tone: "warning" },
+                        { label: "Stagnant", value: stagnantCount, tone: "destructive" },
+                        { label: "Page pipeline", value: pipelineValue, format: "currency", tone: "success" },
+                    ]}
+                />
+            }
+            toolbar={
+                <ListToolbar
+                    searchPlaceholder="Search vehicle, customer, notesâ€¦"
+                    searchValue={searchTerm}
+                    onSearchChange={setSearchTerm}
+                    filters={[
+                        {
+                            id: "status",
+                            value: statusFilter,
+                            onChange: setStatusFilter,
+                            options: [
+                                { value: "Negotiation", label: "Negotiation" },
+                                { value: "Down Payment", label: "Down Payment" },
+                                { value: "Finance", label: "Finance" },
+                                { value: "Paid Off", label: "Paid Off" },
+                                { value: "Cancelled", label: "Cancelled" },
+                            ],
+                            allLabel: "All status",
+                        },
+                    ]}
+                    viewMode={viewMode}
+                    onViewModeChange={setViewMode}
+                    onExport={exportToExcel}
+                    exportLoading={exportLoading}
+                    showPrimary={false}
+                />
+            }
+        >
             {/* View Content */}
             {viewMode === "table" ? (
                 // Table View
-                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <div className="overflow-hidden rounded-lg border border-border bg-card">
                     {/* Desktop Table - Hidden on mobile */}
-                    <div className="hidden lg:block overflow-x-auto">
-                        <table className="w-full">
-                            <thead className="bg-gray-50 border-b border-gray-200">
-                                <tr>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Vehicle
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Customer
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Status
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Sale Price
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Deal Date
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Salesperson
-                                    </th>
-                                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Actions
-                                    </th>
+                    <div className="hidden max-h-[calc(100vh-14rem)] overflow-auto lg:block">
+                        <table className="w-full text-[13px]">
+                            <thead className="sticky top-0 z-[1] border-b border-border bg-card/95 backdrop-blur-sm">
+                                <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                    <th className="px-3 py-2.5">Vehicle</th>
+                                    <th className="px-3 py-2.5">Customer</th>
+                                    <th className="px-3 py-2.5 w-[120px]">Status</th>
+                                    <th className="px-3 py-2.5 text-right w-[100px]">Sale</th>
+                                    <th className="px-3 py-2.5 w-[100px]">Date</th>
+                                    <th className="px-3 py-2.5">Salesperson</th>
+                                    <th className="px-3 py-2.5 text-right w-[120px]">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-200">
+                            <tbody className="divide-y divide-border">
                                 {loading ? (
                                     <tr>
-                                        <td colSpan={7} className="px-4 py-12 text-center">
-                                            <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
-                                            <p className="mt-2 text-sm text-gray-500">Loading deals...</p>
+                                        <td colSpan={7} className="p-6">
+                                            <SkeletonTable rows={8} cols={7} />
                                         </td>
                                     </tr>
                                 ) : error ? (
                                     <tr>
                                         <td colSpan={7} className="px-4 py-12 text-center">
-                                            <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
-                                            <p className="mt-2 text-sm text-red-600">{error}</p>
-                                            <button
-                                                onClick={fetchDeals}
-                                                className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                                            >
-                                                Try Again
-                                            </button>
+                                            <AlertCircle className="mx-auto h-7 w-7 text-destructive" />
+                                            <p className="mt-2 text-sm text-destructive">{error}</p>
+                                            <Button variant="outline" size="sm" className="mt-3" onClick={fetchDeals}>
+                                                Try again
+                                            </Button>
                                         </td>
                                     </tr>
                                 ) : deals.length === 0 ? (
                                     <tr>
                                         <td colSpan={7} className="px-4 py-12 text-center">
-                                            <FileText className="w-12 h-12 text-gray-300 mx-auto" />
-                                            <p className="mt-2 text-sm text-gray-500">No deals found</p>
-                                            <button
-                                                onClick={handleAdd}
-                                                className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                                            >
-                                                Create Your First Deal
-                                            </button>
+                                            <FileText className="mx-auto h-10 w-10 text-muted-foreground/40" />
+                                            <p className="mt-2 text-sm text-muted-foreground">
+                                                {searchTerm || statusFilter ? "No deals match" : "No deals yet"}
+                                            </p>
+                                            {canWrite("deals") && !searchTerm && !statusFilter && (
+                                                <Button size="sm" className="mt-3" onClick={handleAdd}>
+                                                    <Plus className="h-4 w-4" />
+                                                    New deal
+                                                </Button>
+                                            )}
                                         </td>
                                     </tr>
                                 ) : (
                                     deals.map((deal) => (
-                                        <tr key={deal.id} className="hover:bg-gray-50 transition-colors">
-                                            <td className="px-4 py-3">
-                                                <div className="flex items-center gap-3">
-                                                    {deal.vehicle?.image_gallery?.[0] ? (
+                                        <tr
+                                            key={deal.id}
+                                            role="button"
+                                            tabIndex={0}
+                                            className="group cursor-pointer border-l-2 border-l-transparent transition-colors hover:border-l-primary hover:bg-muted/50 focus-visible:border-l-primary focus-visible:bg-muted/50 focus-visible:outline-none"
+                                            onClick={() => handleViewDetails(deal)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter") handleViewDetails(deal);
+                                            }}
+                                        >
+                                            <td className="px-3.5 py-2.5">
+                                                <div className="flex items-center gap-2.5">
+                                                    {firstImageUrl(deal.vehicle?.image_gallery) ? (
+                                                        // eslint-disable-next-line @next/next/no-img-element
                                                         <img
-                                                            src={deal.vehicle.image_gallery[0]}
-                                                            alt={`${deal.vehicle.make} ${deal.vehicle.model}`}
-                                                            className="w-10 h-10 rounded-lg object-cover"
+                                                            src={firstImageUrl(deal.vehicle?.image_gallery) ?? ""}
+                                                            alt=""
+                                                            className="h-10 w-14 rounded-md border border-border object-cover"
                                                         />
                                                     ) : (
-                                                        <div className="w-10 h-10 rounded-lg bg-gray-200 flex items-center justify-center">
-                                                            <Car className="w-5 h-5 text-gray-400" />
+                                                        <div className="flex h-10 w-14 items-center justify-center rounded-md border border-border bg-muted">
+                                                            <Car className="h-4 w-4 text-muted-foreground/60" />
                                                         </div>
                                                     )}
-                                                    <div>
-                                                        <p className="text-sm font-medium text-gray-900">
+                                                    <div className="min-w-0">
+                                                        <EntityLink onClick={() => handleViewDetails(deal)}>
                                                             {deal.vehicle
                                                                 ? `${deal.vehicle.year} ${deal.vehicle.make} ${deal.vehicle.model}`
-                                                                : "Unknown Vehicle"}
-                                                        </p>
-                                                        <p className="text-xs text-gray-500">
-                                                            {deal.vehicle?.vin || "N/A"}
+                                                                : "Unlinked vehicle"}
+                                                        </EntityLink>
+                                                        <p className="mt-0.5 font-mono text-[11px] tracking-tight text-muted-foreground">
+                                                            {deal.vehicle?.vin || "â€”"}
                                                         </p>
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td className="px-4 py-3">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-xs font-medium">
-                                                        {deal.customer?.name?.[0]?.toUpperCase() || "C"}
-                                                    </div>
-                                                    <span className="text-sm font-medium text-gray-900">
-                                                        {deal.customer?.name || "Unknown"}
+                                            <td className="px-3.5 py-2.5">
+                                                <RelationChip
+                                                    customerId={deal.customer_id || deal.customer?.id}
+                                                    name={deal.customer?.name}
+                                                    avatarUrl={deal.customer?.avatar}
+                                                    emptyLabel="Cash"
+                                                />
+                                            </td>
+                                            <td className="px-3.5 py-2.5">
+                                                <div className="flex flex-wrap items-center gap-1.5">
+                                                    <span className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${getStatusColor(deal.deal_status)} ${getStatusTextColor(deal.deal_status)}`}>
+                                                        {deal.deal_status}
                                                     </span>
+                                                    {isDealStagnant(deal) && (
+                                                        <span
+                                                            className="rounded-md border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-orange-700"
+                                                            title="No progress in 7+ days"
+                                                        >
+                                                            Stagnant
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </td>
-                                            <td className="px-4 py-3">
-                                                <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(deal.deal_status)} ${getStatusTextColor(deal.deal_status)}`}>
-                                                    {deal.deal_status}
-                                                </span>
+                                            <td className="px-3.5 py-2.5 text-right tabular-nums font-medium text-foreground">
+                                                {formatCurrency(deal.sale_price)}
                                             </td>
-                                            <td className="px-4 py-3">
-                                                <span className="text-sm font-medium text-gray-900">
-                                                    {formatCurrency(deal.sale_price)}
-                                                </span>
+                                            <td className="px-3.5 py-2.5 text-muted-foreground">
+                                                {formatDate(deal.deal_date)}
                                             </td>
-                                            <td className="px-4 py-3">
-                                                <span className="text-sm text-gray-600">
-                                                    {formatDate(deal.deal_date)}
-                                                </span>
+                                            <td className="px-3.5 py-2.5 text-foreground/90">
+                                                {deal.salesperson?.full_name || "Unassigned"}
                                             </td>
-                                            <td className="px-4 py-3">
-                                                <span className="text-sm text-gray-600">
-                                                    {deal.salesperson?.full_name || "Unassigned"}
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-3 text-right">
-                                                <div className="flex items-center justify-end gap-1">
+                                            <td className="px-3.5 py-2.5">
+                                                <div
+                                                    className="flex items-center justify-end gap-2"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    onKeyDown={(e) => e.stopPropagation()}
+                                                >
                                                     <button
+                                                        type="button"
                                                         onClick={() => handleOpenBillOfSale(deal)}
                                                         disabled={loadingBillOfSale}
-                                                        className="p-1.5 hover:bg-green-50 rounded-lg transition-colors disabled:opacity-50"
+                                                        className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
                                                         title="Bill of Sale"
                                                     >
                                                         {loadingBillOfSale ? (
-                                                            <Loader2 className="w-4 h-4 text-green-600 animate-spin" />
+                                                            <Loader2 className="h-4 w-4 animate-spin" />
                                                         ) : (
-                                                            <FileSignature className="w-4 h-4 text-green-600" />
+                                                            <FileSignature className="h-4 w-4" />
                                                         )}
                                                     </button>
                                                     <button
-                                                        onClick={() => handleViewDetails(deal)}
-                                                        className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
-                                                        title="View Details"
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const qs = new URLSearchParams();
+                                                            qs.set("deal_id", deal.id);
+                                                            qs.set("sale_price", String(deal.sale_price || 0));
+                                                            qs.set("down_payment", String(deal.down_payment || 0));
+                                                            qs.set("trade_in_value", String(deal.trade_in_value || 0));
+                                                            if (deal.finance_term) qs.set("term_months", String(deal.finance_term));
+                                                            if (deal.interest_rate != null) qs.set("interest_rate", String(deal.interest_rate));
+                                                            if (deal.vehicle) {
+                                                                qs.set(
+                                                                    "vehicle",
+                                                                    `${deal.vehicle.year} ${deal.vehicle.make} ${deal.vehicle.model}`
+                                                                );
+                                                            }
+                                                            if (deal.customer?.name) qs.set("customer", deal.customer.name);
+                                                            router.push(`/finance?${qs.toString()}`);
+                                                        }}
+                                                        className="rounded-md p-1.5 text-muted-foreground hover:bg-[#2563EB]/10 hover:text-[#2563EB]"
+                                                        title="Desk F&I"
                                                     >
-                                                        <Eye className="w-4 h-4 text-blue-500" />
+                                                        <Calculator className="h-4 w-4" />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleViewDetails(deal)}
+                                                        className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                                                        title="View"
+                                                    >
+                                                        <Eye className="h-4 w-4" />
                                                     </button>
                                                     {canWrite("deals") && (
                                                         <button
+                                                            type="button"
                                                             onClick={() => handleEdit(deal)}
-                                                            className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                                            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
                                                             title="Edit"
                                                         >
-                                                            <Edit className="w-4 h-4 text-amber-500" />
+                                                            <Edit className="h-4 w-4" />
                                                         </button>
                                                     )}
                                                     {canDelete("deals") && (
                                                         <button
+                                                            type="button"
                                                             onClick={() => handleDelete(deal)}
-                                                            className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                                            className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive-50 hover:text-destructive"
                                                             title="Delete"
                                                         >
-                                                            <Trash2 className="w-4 h-4 text-red-500" />
+                                                            <Trash2 className="h-4 w-4" />
                                                         </button>
                                                     )}
                                                 </div>
@@ -689,94 +724,94 @@ export default function DealsPage() {
                     </div>
 
                     {/* Mobile Cards - Hidden on desktop */}
-                    <div className="lg:hidden divide-y divide-gray-200">
+                    <div className="lg:hidden divide-y divide-border">
                         {loading ? (
                             <div className="px-4 py-12 text-center">
-                                <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
-                                <p className="mt-2 text-sm text-gray-500">Loading deals...</p>
+                                <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto" />
+                                <p className="mt-2 text-sm text-muted-foreground">Loading deals...</p>
                             </div>
                         ) : error ? (
                             <div className="px-4 py-12 text-center">
-                                <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
-                                <p className="mt-2 text-sm text-red-600">{error}</p>
+                                <AlertCircle className="w-8 h-8 text-destructive mx-auto" />
+                                <p className="mt-2 text-sm text-destructive">{error}</p>
                                 <button
                                     onClick={fetchDeals}
-                                    className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                    className="mt-3 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary"
                                 >
                                     Try Again
                                 </button>
                             </div>
                         ) : deals.length === 0 ? (
                             <div className="px-4 py-12 text-center">
-                                <FileText className="w-12 h-12 text-gray-300 mx-auto" />
-                                <p className="mt-2 text-sm text-gray-500">No deals found</p>
+                                <FileText className="w-12 h-12 text-muted-foreground/50 mx-auto" />
+                                <p className="mt-2 text-sm text-muted-foreground">No deals found</p>
                                 <button
                                     onClick={handleAdd}
-                                    className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                    className="mt-3 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary"
                                 >
                                     Create Your First Deal
                                 </button>
                             </div>
                         ) : (
                             deals.map((deal) => (
-                                <div key={deal.id} className="p-4 hover:bg-gray-50 transition-colors">
+                                <div key={deal.id} className="p-4 hover:bg-muted/40 transition-colors">
                                     {/* Header Row */}
                                     <div className="flex items-start justify-between mb-3">
                                         <div className="flex items-center gap-3">
-                                            {deal.vehicle?.image_gallery?.[0] ? (
+                                            {firstImageUrl(deal.vehicle?.image_gallery) ? (
                                                 <img
-                                                    src={deal.vehicle.image_gallery[0]}
-                                                    alt={`${deal.vehicle.make} ${deal.vehicle.model}`}
+                                                    src={firstImageUrl(deal.vehicle?.image_gallery) ?? ""}
+                                                    alt={`${deal.vehicle?.make ?? ""} ${deal.vehicle?.model ?? ""}`}
                                                     className="w-12 h-12 rounded-lg object-cover"
                                                 />
                                             ) : (
-                                                <div className="w-12 h-12 rounded-lg bg-gray-200 flex items-center justify-center">
-                                                    <Car className="w-5 h-5 text-gray-400" />
+                                                <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center">
+                                                    <Car className="w-5 h-5 text-muted-foreground/70" />
                                                 </div>
                                             )}
                                             <div>
-                                                <p className="text-sm font-medium text-gray-900">
+                                                <p className="text-sm font-medium text-foreground">
                                                     {deal.vehicle
                                                         ? `${deal.vehicle.year} ${deal.vehicle.make} ${deal.vehicle.model}`
                                                         : "Unknown Vehicle"}
                                                 </p>
-                                                <p className="text-xs text-gray-500">
-                                                    {deal.customer?.name || "Unknown Customer"}
+                                                <p className="text-xs text-muted-foreground">
+                                                    {deal.customer?.name || (deal.customer_id ? "Unlinked" : "Cash")}
                                                 </p>
                                             </div>
                                         </div>
-                                        <div className="flex items-center gap-1">
+                                        <div className="flex items-center gap-2">
                                             <button
                                                 onClick={() => handleOpenBillOfSale(deal)}
                                                 disabled={loadingBillOfSale}
-                                                className="p-1.5 hover:bg-green-50 rounded-lg transition-colors disabled:opacity-50"
+                                                className="p-1.5 hover:bg-success-50 rounded-lg transition-colors disabled:opacity-50"
                                             >
                                                 {loadingBillOfSale ? (
-                                                    <Loader2 className="w-4 h-4 text-green-600 animate-spin" />
+                                                    <Loader2 className="w-4 h-4 text-success animate-spin" />
                                                 ) : (
-                                                    <FileSignature className="w-4 h-4 text-green-600" />
+                                                    <FileSignature className="w-4 h-4 text-success" />
                                                 )}
                                             </button>
                                             <button
                                                 onClick={() => handleViewDetails(deal)}
-                                                className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
+                                                className="p-1.5 hover:bg-primary-50 rounded-lg transition-colors"
                                             >
-                                                <Eye className="w-4 h-4 text-blue-500" />
+                                                <Eye className="w-4 h-4 text-primary" />
                                             </button>
                                             {canWrite("deals") && (
                                                 <button
                                                     onClick={() => handleEdit(deal)}
-                                                    className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                                    className="p-1.5 hover:bg-warning-50 rounded-lg transition-colors"
                                                 >
-                                                    <Edit className="w-4 h-4 text-amber-500" />
+                                                    <Edit className="w-4 h-4 text-warning" />
                                                 </button>
                                             )}
                                             {canDelete("deals") && (
                                                 <button
                                                     onClick={() => handleDelete(deal)}
-                                                    className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                                    className="p-1.5 hover:bg-destructive-50 rounded-lg transition-colors"
                                                 >
-                                                    <Trash2 className="w-4 h-4 text-red-500" />
+                                                    <Trash2 className="w-4 h-4 text-destructive" />
                                                 </button>
                                             )}
                                         </div>
@@ -786,27 +821,27 @@ export default function DealsPage() {
                                         <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(deal.deal_status)} ${getStatusTextColor(deal.deal_status)}`}>
                                             {deal.deal_status}
                                         </span>
-                                        <span className="text-sm font-semibold text-green-600">
+                                        <span className="text-sm font-semibold text-success">
                                             {formatCurrency(deal.sale_price)}
                                         </span>
                                     </div>
                                     {/* Details Grid */}
-                                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
+                                    <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                                         <div>
-                                            <span className="font-medium text-gray-400">VIN:</span>{" "}
+                                            <span className="font-medium text-muted-foreground/70">VIN:</span>{" "}
                                             {deal.vehicle?.vin || "N/A"}
                                         </div>
                                         <div>
-                                            <span className="font-medium text-gray-400">Salesperson:</span>{" "}
+                                            <span className="font-medium text-muted-foreground/70">Salesperson:</span>{" "}
                                             {deal.salesperson?.full_name || "Unassigned"}
                                         </div>
                                         <div>
-                                            <span className="font-medium text-gray-400">Deal Date:</span>{" "}
+                                            <span className="font-medium text-muted-foreground/70">Deal Date:</span>{" "}
                                             {formatDate(deal.deal_date)}
                                         </div>
                                         {deal.down_payment > 0 && (
                                             <div>
-                                                <span className="font-medium text-gray-400">Down Payment:</span>{" "}
+                                                <span className="font-medium text-muted-foreground/70">Down Payment:</span>{" "}
                                                 {formatCurrency(deal.down_payment)}
                                             </div>
                                         )}
@@ -818,25 +853,25 @@ export default function DealsPage() {
 
                     {/* Pagination */}
                     {!loading && !error && deals.length > 0 && (
-                        <div className="px-4 py-3 border-t border-gray-200 flex items-center justify-between">
-                            <p className="text-sm text-gray-500">
+                        <div className="px-4 py-3 border-t border-border flex items-center justify-between">
+                            <p className="text-sm text-muted-foreground">
                                 Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalItems)} of {totalItems} deals
                             </p>
                             <div className="flex items-center gap-2">
                                 <button
                                     onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
                                     disabled={currentPage === 1}
-                                    className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    className="p-2 border border-border rounded-lg hover:bg-muted/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                 >
                                     <ChevronLeft className="w-4 h-4" />
                                 </button>
-                                <span className="text-sm text-gray-600">
+                                <span className="text-sm text-foreground/80">
                                     Page {currentPage} of {totalPages}
                                 </span>
                                 <button
                                     onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
                                     disabled={currentPage === totalPages}
-                                    className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    className="p-2 border border-border rounded-lg hover:bg-muted/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                 >
                                     <ChevronRight className="w-4 h-4" />
                                 </button>
@@ -845,197 +880,16 @@ export default function DealsPage() {
                     )}
                 </div>
             ) : (
-                // Kanban View
-                <>
-                    {/* Desktop Kanban - Hidden on mobile */}
-                    <div className="hidden lg:block grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-                        {DEAL_STAGES.map((stage) => (
-                            <div
-                                key={stage}
-                                className={`rounded-xl border-2 ${STATUS_COLORS[stage]?.border || "border-gray-200"} ${STATUS_COLORS[stage]?.bg || "bg-gray-50"} p-4`}
-                            >
-                                <div className="flex items-center justify-between mb-4">
-                                    <h3 className={`font-semibold ${STATUS_COLORS[stage]?.text || "text-gray-700"}`}>
-                                        {stage}
-                                    </h3>
-                                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${STATUS_COLORS[stage]?.bg || "bg-gray-100"} ${STATUS_COLORS[stage]?.text || "text-gray-600"}`}>
-                                        {dealsByStatus[stage]?.length || 0}
-                                    </span>
-                                </div>
-                                <div className="space-y-3">
-                                    {dealsByStatus[stage]?.map((deal) => (
-                                        <div
-                                            key={deal.id}
-                                            className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-                                            onClick={() => handleViewDetails(deal)}
-                                        >
-                                            <div className="flex items-start gap-3">
-                                                {deal.vehicle?.image_gallery?.[0] ? (
-                                                    <img
-                                                        src={deal.vehicle.image_gallery[0]}
-                                                        alt={`${deal.vehicle.make} ${deal.vehicle.model}`}
-                                                        className="w-12 h-12 rounded-lg object-cover"
-                                                    />
-                                                ) : (
-                                                    <div className="w-12 h-12 rounded-lg bg-gray-200 flex items-center justify-center">
-                                                        <Car className="w-5 h-5 text-gray-400" />
-                                                    </div>
-                                                )}
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="text-sm font-medium text-gray-900 truncate">
-                                                        {deal.vehicle
-                                                            ? `${deal.vehicle.year} ${deal.vehicle.make} ${deal.vehicle.model}`
-                                                            : "Unknown"}
-                                                    </p>
-                                                    <p className="text-xs text-gray-500 truncate">
-                                                        {deal.customer?.name || "Unknown Customer"}
-                                                    </p>
-                                                    <p className="text-sm font-semibold text-green-600 mt-1">
-                                                        {formatCurrency(deal.sale_price)}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
-                                                <span className="text-xs text-gray-500">
-                                                    {deal.salesperson?.full_name || "Unassigned"}
-                                                </span>
-                                                <span className="text-xs text-gray-500">
-                                                    {formatDate(deal.deal_date)}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {(!dealsByStatus[stage] || dealsByStatus[stage].length === 0) && (
-                                        <div className="text-center py-8 text-gray-400">
-                                            <p className="text-sm">No deals</p>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-
-                    {/* Mobile Kanban (Card List) - Hidden on desktop */}
-                    <div className="lg:hidden space-y-4">
-                        {loading ? (
-                            <div className="px-4 py-12 text-center">
-                                <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
-                                <p className="mt-2 text-sm text-gray-500">Loading deals...</p>
-                            </div>
-                        ) : error ? (
-                            <div className="px-4 py-12 text-center">
-                                <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
-                                <p className="mt-2 text-sm text-red-600">{error}</p>
-                                <button
-                                    onClick={fetchDeals}
-                                    className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                                >
-                                    Try Again
-                                </button>
-                            </div>
-                        ) : deals.length === 0 ? (
-                            <div className="px-4 py-12 text-center">
-                                <FileText className="w-12 h-12 text-gray-300 mx-auto" />
-                                <p className="mt-2 text-sm text-gray-500">No deals found</p>
-                                <button
-                                    onClick={handleAdd}
-                                    className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                                >
-                                    Create Your First Deal
-                                </button>
-                            </div>
-                        ) : (
-                            deals.map((deal) => (
-                                <div
-                                    key={deal.id}
-                                    className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm"
-                                >
-                                    <div className="flex items-start gap-3 mb-3">
-                                        {deal.vehicle?.image_gallery?.[0] ? (
-                                            <img
-                                                src={deal.vehicle.image_gallery[0]}
-                                                alt={`${deal.vehicle.make} ${deal.vehicle.model}`}
-                                                className="w-12 h-12 rounded-lg object-cover"
-                                            />
-                                        ) : (
-                                            <div className="w-12 h-12 rounded-lg bg-gray-200 flex items-center justify-center">
-                                                <Car className="w-5 h-5 text-gray-400" />
-                                            </div>
-                                        )}
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium text-gray-900 truncate">
-                                                {deal.vehicle
-                                                    ? `${deal.vehicle.year} ${deal.vehicle.make} ${deal.vehicle.model}`
-                                                    : "Unknown"}
-                                            </p>
-                                            <p className="text-xs text-gray-500 truncate">
-                                                {deal.customer?.name || "Unknown Customer"}
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-2 mb-3">
-                                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(deal.deal_status)} ${getStatusTextColor(deal.deal_status)}`}>
-                                            {deal.deal_status}
-                                        </span>
-                                        <span className="text-sm font-semibold text-green-600">
-                                            {formatCurrency(deal.sale_price)}
-                                        </span>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 mb-3">
-                                        <div>
-                                            <span className="font-medium text-gray-400">Salesperson:</span>{" "}
-                                            {deal.salesperson?.full_name || "Unassigned"}
-                                        </div>
-                                        <div>
-                                            <span className="font-medium text-gray-400">Date:</span>{" "}
-                                            {formatDate(deal.deal_date)}
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                                        <span className="text-xs text-gray-400">
-                                            {DEAL_STAGES.findIndex(s => s === deal.deal_status) + 1} of {DEAL_STAGES.length}
-                                        </span>
-                                        <div className="flex items-center gap-1">
-                                            <button
-                                                onClick={() => handleOpenBillOfSale(deal)}
-                                                disabled={loadingBillOfSale}
-                                                className="p-1.5 hover:bg-green-50 rounded-lg transition-colors disabled:opacity-50"
-                                            >
-                                                {loadingBillOfSale ? (
-                                                    <Loader2 className="w-4 h-4 text-green-600 animate-spin" />
-                                                ) : (
-                                                    <FileSignature className="w-4 h-4 text-green-600" />
-                                                )}
-                                            </button>
-                                            <button
-                                                onClick={() => handleViewDetails(deal)}
-                                                className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
-                                            >
-                                                <Eye className="w-4 h-4 text-blue-500" />
-                                            </button>
-                                            {canWrite("deals") && (
-                                                <button
-                                                    onClick={() => handleEdit(deal)}
-                                                    className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
-                                                >
-                                                    <Edit className="w-4 h-4 text-amber-500" />
-                                                </button>
-                                            )}
-                                            {canDelete("deals") && (
-                                                <button
-                                                    onClick={() => handleDelete(deal)}
-                                                    className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
-                                                >
-                                                    <Trash2 className="w-4 h-4 text-red-500" />
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </>
+                <DealsKanban
+                    deals={deals}
+                    loading={loading}
+                    error={error}
+                    onRefresh={fetchDeals}
+                    onAdd={canWrite("deals") ? handleAdd : undefined}
+                    canWrite={canWrite("deals")}
+                    formatCurrency={formatCurrency}
+                    formatDate={formatDate}
+                />
             )}
 
             {/* Modals */}
@@ -1050,6 +904,12 @@ export default function DealsPage() {
                         setShowDetailsModal(false);
                         handleEdit(selectedDeal);
                     }}
+                    onBillOfSale={() => {
+                        const deal = selectedDeal;
+                        setShowDetailsModal(false);
+                        void handleOpenBillOfSale(deal);
+                    }}
+                    billOfSaleLoading={loadingBillOfSale}
                 />
             )}
 
@@ -1099,6 +959,20 @@ export default function DealsPage() {
                     }}
                 />
             )}
-        </div>
+
+            <LinkCustomerQueue
+                open={showLinkQueue}
+                onClose={() => {
+                    setShowLinkQueue(false);
+                    if (searchParams?.get("unlinked")) {
+                        router.replace("/deals");
+                    }
+                }}
+                onLinked={() => {
+                    fetchDeals();
+                    fetchUnlinkedCount();
+                }}
+            />
+        </ListPageShell>
     );
 }

@@ -22,8 +22,11 @@ import {
     Truck,
     FileWarning,
     CheckCircle,
-    RefreshCw,
+    RefreshCw
 } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
+import { openBosPrintWindow } from "@/src/lib/bos-pdf";
+import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
 
 interface Vehicle {
     id: string;
@@ -63,6 +66,7 @@ interface BillOfSale {
     deal_id?: string;
     vehicle_id?: string;
     customer_id?: string;
+    buyer_name?: string;
     vehicle_description?: string;
     sale_type?: string;
 
@@ -151,8 +155,10 @@ export default function BillOfSaleModal({
     deal,
     billOfSale: initialBillOfSale,
     onClose,
-    onSuccess,
+    onSuccess
 }: BillOfSaleModalProps) {
+    useOverlayDismiss(onClose);
+
     const [mode, setMode] = useState(initialMode);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -220,7 +226,7 @@ export default function BillOfSaleModal({
         // Section G
         payment_status: "Not Paid",
         status: "Draft",
-        gst_enabled: true,
+        gst_enabled: true
     });
 
     useEffect(() => {
@@ -246,20 +252,20 @@ export default function BillOfSaleModal({
                     ...prev,
                     vehicle_id: deal.vehicle_id,
                     vehicle_description: `${deal.vehicle.year} ${deal.vehicle.make} ${deal.vehicle.model}`,
-                    price_vehicle: deal.vehicle.retail_price || 0,
+                    price_vehicle: deal.vehicle.retail_price || 0
                 }));
             }
             if (deal.customer) {
                 setCustomer(deal.customer);
                 setFormData((prev) => ({
                     ...prev,
-                    customer_id: deal.customer_id,
+                    customer_id: deal.customer_id
                 }));
             }
             if (deal.id) {
                 setFormData((prev) => ({
                     ...prev,
-                    deal_id: deal.id,
+                    deal_id: deal.id
                 }));
             }
         }
@@ -267,16 +273,14 @@ export default function BillOfSaleModal({
 
     const fetchVehicle = async (vehicleId: string) => {
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch(`/api/vehicles/${vehicleId}`, {
-                headers: { Authorization: `Bearer ${token}` },
             });
             if (response.ok) {
                 const { data } = await response.json();
                 setVehicle(data);
                 setFormData((prev) => ({
                     ...prev,
-                    vehicle_description: `${data.year} ${data.make} ${data.model}`,
+                    vehicle_description: `${data.year} ${data.make} ${data.model}`
                 }));
             }
         } catch (err) {
@@ -286,9 +290,7 @@ export default function BillOfSaleModal({
 
     const fetchCustomer = async (customerId: string) => {
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch(`/api/customers/${customerId}`, {
-                headers: { Authorization: `Bearer ${token}` },
             });
             if (response.ok) {
                 const { data } = await response.json();
@@ -358,14 +360,14 @@ export default function BillOfSaleModal({
             totalPurchasePrice,
             amountToFinance,
             totalBalanceDue,
-            paymentStatus,
+            paymentStatus
         };
     };
 
     const handleChange = (field: keyof BillOfSale, value: any) => {
         setFormData((prev) => ({
             ...prev,
-            [field]: value,
+            [field]: value
         }));
     };
 
@@ -384,7 +386,7 @@ export default function BillOfSaleModal({
                 payment_name: "",
                 payment_type: "Deposit",
                 amount: 0,
-                payment_date: new Date().toISOString().split("T")[0],
+                payment_date: new Date().toISOString().split("T")[0]
             },
         ]);
     };
@@ -407,7 +409,7 @@ export default function BillOfSaleModal({
             amount_to_finance: totals.amountToFinance,
             total_balance_due: totals.totalBalanceDue,
             payment_status: totals.paymentStatus,
-            status: "Calculated",
+            status: "Calculated"
         }));
     };
 
@@ -464,7 +466,7 @@ export default function BillOfSaleModal({
             notes: "",
             payment_status: "Not Paid",
             status: "Draft",
-            gst_enabled: gstEnabled,
+            gst_enabled: gstEnabled
         });
         setPayments([]);
     };
@@ -475,7 +477,6 @@ export default function BillOfSaleModal({
         setSavingType(asSold ? "sold" : "draft");
 
         try {
-            const token = localStorage.getItem("access_token");
             const url = formData.id ? `/api/bill-of-sale/${formData.id}` : "/api/bill-of-sale";
             const method = formData.id ? "PATCH" : "POST";
 
@@ -485,6 +486,8 @@ export default function BillOfSaleModal({
             // Map camelCase totals to snake_case for database
             const payload = {
                 ...formData,
+                customer_id: formData.customer_id || deal?.customer_id || customer?.id,
+                buyer_name: customer?.name || deal?.customer?.name || formData.buyer_name,
                 subtotal: totals.subtotal,
                 net_difference: totals.netDifference,
                 gst_amount: totals.gstAmount,
@@ -498,16 +501,14 @@ export default function BillOfSaleModal({
                 sale_type: saleType,
                 gst_enabled: gstEnabled,
                 status: asSold ? "Sold" : (formData.status || "Draft"),
-                payments: payments,
+                payments: payments
             };
 
             const response = await fetch(url, {
                 method,
                 headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify(payload),
+                    "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
             });
 
             if (!response.ok) {
@@ -517,14 +518,22 @@ export default function BillOfSaleModal({
 
             // If sold, update the deal status and vehicle status
             if (asSold && deal) {
-                await fetch(`/api/deals/${deal.id}`, {
+                const dealRes = await fetch(`/api/deals/${deal.id}`, {
                     method: "PATCH",
                     headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${token}`,
-                    },
-                    body: JSON.stringify({ deal_status: "Paid Off", close_deal: true }),
+                        "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        deal_status: "Paid Off",
+                        close_deal: true,
+                    })
                 });
+                if (!dealRes.ok) {
+                    const dealErr = await dealRes.json().catch(() => ({}));
+                    throw new Error(
+                        (dealErr as { error?: string }).error ||
+                            "Bill of sale saved, but deal/vehicle could not be marked Sold. Check deals:close permission."
+                    );
+                }
             }
 
             onSuccess();
@@ -532,6 +541,92 @@ export default function BillOfSaleModal({
             setError(err instanceof Error ? err.message : "An error occurred");
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleGeneratePdf = async () => {
+        try {
+            const totalsNow = calculateTotals();
+            let dealer: {
+                name?: string | null;
+                business_name?: string | null;
+                business_address?: string | null;
+                business_phone?: string | null;
+                business_email?: string | null;
+                dealer_license?: string | null;
+                hst_number?: string | null;
+            } | null = null;
+
+            try {
+                const meRes = await fetch("/api/me", { credentials: "include" });
+                if (meRes.ok) {
+                    const meJson = await meRes.json();
+                    const d = meJson?.data?.dealership || meJson?.dealership;
+                    if (d) {
+                        const settings =
+                            d.settings && typeof d.settings === "object"
+                                ? (d.settings as Record<string, unknown>)
+                                : {};
+                        dealer = {
+                            name: d.name,
+                            business_name: d.business_name,
+                            business_address: d.business_address,
+                            business_phone: d.business_phone,
+                            business_email: d.business_email,
+                            dealer_license:
+                                (typeof settings.dealer_license === "string"
+                                    ? settings.dealer_license
+                                    : null) ||
+                                (typeof settings.license_number === "string"
+                                    ? settings.license_number
+                                    : null) ||
+                                d.dealer_license ||
+                                null,
+                            hst_number:
+                                (typeof settings.hst_number === "string"
+                                    ? settings.hst_number
+                                    : null) ||
+                                d.hst_number ||
+                                null,
+                        };
+                    }
+                }
+            } catch {
+                // PDF still works without dealer profile
+            }
+
+            const custAddr = [
+                customer?.address,
+                [customer?.city, customer?.province].filter(Boolean).join(", "),
+                customer?.postal_code,
+            ]
+                .filter(Boolean)
+                .join(" · ");
+
+            openBosPrintWindow({
+                dealer,
+                vehicleLabel: vehicle
+                    ? `${vehicle.year} ${vehicle.make} ${vehicle.model}`
+                    : formData.vehicle_description || "—",
+                vin: vehicle?.vin,
+                stockNumber: vehicle?.stock_number,
+                customerName: customer?.name,
+                customerAddress: custAddr || undefined,
+                saleType,
+                priceVehicle: formData.price_vehicle ?? totalsNow.subtotal,
+                tradeInAllowance: formData.trade_in_allowance,
+                gstAmount: totalsNow.gstAmount,
+                pstAmount: totalsNow.pstAmount,
+                totalPurchasePrice: totalsNow.totalPurchasePrice,
+                totalBalanceDue: totalsNow.totalBalanceDue,
+                deposit: formData.deposit,
+                notes: formData.notes,
+                tradeInDisclosure: formData.trade_in_disclosure,
+                paymentStatus: totalsNow.paymentStatus,
+                dealDate: deal?.deal_date,
+            });
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Could not generate PDF");
         }
     };
 
@@ -562,18 +657,27 @@ export default function BillOfSaleModal({
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => void handleGeneratePdf()}
+                                className="min-h-10 px-3 py-2 text-sm border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center gap-1"
+                                title="Generate PDF (print)"
+                            >
+                                <Printer className="w-4 h-4" />
+                                PDF
+                            </button>
                             {!isReadOnly && (
                                 <>
                                     <button
                                         onClick={handleReset}
-                                        className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg flex items-center gap-1"
+                                        className="min-h-10 px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg flex items-center gap-1"
                                         title="Reset"
                                     >
                                         <RotateCcw className="w-4 h-4" />
                                     </button>
                                     <button
                                         onClick={handleCalculate}
-                                        className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1"
+                                        className="min-h-10 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1"
                                     >
                                         <Calculator className="w-4 h-4" />
                                         Calculate
@@ -598,7 +702,7 @@ export default function BillOfSaleModal({
                                         key={type}
                                         onClick={() => !isReadOnly && setSaleType(type as any)}
                                         disabled={isReadOnly}
-                                        className={`px-4 py-1.5 text-sm rounded-md transition-colors ${saleType === type
+                                        className={`px-4 min-h-10 py-2 text-sm rounded-md transition-colors ${saleType === type
                                                 ? "bg-blue-600 text-white"
                                                 : "text-gray-600 hover:bg-gray-50"
                                             }`}
@@ -641,7 +745,7 @@ export default function BillOfSaleModal({
                                 <button
                                     key={tab.id}
                                     onClick={() => setActiveTab(tab.id as any)}
-                                    className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${activeTab === tab.id
+                                    className={`min-h-10 px-3 py-2 text-sm rounded-lg transition-colors ${activeTab === tab.id
                                             ? "bg-green-100 text-green-700 font-medium"
                                             : "text-gray-600 hover:bg-gray-100"
                                         }`}
@@ -1373,11 +1477,11 @@ export default function BillOfSaleModal({
                                             <table className="w-full">
                                                 <thead className="bg-gray-50">
                                                     <tr>
-                                                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Name</th>
-                                                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Type</th>
-                                                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Amount</th>
-                                                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Date</th>
-                                                        {!isReadOnly && <th className="px-3 py-2 w-12"></th>}
+                                                        <th className="px-3.5 py-2.5 text-left text-xs font-medium text-gray-500">Name</th>
+                                                        <th className="px-3.5 py-2.5 text-left text-xs font-medium text-gray-500">Type</th>
+                                                        <th className="px-3.5 py-2.5 text-left text-xs font-medium text-gray-500">Amount</th>
+                                                        <th className="px-3.5 py-2.5 text-left text-xs font-medium text-gray-500">Date</th>
+                                                        {!isReadOnly && <th className="px-3.5 py-2.5 w-12"></th>}
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-gray-100">
@@ -1391,7 +1495,7 @@ export default function BillOfSaleModal({
                                                                         type="text"
                                                                         value={payment.payment_name}
                                                                         onChange={(e) => handlePaymentChange(index, "payment_name", e.target.value)}
-                                                                        className="w-full px-3 py-1 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                        className="w-full min-h-10 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                                     />
                                                                 )}
                                                             </td>
@@ -1402,7 +1506,7 @@ export default function BillOfSaleModal({
                                                                     <select
                                                                         value={payment.payment_type}
                                                                         onChange={(e) => handlePaymentChange(index, "payment_type", e.target.value)}
-                                                                        className="w-full px-3 py-1 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                        className="w-full min-h-10 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                                     >
                                                                         <option value="Deposit">Deposit</option>
                                                                         <option value="Down Payment">Down Payment</option>
@@ -1420,7 +1524,7 @@ export default function BillOfSaleModal({
                                                                         type="number"
                                                                         value={payment.amount || ""}
                                                                         onChange={(e) => handlePaymentChange(index, "amount", parseFloat(e.target.value) || 0)}
-                                                                        className="w-32 px-3 py-1 text-right border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                        className="w-32 min-h-10 px-3 py-2 text-right border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                                     />
                                                                 )}
                                                             </td>
@@ -1432,7 +1536,7 @@ export default function BillOfSaleModal({
                                                                         type="date"
                                                                         value={payment.payment_date}
                                                                         onChange={(e) => handlePaymentChange(index, "payment_date", e.target.value)}
-                                                                        className="w-full px-3 py-1 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                        className="w-full min-h-10 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                                     />
                                                                 )}
                                                             </td>

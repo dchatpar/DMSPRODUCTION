@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { X, Loader2, AlertCircle } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
+import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
 
 interface Role {
     id: string;
@@ -94,7 +96,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
         "tools:read",
         // Profile
         "profile:read", "profile:write",
-    ],
+    ]
 };
 
 const PERMISSION_OPTIONS = [
@@ -224,13 +226,15 @@ interface RoleModalProps {
 }
 
 export default function RoleModal({ mode, role, onClose, onSuccess }: RoleModalProps) {
+    useOverlayDismiss(onClose);
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const [formData, setFormData] = useState({
         name: "",
         description: "",
-        permissions: [] as string[],
+        permissions: [] as string[]
     });
 
     useEffect(() => {
@@ -238,7 +242,7 @@ export default function RoleModal({ mode, role, onClose, onSuccess }: RoleModalP
             setFormData({
                 name: role.name || "",
                 description: role.description || "",
-                permissions: role.permissions || [],
+                permissions: role.permissions || []
             });
         } else {
             // Reset for new role
@@ -251,7 +255,7 @@ export default function RoleModal({ mode, role, onClose, onSuccess }: RoleModalP
         if (mode === "add" && formData.name && ROLE_DEFAULT_PERMISSIONS[formData.name]) {
             setFormData((prev) => ({
                 ...prev,
-                permissions: ROLE_DEFAULT_PERMISSIONS[formData.name] || [],
+                permissions: ROLE_DEFAULT_PERMISSIONS[formData.name] || []
             }));
         }
     }, [formData.name, mode]);
@@ -266,7 +270,7 @@ export default function RoleModal({ mode, role, onClose, onSuccess }: RoleModalP
             ...prev,
             permissions: prev.permissions.includes(permissionId)
                 ? prev.permissions.filter((p) => p !== permissionId)
-                : [...prev.permissions, permissionId],
+                : [...prev.permissions, permissionId]
         }));
     };
 
@@ -275,7 +279,7 @@ export default function RoleModal({ mode, role, onClose, onSuccess }: RoleModalP
             ...prev,
             permissions: prev.permissions.includes("*")
                 ? []
-                : ["*"],
+                : ["*"]
         }));
     };
 
@@ -294,11 +298,6 @@ export default function RoleModal({ mode, role, onClose, onSuccess }: RoleModalP
         setLoading(true);
 
         try {
-            const token = localStorage.getItem("access_token");
-            if (!token) {
-                window.location.href = "/login";
-                return;
-            }
 
             const url = mode === "edit" && role
                 ? `/api/roles/${role.id}`
@@ -309,14 +308,12 @@ export default function RoleModal({ mode, role, onClose, onSuccess }: RoleModalP
             const response = await fetch(url, {
                 method,
                 headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
+                    "Content-Type": "application/json" },
                 body: JSON.stringify({
                     name: formData.name,
                     description: formData.description || null,
-                    permissions: formData.permissions,
-                }),
+                    permissions: formData.permissions
+                })
             });
 
             if (!response.ok) {

@@ -9,7 +9,7 @@ import {
     Calendar,
     GripVertical,
     Car,
-    User,
+    User
 } from "lucide-react";
 
 interface Lead {
@@ -56,7 +56,7 @@ export default function SortableLeadCard({
     lead,
     onView,
     onEdit,
-    onDelete,
+    onDelete
 }: SortableLeadCardProps) {
     const getInitials = (name: string) => {
         if (!name) return "C";
@@ -77,7 +77,7 @@ export default function SortableLeadCard({
             Facebook: "bg-indigo-500/20 text-indigo-300",
             Craigslist: "bg-orange-500/20 text-orange-300",
             Kijiji: "bg-red-500/20 text-red-300",
-            Phone: "bg-teal-500/20 text-teal-300",
+            Phone: "bg-teal-500/20 text-teal-300"
         };
         return colors[source] || "bg-gray-500/20 text-gray-300";
     };

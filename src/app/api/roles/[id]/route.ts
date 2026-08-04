@@ -1,6 +1,11 @@
 // app/api/roles/[id]/route.ts
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
+import { assertOwnershipOrDeny, pickAllowed, requireDealershipAccess } from "@/src/lib/auth-helpers";
+
+const ROLE_ALLOWED_FIELDS = [
+    "name", "description", "permissions",
+] as const;
 
 // GET single role
 export async function GET(
@@ -8,10 +13,15 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const { id } = await params;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
         let supabase;
-
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -24,29 +34,26 @@ export async function GET(
             throw error;
         }
 
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        const { id } = await params;
 
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
-        }
-
-        // Get user's profile
-        const { data: currentUser } = await supabase
-            .from("users")
-            .select("dealership_id, is_platform_admin")
-            .eq("id", user.id)
+        // Narrow fetch first to assert ownership
+        const { data: existing, error: existingError } = await supabase
+            .from("roles")
+            .select("id, dealership_id, is_system")
+            .eq("id", id)
             .single();
 
-        if (!currentUser) {
+        if (existingError || !existing) {
             return NextResponse.json(
-                { error: "User profile not found" },
+                { error: "Role not found" },
                 { status: 404 }
             );
         }
 
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
+
+        // Re-fetch the full row
         const { data: role, error: dbError } = await supabase
             .from("roles")
             .select("*")
@@ -57,14 +64,6 @@ export async function GET(
             return NextResponse.json(
                 { error: "Role not found" },
                 { status: 404 }
-            );
-        }
-
-        // Check access - platform admins see all, others see only their dealership
-        if (!currentUser.is_platform_admin && role.dealership_id !== currentUser.dealership_id) {
-            return NextResponse.json(
-                { error: "Unauthorized - Access denied" },
-                { status: 403 }
             );
         }
 
@@ -86,8 +85,15 @@ export async function PATCH(
     try {
         const { id } = await params;
 
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -100,61 +106,33 @@ export async function PATCH(
             throw error;
         }
 
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
-        }
-
-        // Get user's profile
-        const { data: currentUser } = await supabase
-            .from("users")
-            .select("dealership_id, role, is_platform_admin")
-            .eq("id", user.id)
-            .single();
-
-        if (!currentUser) {
-            return NextResponse.json(
-                { error: "User profile not found" },
-                { status: 404 }
-            );
-        }
-
         // Only admins or platform admins can update roles
-        if (currentUser.role !== "Admin" && !currentUser.is_platform_admin) {
+        if (auth.profile.role !== "Admin" && !auth.profile.is_platform_admin) {
             return NextResponse.json(
                 { error: "Unauthorized - Admin access required" },
                 { status: 403 }
             );
         }
 
-        // Get the role to check ownership
-        const { data: existingRole } = await supabase
+        // Get the role to check ownership and the is_system flag
+        const { data: existingRole, error: existingError } = await supabase
             .from("roles")
-            .select("*, dealership_id")
+            .select("id, dealership_id, is_system, description, permissions")
             .eq("id", id)
             .single();
 
-        if (!existingRole) {
+        if (existingError || !existingRole) {
             return NextResponse.json(
                 { error: "Role not found" },
                 { status: 404 }
             );
         }
 
-        // Check access
-        if (!currentUser.is_platform_admin && existingRole.dealership_id !== currentUser.dealership_id) {
-            return NextResponse.json(
-                { error: "Unauthorized - Access denied" },
-                { status: 403 }
-            );
-        }
+        const deny = assertOwnershipOrDeny(existingRole, auth.profile);
+        if (deny) return deny;
 
         // Cannot modify system roles' names
-        if (existingRole.is_system && currentUser.role !== "Admin" && !currentUser.is_platform_admin) {
+        if (existingRole.is_system && auth.profile.role !== "Admin" && !auth.profile.is_platform_admin) {
             return NextResponse.json(
                 { error: "Cannot modify system role" },
                 { status: 403 }
@@ -162,13 +140,18 @@ export async function PATCH(
         }
 
         const payload = await req.json();
-        const { description, permissions } = payload;
+
+        // Whitelist the update payload and block dealership_id changes
+        const safePayload = pickAllowed(payload, ROLE_ALLOWED_FIELDS);
+        delete (safePayload as any).dealership_id;
 
         const { data, error: dbError } = await supabase
             .from("roles")
             .update({
-                description: description !== undefined ? description : existingRole.description,
-                permissions: permissions !== undefined ? permissions : existingRole.permissions,
+                ...safePayload,
+                // Fall back to existing values for any field not provided
+                description: safePayload.description !== undefined ? safePayload.description : existingRole.description,
+                permissions: safePayload.permissions !== undefined ? safePayload.permissions : existingRole.permissions,
             })
             .eq("id", id)
             .select()
@@ -194,8 +177,15 @@ export async function DELETE(
     try {
         const { id } = await params;
 
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -208,58 +198,30 @@ export async function DELETE(
             throw error;
         }
 
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
-        }
-
-        // Get user's profile
-        const { data: currentUser } = await supabase
-            .from("users")
-            .select("dealership_id, role, is_platform_admin")
-            .eq("id", user.id)
-            .single();
-
-        if (!currentUser) {
-            return NextResponse.json(
-                { error: "User profile not found" },
-                { status: 404 }
-            );
-        }
-
         // Only admins or platform admins can delete roles
-        if (currentUser.role !== "Admin" && !currentUser.is_platform_admin) {
+        if (auth.profile.role !== "Admin" && !auth.profile.is_platform_admin) {
             return NextResponse.json(
                 { error: "Unauthorized - Admin access required" },
                 { status: 403 }
             );
         }
 
-        // Get the role to check ownership
-        const { data: existingRole } = await supabase
+        // Get the role to check ownership and the is_system flag
+        const { data: existingRole, error: existingError } = await supabase
             .from("roles")
-            .select("*, dealership_id")
+            .select("id, dealership_id, is_system")
             .eq("id", id)
             .single();
 
-        if (!existingRole) {
+        if (existingError || !existingRole) {
             return NextResponse.json(
                 { error: "Role not found" },
                 { status: 404 }
             );
         }
 
-        // Check access
-        if (!currentUser.is_platform_admin && existingRole.dealership_id !== currentUser.dealership_id) {
-            return NextResponse.json(
-                { error: "Unauthorized - Access denied" },
-                { status: 403 }
-            );
-        }
+        const deny = assertOwnershipOrDeny(existingRole, auth.profile);
+        if (deny) return deny;
 
         // Cannot delete system roles
         if (existingRole.is_system) {

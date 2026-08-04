@@ -11,8 +11,9 @@ import {
     TrendingUp,
     LogIn,
     DollarSign,
-    Activity,
+    Activity
 } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
 
 interface Analytics {
     period: string;
@@ -62,15 +63,8 @@ export default function AnalyticsPage() {
             setLoading(true);
             setError(null);
 
-            const token = localStorage.getItem("access_token");
-            if (!token) {
-                window.location.href = "/login";
-                return;
-            }
-
             // Check if user is platform admin
             const meResponse = await fetch("/api/me", {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!meResponse.ok) throw new Error("Failed to get user info");
@@ -81,7 +75,6 @@ export default function AnalyticsPage() {
             }
 
             const response = await fetch(`/api/platform/analytics?period=${period}`, {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!response.ok) throw new Error("Failed to fetch analytics");
@@ -100,7 +93,7 @@ export default function AnalyticsPage() {
         return new Intl.NumberFormat("en-US", {
             style: "currency",
             currency: "USD",
-            minimumFractionDigits: 0,
+            minimumFractionDigits: 0
         }).format(amount);
     };
 

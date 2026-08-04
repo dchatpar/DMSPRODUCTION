@@ -11,8 +11,9 @@ import {
     AlertCircle,
     RefreshCw,
     Download,
-    Info,
+    Info
 } from "lucide-react";
+import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
 
 interface FinanceCalculation {
     id?: string;
@@ -44,8 +45,10 @@ export default function FinanceCalculatorModal({
     vehiclePrice = 0,
     customerId,
     onClose,
-    onSave,
+    onSave
 }: FinanceCalculatorModalProps) {
+    useOverlayDismiss(onClose);
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
@@ -58,7 +61,7 @@ export default function FinanceCalculatorModal({
         term_months: 60,
         tax_rate: 13, // Ontario HST
         admin_fee: 899,
-        payment_type: "monthly" as "monthly" | "biweekly" | "weekly",
+        payment_type: "monthly" as "monthly" | "biweekly" | "weekly"
     });
 
     const [result, setResult] = useState<{
@@ -82,7 +85,7 @@ export default function FinanceCalculatorModal({
             term_months,
             tax_rate,
             admin_fee,
-            payment_type,
+            payment_type
         } = formData;
 
         // Calculate tax
@@ -121,7 +124,7 @@ export default function FinanceCalculatorModal({
             total_interest: totalInterest,
             total_cost: financedAmount + totalInterest,
             tax_amount: taxAmount,
-            financed_amount: financedAmount,
+            financed_amount: financedAmount
         });
     };
 
@@ -129,7 +132,7 @@ export default function FinanceCalculatorModal({
         const { name, value } = e.target;
         setFormData((prev) => ({
             ...prev,
-            [name]: name === "payment_type" ? value : parseFloat(value) || 0,
+            [name]: name === "payment_type" ? value : parseFloat(value) || 0
         }));
     };
 
@@ -153,7 +156,7 @@ export default function FinanceCalculatorModal({
                 total_interest: result.total_interest,
                 total_cost: result.total_cost,
                 tax_amount: result.tax_amount,
-                admin_fee: formData.admin_fee,
+                admin_fee: formData.admin_fee
             };
 
             if (onSave) {
@@ -171,7 +174,7 @@ export default function FinanceCalculatorModal({
     const formatCurrency = (value: number) => {
         return new Intl.NumberFormat("en-CA", {
             style: "currency",
-            currency: "CAD",
+            currency: "CAD"
         }).format(value);
     };
 
@@ -383,7 +386,7 @@ export default function FinanceCalculatorModal({
                                             setFormData((prev) => ({
                                                 ...prev,
                                                 down_payment: 0,
-                                                trade_in_value: 0,
+                                                trade_in_value: 0
                                             }));
                                         }}
                                         className="text-xs text-amber-600 hover:text-amber-700 flex items-center gap-1"

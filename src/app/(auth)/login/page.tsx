@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
-import { supabaseBrowser } from "@/src/lib/supabase-browser";
+import { Suspense, useState, useEffect, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
     Car,
     Mail,
@@ -11,246 +10,275 @@ import {
     EyeOff,
     Loader2,
     Shield,
-    CheckCircle
+    CheckCircle2,
+    ArrowRight,
+    Sparkles,
 } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
+import { toast } from "@/src/lib/toast";
+import { Button } from "@/src/components/ui/Button";
+import { Input } from "@/src/components/ui/Input";
+
+const FEATURES = [
+    { icon: Shield, label: "SOC 2 ready", sub: "Enterprise security baked in" },
+    { icon: CheckCircle2, label: "99.99% uptime", sub: "Always-on for your team" },
+    { icon: Sparkles, label: "Built for dealers", sub: "Inventory · CRM · Deals" },
+];
 
 export default function LoginPage() {
+    return (
+        <Suspense fallback={<LoginFallback />}>
+            <LoginForm />
+        </Suspense>
+    );
+}
+
+function LoginFallback() {
+    return (
+        <div className="min-h-dvh w-full bg-background text-foreground lg:grid lg:grid-cols-2">
+            <div className="hidden lg:block" />
+            <div className="flex min-h-dvh items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+        </div>
+    );
+}
+
+function LoginForm() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const nextPath = searchParams.get("next") || "/dashboard";
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
-    const [error, setError] = useState("");
-    const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
-    const [rememberMe, setRememberMe] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [rememberMe, setRememberMe] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const emailInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
-        if (emailInputRef.current) {
-            emailInputRef.current.focus();
-        }
+        emailInputRef.current?.focus();
     }, []);
+
+    const validate = (): string | null => {
+        if (!email.trim()) return "Email is required";
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return "Enter a valid email";
+        if (!password) return "Password is required";
+        if (password.length < 6) return "Password is too short";
+        return null;
+    };
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
+        setError(null);
+
+        const validationError = validate();
+        if (validationError) {
+            setError(validationError);
+            return;
+        }
+
         setLoading(true);
-        setError("");
-
-        if (!email.trim()) {
-            setError("Email address is required");
-            setLoading(false);
-            return;
-        }
-        if (!password.trim()) {
-            setError("Password is required");
-            setLoading(false);
-            return;
-        }
-
         try {
-            // Call our custom login API which records login history
-            const response = await fetch("/api/auth/login", {
+            await apiFetch("/api/auth/login", {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    email: email.trim(),
-                    password,
-                }),
+                body: { email: email.trim(), password, rememberMe },
             });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || "Login failed");
-            }
-
-            // Store the tokens and user data
-            if (data.access_token) {
-                localStorage.setItem("access_token", data.access_token);
-                localStorage.setItem("refresh_token", data.refresh_token || "");
-                localStorage.setItem("user_email", data.user?.email || "");
-
-                // Set the session in supabaseBrowser so dashboard can use getSession()
-                await supabaseBrowser.auth.setSession({
-                    access_token: data.access_token,
-                    refresh_token: data.refresh_token || "",
-                });
-
-                console.log("Login successful, redirecting to dashboard...");
-                router.push("/dashboard");
-            } else {
-                console.error("No access_token in response:", data);
-                setError("Login failed: No access token received");
-            }
+            toast.success("Welcome back", "Loading your dashboard…");
+            router.push(nextPath);
+            router.refresh();
         } catch (err: any) {
-            if (err.message.includes("Invalid login credentials") || err.message.includes("Invalid email or password")) {
-                setError("Invalid email or password. Please try again.");
-            } else if (err.message.includes("Email not confirmed")) {
-                setError("Please confirm your email address before logging in.");
-            } else if (err.message.includes("suspended")) {
-                setError("Account is suspended. Please contact your administrator.");
+            const message =
+                err?.data?.error ||
+                err?.message ||
+                "Sign in failed — check your email and password";
+            if (
+                message.toLowerCase().includes("invalid") ||
+                message.toLowerCase().includes("credentials")
+            ) {
+                setError("Wrong email or password. Please try again.");
             } else {
-                setError(err.message || "An error occurred during login.");
+                setError(message);
             }
+            toast.error("Sign in failed", message);
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div className="w-full max-w-md">
-            <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
-                {/* Logo/Brand */}
-                <div className="text-center mb-8">
-                    <img
-                        src="/logo.svg"
-                        alt="DMS Logo"
-                        className="w-32 h-20 mx-auto"
-                    />
-                    <p className="text-sm text-gray-500 mt-1">
-                        Sign in to your account
-                    </p>
+        <div className="min-h-dvh w-full bg-background text-foreground lg:grid lg:grid-cols-2">
+            {/* ─── Left panel: hero ─── */}
+            <div className="relative hidden overflow-hidden bg-gradient-to-br from-primary-700 via-primary to-primary-600 p-12 text-primary-foreground lg:flex lg:flex-col lg:justify-between">
+                {/* Decorative blobs */}
+                <div className="pointer-events-none absolute -top-32 -left-32 h-96 w-96 rounded-full bg-primary-500/40 blur-3xl" aria-hidden />
+                <div className="pointer-events-none absolute -bottom-32 -right-32 h-96 w-96 rounded-full bg-primary-700/40 blur-3xl" aria-hidden />
+
+                <div className="relative z-10 flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15 backdrop-blur">
+                        <Car className="h-6 w-6" />
+                    </div>
+                    <div>
+                        <p className="text-h3 text-white">Flash Fender</p>
+                        <p className="text-xs uppercase tracking-wider text-white/70">Dealer Management</p>
+                    </div>
                 </div>
 
-                {/* Error Alert */}
-                {error && (
-                    <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl">
-                        <div className="flex items-start gap-3">
-                            <div className="flex-shrink-0 mt-0.5">
-                                <div className="w-5 h-5 rounded-full bg-red-100 flex items-center justify-center">
-                                    <span className="text-red-500 text-xs font-bold">!</span>
+                <div className="relative z-10 space-y-8">
+                    <div className="space-y-4">
+                        <h1 className="text-display text-white">
+                            Run your dealership with confidence.
+                        </h1>
+                        <p className="max-w-md text-lg text-white/80">
+                            Inventory, leads, deals, and reports — in one place, designed for the way
+                            your team actually works.
+                        </p>
+                    </div>
+
+                    <ul className="space-y-3">
+                        {FEATURES.map((f) => (
+                            <li key={f.label} className="flex items-start gap-3 rounded-xl bg-white/10 p-3 backdrop-blur">
+                                <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-lg bg-white/15">
+                                    <f.icon className="h-4 w-4" />
                                 </div>
-                            </div>
-                            <div className="flex-1">
-                                <p className="text-sm text-red-600">{error}</p>
-                            </div>
-                            <button
-                                onClick={() => setError("")}
-                                className="flex-shrink-0 text-red-400 hover:text-red-600 transition-colors"
+                                <div>
+                                    <p className="text-sm font-semibold text-white">{f.label}</p>
+                                    <p className="text-xs text-white/70">{f.sub}</p>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+
+                <p className="relative z-10 text-xs text-white/60">
+                    © {new Date().getFullYear()} Flash Fender Inc. All rights reserved.
+                </p>
+            </div>
+
+            {/* ─── Right panel: form ─── */}
+            <div className="flex min-h-dvh items-center justify-center px-5 py-12 sm:px-8">
+                <div className="w-full max-w-sm space-y-8">
+                    {/* Mobile-only brand */}
+                    <div className="flex items-center gap-3 lg:hidden">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+                            <Car className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <p className="text-h3 text-foreground">Flash Fender</p>
+                            <p className="text-xs text-muted-foreground">Dealer Management</p>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h2 className="text-h1 text-foreground">Sign in</h2>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                            Welcome back. Enter your credentials to continue.
+                        </p>
+                    </div>
+
+                    <form onSubmit={handleLogin} className="space-y-5" noValidate>
+                        {error && (
+                            <div
+                                role="alert"
+                                className="flex items-start gap-2.5 rounded-lg border border-destructive/20 bg-destructive-50 p-3 text-sm text-destructive"
                             >
-                                <span className="text-lg">×</span>
-                            </button>
-                        </div>
-                    </div>
-                )}
+                                <span className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold">
+                                    !
+                                </span>
+                                <span>{error}</span>
+                            </div>
+                        )}
 
-                {/* Login Form */}
-                <form onSubmit={handleLogin} className="space-y-5">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                            Email Address
-                        </label>
-                        <div className="relative">
-                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                            <input
-                                ref={emailInputRef}
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-xl text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                                placeholder="you@dealership.com"
-                                required
-                                disabled={loading}
-                            />
-                        </div>
-                    </div>
+                        <Input
+                            ref={emailInputRef}
+                            type="email"
+                            inputMode="email"
+                            autoComplete="email"
+                            label="Email"
+                            placeholder="[email protected]"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            leftAddon={<Mail className="h-4 w-4" />}
+                            required
+                            autoFocus
+                        />
 
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                            Password
-                        </label>
-                        <div className="relative">
-                            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                            <input
+                        <div>
+                            <div className="mb-1.5 flex items-center justify-between">
+                                <label
+                                    htmlFor="password-input"
+                                    className="text-sm font-medium text-foreground"
+                                >
+                                    Password
+                                </label>
+                                <a
+                                    href="/forgot-password"
+                                    className="text-xs font-medium text-primary hover:underline"
+                                >
+                                    Forgot password?
+                                </a>
+                            </div>
+                            <Input
+                                id="password-input"
                                 type={showPassword ? "text" : "password"}
+                                autoComplete="current-password"
+                                placeholder="Enter your password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                className="w-full pl-10 pr-12 py-2.5 border border-gray-300 rounded-xl text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                                placeholder="Enter your password"
+                                leftAddon={<Lock className="h-4 w-4" />}
+                                rightAddon={
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPassword((s) => !s)}
+                                        className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                                        aria-label={showPassword ? "Hide password" : "Show password"}
+                                        tabIndex={-1}
+                                    >
+                                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                    </button>
+                                }
                                 required
-                                disabled={loading}
                             />
-                            <button
-                                type="button"
-                                onClick={() => setShowPassword(!showPassword)}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                                disabled={loading}
-                            >
-                                {showPassword ? (
-                                    <EyeOff className="w-4 h-4" />
-                                ) : (
-                                    <Eye className="w-4 h-4" />
-                                )}
-                            </button>
                         </div>
-                    </div>
 
-                    <div className="flex items-center justify-between">
-                        <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                        <label className="flex items-center gap-2 text-sm text-muted-foreground">
                             <input
                                 type="checkbox"
                                 checked={rememberMe}
                                 onChange={(e) => setRememberMe(e.target.checked)}
-                                className="w-4 h-4 border-gray-300 rounded text-blue-600 focus:ring-blue-500"
+                                className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-ring focus:ring-offset-1"
                             />
-                            Remember me
+                            <span>Keep me signed in for 30 days</span>
                         </label>
-                        <button
-                            type="button"
-                            className="text-sm text-blue-600 hover:text-blue-700 font-medium transition-colors"
+
+                        <Button
+                            type="submit"
+                            size="lg"
+                            className="w-full"
+                            loading={loading}
+                            rightIcon={!loading ? <ArrowRight className="h-4 w-4" /> : undefined}
                         >
-                            Forgot password?
-                        </button>
-                    </div>
+                            {loading ? "Signing in…" : "Sign in"}
+                        </Button>
+                    </form>
 
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        className="w-full py-2.5 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium rounded-xl hover:shadow-lg hover:shadow-blue-500/25 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                        {loading ? (
-                            <>
-                                <Loader2 className="w-5 h-5 animate-spin" />
-                                <span>Signing in...</span>
-                            </>
-                        ) : (
-                            <>
-                                <span>Sign In</span>
-                                <span className="text-lg">→</span>
-                            </>
-                        )}
-                    </button>
-                </form>
+                    <p className="text-center text-sm text-muted-foreground">
+                        New dealership?{" "}
+                        <a className="font-medium text-primary hover:underline" href="/register">
+                            Start a 7-day trial
+                        </a>
+                    </p>
 
-                {/* Divider */}
-                <div className="relative my-6">
-                    <div className="absolute inset-0 flex items-center">
-                        <div className="w-full border-t border-gray-200"></div>
-                    </div>
-                    <div className="relative flex justify-center text-sm">
-                        <span className="px-4 bg-white text-gray-500">Secure Login</span>
-                    </div>
-                </div>
-
-                {/* Footer */}
-                <div className="space-y-3">
-                    <div className="flex items-center justify-center gap-6 text-xs text-gray-500">
-                        <span className="flex items-center gap-1">
-                            <Shield className="w-3 h-3" />
-                            Encrypted
-                        </span>
-                        <span>•</span>
-                        <span className="flex items-center gap-1">
-                            <CheckCircle className="w-3 h-3 text-green-500" />
-                            Secure
-                        </span>
-                        <span>•</span>
-                        <span>24/7 Support</span>
-                    </div>
-
-                    <p className="text-center text-xs text-gray-400">
-                        © 2026 Falsh Fender. All rights reserved.
+                    <p className="text-center text-xs text-muted-foreground">
+                        By signing in you agree to our{" "}
+                        <a className="font-medium text-primary hover:underline" href="#">
+                            Terms
+                        </a>{" "}
+                        and{" "}
+                        <a className="font-medium text-primary hover:underline" href="#">
+                            Privacy Policy
+                        </a>
+                        .
                     </p>
                 </div>
             </div>

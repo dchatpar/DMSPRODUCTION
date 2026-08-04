@@ -1,6 +1,14 @@
 // app/api/expenses/[id]/route.ts
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
+import { assertOwnershipOrDeny, pickAllowed, requireDealershipAccess } from "@/src/lib/auth-helpers";
+
+const EXPENSE_ALLOWED_FIELDS = [
+    "category", "amount", "description", "date", "status", "vendor_id",
+    // Schema-actual columns used by the expenses table
+    "expense_date", "due_date", "reference_number", "notes", "tax_amount",
+    "payment_method", "vehicle_id",
+] as const;
 
 // GET single expense
 export async function GET(
@@ -8,8 +16,15 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -24,15 +39,27 @@ export async function GET(
 
         const { id } = await params;
 
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        // Narrow fetch first to assert ownership
+        const { data: existing, error: existingError } = await supabase
+            .from("expenses")
+            .select("id, dealership_id")
+            .eq("id", id)
+            .single();
 
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Expense not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
         }
 
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
+
+        // Re-fetch the full row with relations
         const { data, error: dbError } = await supabase
             .from("expenses")
             .select(`
@@ -69,8 +96,15 @@ export async function PATCH(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -84,16 +118,6 @@ export async function PATCH(
         }
 
         const { id } = await params;
-
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
-        }
-
         const payload = await req.json();
 
         const validStatuses = ['Pending', 'Approved', 'Paid', 'Cancelled'];
@@ -127,24 +151,33 @@ export async function PATCH(
             );
         }
 
-        const updateData: any = {};
+        // Assert ownership before any write
+        const { data: existing, error: existingError } = await supabase
+            .from("expenses")
+            .select("id, dealership_id")
+            .eq("id", id)
+            .single();
 
-        if (payload.description !== undefined) updateData.description = payload.description;
-        if (payload.amount !== undefined) updateData.amount = payload.amount;
-        if (payload.category !== undefined) updateData.category = payload.category;
-        if (payload.vendor_id !== undefined) updateData.vendor_id = payload.vendor_id;
-        if (payload.vehicle_id !== undefined) updateData.vehicle_id = payload.vehicle_id;
-        if (payload.expense_date !== undefined) updateData.expense_date = payload.expense_date;
-        if (payload.due_date !== undefined) updateData.due_date = payload.due_date;
-        if (payload.status !== undefined) updateData.status = payload.status;
-        if (payload.reference_number !== undefined) updateData.reference_number = payload.reference_number;
-        if (payload.notes !== undefined) updateData.notes = payload.notes;
-        if (payload.tax_amount !== undefined) updateData.tax_amount = payload.tax_amount;
-        if (payload.payment_method !== undefined) updateData.payment_method = payload.payment_method;
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Expense not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
+        }
+
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
+
+        // Whitelist the update payload and block dealership_id changes
+        const safePayload = pickAllowed(payload, EXPENSE_ALLOWED_FIELDS);
+        delete (safePayload as any).dealership_id;
 
         const { data, error: dbError } = await supabase
             .from("expenses")
-            .update(updateData)
+            .update(safePayload)
             .eq("id", id)
             .select(`
                 *,
@@ -179,8 +212,15 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -195,14 +235,25 @@ export async function DELETE(
 
         const { id } = await params;
 
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        // Assert ownership before any write
+        const { data: existing, error: existingError } = await supabase
+            .from("expenses")
+            .select("id, dealership_id")
+            .eq("id", id)
+            .single();
 
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Expense not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
         }
+
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
 
         const { error: dbError } = await supabase
             .from("expenses")

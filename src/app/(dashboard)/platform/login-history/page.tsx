@@ -14,8 +14,9 @@ import {
     Smartphone,
     Tablet,
     CheckCircle,
-    XCircle,
+    XCircle
 } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
 
 interface LoginHistory {
     id: string;
@@ -50,15 +51,8 @@ export default function LoginHistoryPage() {
             setLoading(true);
             setError(null);
 
-            const token = localStorage.getItem("access_token");
-            if (!token) {
-                window.location.href = "/login";
-                return;
-            }
-
             // Check if user is platform admin
             const meResponse = await fetch("/api/me", {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!meResponse.ok) throw new Error("Failed to get user info");
@@ -71,13 +65,12 @@ export default function LoginHistoryPage() {
             // Build query params
             const params = new URLSearchParams({
                 limit: limit.toString(),
-                offset: offset.toString(),
+                offset: offset.toString()
             });
             if (successFilter) params.set("success", successFilter);
             if (userFilter) params.set("user_id", userFilter);
 
             const response = await fetch(`/api/platform/login-history?${params}`, {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!response.ok) throw new Error("Failed to fetch login history");
@@ -106,7 +99,7 @@ export default function LoginHistoryPage() {
             year: "numeric",
             hour: "2-digit",
             minute: "2-digit",
-            second: "2-digit",
+            second: "2-digit"
         });
     };
 

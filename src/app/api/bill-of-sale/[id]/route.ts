@@ -1,6 +1,11 @@
 // app/api/bill-of-sale/[id]/route.ts
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
+import { assertOwnershipOrDeny, pickAllowed, requireDealershipAccess } from "@/src/lib/auth-helpers";
+import {
+    BILL_OF_SALE_ALLOWED_FIELDS,
+    mapBillOfSaleLegacyFields,
+} from "@/src/lib/bill-of-sale-fields";
 
 // GET single bill of sale by ID
 export async function GET(
@@ -8,8 +13,15 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -22,24 +34,38 @@ export async function GET(
             throw error;
         }
 
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
-        }
-
         const { id } = await params;
 
+        // Narrow fetch first to assert ownership
+        const { data: existing, error: existingError } = await supabase
+            .from("bill_of_sale")
+            .select("id, dealership_id")
+            .eq("id", id)
+            .single();
+
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Bill of sale not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
+        }
+
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
+
+        // Re-fetch the full row with relations
         const { data, error: dbError } = await supabase
             .from("bill_of_sale")
             .select(`
                 *,
                 vehicle:vehicles(id, vin, year, make, model, retail_price, image_gallery, status, condition, odometer),
-                customer:customers(id, name, email, phone, address, city, province, postal_code),
-                deal:sales_deals(id, deal_status, sale_price, down_payment, finance_term, interest_rate, finance_company, salesperson_id)
+                deal:sales_deals(
+                    id, deal_status, sale_price, down_payment, finance_term, interest_rate, finance_company, salesperson_id,
+                    customer:customers(id, name, email, phone, address, city, province, postal_code)
+                )
             `)
             .eq("id", id)
             .single();
@@ -71,8 +97,15 @@ export async function PATCH(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -85,21 +118,22 @@ export async function PATCH(
             throw error;
         }
 
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
-        }
-
         const { id } = await params;
         const payload = await req.json();
 
         // Extract payments if provided for update
         const payments = payload.payments;
+        const customerName =
+            payload.buyer_name ||
+            payload.customer?.name ||
+            payload.customer_name ||
+            null;
+
         delete payload.payments;
+        delete payload.customer;
+        delete payload.vehicle;
+        delete payload.deal;
+        delete payload.id;
 
         // Convert empty date strings to null
         const cleanPayload = { ...payload };
@@ -107,18 +141,45 @@ export async function PATCH(
             cleanPayload.payment_start_date = null;
         }
 
+        // Assert ownership before any write
+        const { data: existing, error: existingError } = await supabase
+            .from("bill_of_sale")
+            .select("id, dealership_id")
+            .eq("id", id)
+            .single();
+
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Bill of sale not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
+        }
+
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
+
+        // Whitelist the update payload and block dealership_id changes
+        const safePayload = pickAllowed(cleanPayload, BILL_OF_SALE_ALLOWED_FIELDS);
+        delete (safePayload as Record<string, unknown>).dealership_id;
+        const mapped = mapBillOfSaleLegacyFields(safePayload, customerName);
+
         const { data, error: dbError } = await supabase
             .from("bill_of_sale")
             .update({
-                ...cleanPayload,
+                ...mapped,
                 updated_at: new Date().toISOString(),
             })
             .eq("id", id)
             .select(`
                 *,
                 vehicle:vehicles(id, vin, year, make, model, retail_price, image_gallery),
-                customer:customers(id, name, email, phone),
-                deal:sales_deals(id, deal_status, sale_price)
+                deal:sales_deals(
+                    id, deal_status, sale_price,
+                    customer:customers(id, name, email, phone)
+                )
             `)
             .single();
 
@@ -170,8 +231,15 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -184,16 +252,27 @@ export async function DELETE(
             throw error;
         }
 
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        const { id } = await params;
 
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
+        // Assert ownership before any write
+        const { data: existing, error: existingError } = await supabase
+            .from("bill_of_sale")
+            .select("id, dealership_id")
+            .eq("id", id)
+            .single();
+
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Bill of sale not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
         }
 
-        const { id } = await params;
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
 
         // Delete payments first (cascade should handle this, but being explicit)
         await supabase

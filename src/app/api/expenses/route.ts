@@ -29,6 +29,23 @@ export async function GET(req: NextRequest) {
             );
         }
 
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("role, dealership_id, is_platform_admin")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        }
+
+        if (!currentUser.dealership_id && !currentUser.is_platform_admin) {
+            return NextResponse.json(
+                { error: "Unauthorized - No dealership context" },
+                { status: 403 }
+            );
+        }
+
         const url = new URL(req.url);
         const limit = parseInt(url.searchParams.get("limit") || "50");
         const offset = parseInt(url.searchParams.get("offset") || "0");
@@ -50,6 +67,10 @@ export async function GET(req: NextRequest) {
             .order("expense_date", { ascending: false })
             .range(offset, offset + limit - 1);
 
+        if (!currentUser.is_platform_admin) {
+            query = query.eq("dealership_id", currentUser.dealership_id);
+        }
+
         if (category) query = query.eq("category", category);
         if (status) query = query.eq("status", status);
         if (vendor_id) query = query.eq("vendor_id", vendor_id);
@@ -63,11 +84,55 @@ export async function GET(req: NextRequest) {
 
         if (dbError) throw dbError;
 
+        // Aggregate totals across the filtered set (not just the current page).
+        let totalsQuery = supabase
+            .from("expenses")
+            .select("amount, tax_amount, status, due_date");
+
+        if (!currentUser.is_platform_admin) {
+            totalsQuery = totalsQuery.eq("dealership_id", currentUser.dealership_id);
+        }
+        if (category) totalsQuery = totalsQuery.eq("category", category);
+        if (status) totalsQuery = totalsQuery.eq("status", status);
+        if (vendor_id) totalsQuery = totalsQuery.eq("vendor_id", vendor_id);
+        if (startDate) totalsQuery = totalsQuery.gte("expense_date", startDate);
+        if (endDate) totalsQuery = totalsQuery.lte("expense_date", endDate);
+        if (q) {
+            totalsQuery = totalsQuery.or(
+                `description.ilike.%${q}%,reference_number.ilike.%${q}%`
+            );
+        }
+
+        const { data: totalsRows } = await totalsQuery;
+        const now = Date.now();
+        let totalAmount = 0;
+        let pendingAmount = 0;
+        let paidAmount = 0;
+        let overdueCount = 0;
+        for (const row of totalsRows || []) {
+            const line = Number(row.amount || 0) + Number(row.tax_amount || 0);
+            totalAmount += line;
+            if (row.status === "Pending") {
+                pendingAmount += line;
+                if (row.due_date && new Date(row.due_date).getTime() < now) {
+                    overdueCount += 1;
+                }
+            } else if (row.status === "Paid") {
+                paidAmount += line;
+            }
+        }
+
         return NextResponse.json({
             data: data || [],
             count: count || 0,
             limit,
             offset,
+            totals: {
+                totalAmount,
+                pendingAmount,
+                paidAmount,
+                overdueCount,
+            },
         });
     } catch (error: any) {
         console.error("Error fetching expenses:", error);
@@ -102,6 +167,23 @@ export async function POST(req: NextRequest) {
             return NextResponse.json(
                 { error: "Invalid or expired token" },
                 { status: 401 }
+            );
+        }
+
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("dealership_id, is_platform_admin")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        }
+
+        if (!currentUser.dealership_id && !currentUser.is_platform_admin) {
+            return NextResponse.json(
+                { error: "Unauthorized - No dealership context" },
+                { status: 403 }
             );
         }
 
@@ -176,6 +258,7 @@ export async function POST(req: NextRequest) {
             entered_by: user.id,
             tax_amount: payload.tax_amount || 0,
             payment_method: payload.payment_method || null,
+            dealership_id: currentUser.dealership_id,
         };
 
         const { data, error: dbError } = await supabase

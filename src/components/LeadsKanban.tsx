@@ -1,14 +1,12 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from "react";
 import {
     Eye,
     Edit,
     Trash2,
     Mail,
     Phone,
-    Calendar,
-    User,
     Clock,
     PhoneCall,
     UserCheck,
@@ -16,8 +14,15 @@ import {
     GripVertical,
     Car,
     Loader2,
-    AlertCircle,
-} from 'lucide-react';
+    UserPlus,
+    type LucideIcon,
+} from "lucide-react";
+import { toast } from "@/src/lib/toast";
+import { EmptyState } from "@/src/components/ui/EmptyState";
+import { Avatar } from "@/src/components/ui/Avatar";
+import { SkeletonTable } from "@/src/components/ui/Skeleton";
+import { cn, timeAgo } from "@/src/lib/utils";
+import { scoreLead, temperatureClass } from "@/src/lib/business/lead-score";
 
 interface Lead {
     id: string;
@@ -60,17 +65,76 @@ interface LeadsKanbanProps {
     onLeadClick: (lead: Lead) => void;
     onLeadEdit: (lead: Lead) => void;
     onLeadDelete: (lead: Lead) => void;
+    onAdd?: () => void;
+    canWrite?: boolean;
 }
 
 interface Column {
     id: string;
     title: string;
-    icon: React.ElementType;
+    icon: LucideIcon;
     color: string;
     bgColor: string;
     borderColor: string;
     iconColor: string;
     status: string;
+}
+
+const COLUMNS: Column[] = [
+    {
+        id: "not_started",
+        title: "Not Started",
+        icon: Clock,
+        color: "text-muted-foreground",
+        bgColor: "bg-muted/20",
+        borderColor: "border-border",
+        iconColor: "text-muted-foreground",
+        status: "Not Started",
+    },
+    {
+        id: "in_progress",
+        title: "In Progress",
+        icon: PhoneCall,
+        color: "text-foreground",
+        bgColor: "bg-card",
+        borderColor: "border-border",
+        iconColor: "text-primary",
+        status: "In Progress",
+    },
+    {
+        id: "qualified",
+        title: "Qualified",
+        icon: UserCheck,
+        color: "text-success",
+        bgColor: "bg-card",
+        borderColor: "border-border",
+        iconColor: "text-success",
+        status: "Qualified",
+    },
+    {
+        id: "closed",
+        title: "Closed",
+        icon: UserCheck,
+        color: "text-muted-foreground",
+        bgColor: "bg-card",
+        borderColor: "border-border",
+        iconColor: "text-muted-foreground",
+        status: "Closed",
+    },
+    {
+        id: "lost",
+        title: "Lost",
+        icon: UserX,
+        color: "text-destructive",
+        bgColor: "bg-card",
+        borderColor: "border-border",
+        iconColor: "text-destructive",
+        status: "Lost",
+    },
+];
+
+function sourceChipClass(_source: string): string {
+    return "bg-muted text-subtle-foreground";
 }
 
 const LeadsKanban: React.FC<LeadsKanbanProps> = ({
@@ -81,81 +145,28 @@ const LeadsKanban: React.FC<LeadsKanbanProps> = ({
     onLeadClick,
     onLeadEdit,
     onLeadDelete,
+    onAdd,
+    canWrite = false,
 }) => {
     const [draggedLead, setDraggedLead] = useState<Lead | null>(null);
     const [updating, setUpdating] = useState(false);
     const [optimisticLeads, setOptimisticLeads] = useState<Lead[]>(leads);
 
-    // Update optimistic leads when props change
-    React.useEffect(() => {
+    useEffect(() => {
         setOptimisticLeads(leads);
     }, [leads]);
 
-    const columns: Column[] = [
-        {
-            id: 'not_started',
-            title: 'Not Started',
-            icon: Clock,
-            color: 'text-gray-600',
-            bgColor: 'bg-gray-50',
-            borderColor: 'border-gray-200',
-            iconColor: 'text-gray-500',
-            status: 'Not Started',
-        },
-        {
-            id: 'in_progress',
-            title: 'In Progress',
-            icon: PhoneCall,
-            color: 'text-blue-600',
-            bgColor: 'bg-blue-50',
-            borderColor: 'border-blue-200',
-            iconColor: 'text-blue-500',
-            status: 'In Progress',
-        },
-        {
-            id: 'qualified',
-            title: 'Qualified',
-            icon: UserCheck,
-            color: 'text-green-600',
-            bgColor: 'bg-green-50',
-            borderColor: 'border-green-200',
-            iconColor: 'text-green-500',
-            status: 'Qualified',
-        },
-        {
-            id: 'closed',
-            title: 'Closed',
-            icon: UserCheck,
-            color: 'text-purple-600',
-            bgColor: 'bg-purple-50',
-            borderColor: 'border-purple-200',
-            iconColor: 'text-purple-500',
-            status: 'Closed',
-        },
-        {
-            id: 'lost',
-            title: 'Lost',
-            icon: UserX,
-            color: 'text-red-600',
-            bgColor: 'bg-red-50',
-            borderColor: 'border-red-200',
-            iconColor: 'text-red-500',
-            status: 'Lost',
-        },
-    ];
-
-    const getLeadsByStatus = (status: string) => {
-        return optimisticLeads.filter((lead) => lead.status === status);
-    };
+    const getLeadsByStatus = (status: string) =>
+        optimisticLeads.filter((lead) => lead.status === status);
 
     const handleDragStart = (e: React.DragEvent, lead: Lead) => {
         setDraggedLead(lead);
-        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.effectAllowed = "move";
     };
 
     const handleDragOver = (e: React.DragEvent) => {
         e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
+        e.dataTransfer.dropEffect = "move";
     };
 
     const handleDrop = async (e: React.DragEvent, targetStatus: string) => {
@@ -166,243 +177,228 @@ const LeadsKanban: React.FC<LeadsKanbanProps> = ({
             return;
         }
 
-        // Optimistic update - update local state immediately
         const updatedLead = { ...draggedLead, status: targetStatus };
         setOptimisticLeads((prev) =>
-            prev.map((lead) =>
-                lead.id === draggedLead.id ? updatedLead : lead
-            )
+            prev.map((lead) => (lead.id === draggedLead.id ? updatedLead : lead))
         );
         setDraggedLead(null);
         setUpdating(true);
 
         try {
-            const token = localStorage.getItem('access_token');
             const response = await fetch(`/api/leads/${draggedLead.id}`, {
-                method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`,
-                },
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ status: targetStatus }),
             });
 
             if (!response.ok) {
-                throw new Error('Failed to update lead status');
+                throw new Error("Failed to update lead status");
             }
 
-            // Refresh from server to get latest data (but keep UI smooth)
             onRefresh();
-        } catch (error) {
-            console.error('Failed to update lead status:', error);
-            // Revert optimistic update on error
+        } catch (err) {
+            console.error("Failed to update lead status:", err);
             setOptimisticLeads(leads);
-            alert('Failed to update lead status. Please try again.');
+            toast.error("Failed to update lead status. Please try again.");
         } finally {
             setUpdating(false);
         }
     };
 
-    const getInitials = (name: string) => {
-        if (!name) return 'C';
-        return name
-            .split(' ')
-            .map((word) => word[0])
-            .join('')
-            .toUpperCase()
-            .slice(0, 2);
-    };
-
-    const getSourceColor = (source: string) => {
-        const colors: Record<string, string> = {
-            Website: 'bg-purple-100 text-purple-800',
-            Referral: 'bg-green-100 text-green-800',
-            Event: 'bg-yellow-100 text-yellow-800',
-            'Walk-in': 'bg-blue-100 text-blue-800',
-            Facebook: 'bg-indigo-100 text-indigo-800',
-            Craigslist: 'bg-orange-100 text-orange-800',
-            Kijiji: 'bg-red-100 text-red-800',
-            Phone: 'bg-teal-100 text-teal-800',
-        };
-        return colors[source] || 'bg-gray-100 text-gray-800';
-    };
-
     if (loading) {
         return (
-            <div className="flex items-center justify-center min-h-[400px] bg-white rounded-xl border border-gray-200">
-                <div className="flex flex-col items-center gap-4">
-                    <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-                    <p className="text-sm text-gray-500">Loading leads...</p>
-                </div>
+            <div className="rounded-lg border border-border bg-card p-5">
+                <SkeletonTable rows={6} cols={5} />
             </div>
         );
     }
 
     if (error) {
         return (
-            <div className="flex items-center justify-center min-h-[400px] bg-white rounded-xl border border-gray-200">
-                <div className="text-center">
-                    <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-3" />
-                    <p className="text-sm text-red-600">{error}</p>
-                    <button
-                        onClick={onRefresh}
-                        className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                    >
-                        Try Again
-                    </button>
-                </div>
-            </div>
+            <EmptyState
+                kind="error"
+                title="Couldn't load leads"
+                description={error}
+                action={{ label: "Try again", onClick: onRefresh }}
+            />
         );
     }
 
     return (
         <>
-            {/* Desktop Kanban - Hidden on mobile */}
-            <div className="hidden lg:block w-full overflow-x-auto pb-4">
-                <div className="min-w-[900px] grid grid-cols-5 gap-4">
-                    {columns.map((column) => {
+            <div className="hidden w-full overflow-x-auto pb-4 lg:block">
+                <div className="grid min-w-[900px] grid-cols-5 gap-3">
+                    {COLUMNS.map((column) => {
                         const columnLeads = getLeadsByStatus(column.status);
                         const ColumnIcon = column.icon;
 
                         return (
                             <div
                                 key={column.id}
-                                className={`rounded-lg ${column.bgColor} ${column.borderColor} border p-3 flex flex-col min-h-[400px] transition-colors ${updating ? 'opacity-70' : ''}`}
+                                className={cn(
+                                    "flex min-h-[400px] flex-col rounded-lg border p-2.5 transition-colors",
+                                    column.bgColor,
+                                    column.borderColor,
+                                    updating && "opacity-70"
+                                )}
                                 onDragOver={handleDragOver}
                                 onDrop={(e) => handleDrop(e, column.status)}
                             >
-                                {/* Column Header */}
-                                <div className="flex items-center justify-between p-2 rounded-t-lg">
-                                    <div className="flex items-center gap-2">
-                                        <ColumnIcon size={18} className={column.iconColor} />
-                                        <h3 className="font-semibold text-gray-700 text-sm">{column.title}</h3>
-                                        <span className={`text-xs px-2 py-0.5 rounded-full ${column.color} bg-white`}>
+                                <div className="flex items-center justify-between px-1.5 py-1">
+                                    <div className="flex items-center gap-1.5">
+                                        <ColumnIcon size={14} className={column.iconColor} />
+                                        <h3 className="text-[13px] font-semibold text-foreground">
+                                            {column.title}
+                                        </h3>
+                                        <span
+                                            className={cn(
+                                                "rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-semibold tabular-nums",
+                                                column.color
+                                            )}
+                                        >
                                             {columnLeads.length}
                                         </span>
                                     </div>
                                     {updating && (
-                                        <Loader2 size={14} className="text-blue-500 animate-spin" />
+                                        <Loader2 size={14} className="animate-spin text-primary" />
                                     )}
                                 </div>
 
-                                {/* Column Content */}
                                 <div
-                                    className="mt-3 space-y-3 flex-1 overflow-y-auto"
-                                    style={{ maxHeight: 'calc(100vh - 300px)' }}
+                                    className="mt-2 flex-1 space-y-2 overflow-y-auto"
+                                    style={{ maxHeight: "calc(100vh - 300px)" }}
                                 >
-                                    {columnLeads.map((lead) => (
-                                        <div
-                                            key={lead.id}
-                                            draggable={!updating}
-                                            onDragStart={(e) => handleDragStart(e, lead)}
-                                            className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-all cursor-grab active:cursor-grabbing hover:border-blue-300"
-                                        >
-                                            <div className="p-3">
-                                                {/* Drag Handle & Actions */}
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <div className="flex items-center gap-2 text-gray-400">
-                                                        <GripVertical size={14} />
-                                                        <span className="text-xs font-mono truncate max-w-[80px] text-gray-500">
-                                                            #{lead.id.slice(0, 8)}
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex gap-1">
-                                                        <button
-                                                            onClick={() => onLeadClick(lead)}
-                                                            className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
-                                                            title="View Details"
-                                                        >
-                                                            <Eye size={14} />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => onLeadEdit(lead)}
-                                                            className="p-1 text-gray-400 hover:text-amber-600 transition-colors"
-                                                            title="Edit"
-                                                        >
-                                                            <Edit size={14} />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => onLeadDelete(lead)}
-                                                            className="p-1 text-gray-400 hover:text-red-600 transition-colors"
-                                                            title="Delete"
-                                                        >
-                                                            <Trash2 size={14} />
-                                                        </button>
-                                                    </div>
-                                                </div>
-
-                                                {/* Customer Info */}
-                                                <div className="flex items-center gap-2 mb-2">
-                                                    {lead.customer?.avatar ? (
-                                                        <img
-                                                            src={lead.customer.avatar}
-                                                            alt={lead.customer.name || 'Customer'}
-                                                            className="w-8 h-8 rounded-full object-cover flex-shrink-0"
-                                                        />
-                                                    ) : (
-                                                        <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-indigo-600 flex items-center justify-center shadow-sm flex-shrink-0">
-                                                            <User className="text-white" size={14} />
+                                    {columnLeads.length === 0 ? (
+                                        <div className="rounded-md border border-dashed border-border px-3 py-6 text-center">
+                                            <p className="text-[12px] text-muted-foreground">
+                                                No leads here
+                                            </p>
+                                            {canWrite && onAdd && column.status === "Not Started" ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={onAdd}
+                                                    className="mt-2 text-[12px] font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                                >
+                                                    Add lead
+                                                </button>
+                                            ) : null}
+                                        </div>
+                                    ) : null}
+                                    {columnLeads.map((lead) => {
+                                        const scored = scoreLead(lead);
+                                        return (
+                                            <div
+                                                key={lead.id}
+                                                draggable={!updating}
+                                                onDragStart={(e) => handleDragStart(e, lead)}
+                                                className="cursor-grab rounded-md border border-border bg-card transition-colors hover:border-foreground/20 active:cursor-grabbing"
+                                            >
+                                                <div className="p-2.5">
+                                                    <div className="mb-1.5 flex items-center justify-between">
+                                                        <div className="flex items-center gap-1.5 text-muted-foreground">
+                                                            <GripVertical size={12} />
+                                                            <span
+                                                                className={cn(
+                                                                    "rounded-md border px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
+                                                                    temperatureClass(scored.temperature)
+                                                                )}
+                                                                title={`Score ${scored.score}`}
+                                                            >
+                                                                {scored.temperature} · {scored.score}
+                                                            </span>
                                                         </div>
-                                                    )}
-                                                    <div className="min-w-0 flex-1">
-                                                        <h4 className="font-semibold text-gray-900 text-sm truncate">
-                                                            {lead.customer?.name || 'Unknown Customer'}
-                                                        </h4>
-                                                        <div className="flex items-center gap-2 text-xs">
-                                                            <span className={`px-1.5 py-0.5 rounded ${getSourceColor(lead.source)}`}>
+                                                        <div className="flex gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 [[draggable]:hover_&]:opacity-100 hover:opacity-100">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => onLeadClick(lead)}
+                                                                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                                                title="View Details"
+                                                                aria-label="View"
+                                                            >
+                                                                <Eye size={14} />
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => onLeadEdit(lead)}
+                                                                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                                                title="Edit"
+                                                                aria-label="Edit"
+                                                            >
+                                                                <Edit size={14} />
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => onLeadDelete(lead)}
+                                                                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive-50 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                                                title="Delete"
+                                                                aria-label="Delete"
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="mb-1.5 flex items-center gap-2">
+                                                        <Avatar
+                                                            name={lead.customer?.name}
+                                                            src={lead.customer?.avatar}
+                                                            size="sm"
+                                                        />
+                                                        <div className="min-w-0 flex-1">
+                                                            <h4 className="truncate text-[13px] font-semibold text-foreground">
+                                                                {lead.customer?.name || "Unknown Customer"}
+                                                            </h4>
+                                                            <span
+                                                                className={cn(
+                                                                    "inline-block rounded px-1.5 py-0.5 text-[10px] font-medium",
+                                                                    sourceChipClass(lead.source)
+                                                                )}
+                                                            >
                                                                 {lead.source}
                                                             </span>
                                                         </div>
                                                     </div>
-                                                </div>
 
-                                                {/* Contact Info */}
-                                                <div className="mb-2 text-xs">
-                                                    {lead.customer?.email && (
-                                                        <div className="flex items-center gap-1 mt-0.5">
-                                                            <Mail size={10} className="text-gray-400 flex-shrink-0" />
-                                                            <span className="text-gray-600 truncate">{lead.customer.email}</span>
+                                                    <div className="mb-1.5 space-y-0.5 text-[11px] text-muted-foreground">
+                                                        {lead.customer?.phone ? (
+                                                            <div className="flex items-center gap-1">
+                                                                <Phone size={10} className="shrink-0" />
+                                                                <span className="truncate">
+                                                                    {lead.customer.phone}
+                                                                </span>
+                                                            </div>
+                                                        ) : lead.customer?.email ? (
+                                                            <div className="flex items-center gap-1">
+                                                                <Mail size={10} className="shrink-0" />
+                                                                <span className="truncate">
+                                                                    {lead.customer.email}
+                                                                </span>
+                                                            </div>
+                                                        ) : null}
+                                                    </div>
+
+                                                    {lead.vehicle && (
+                                                        <div className="mt-1.5 flex items-center gap-1 rounded-md bg-muted/50 px-2 py-1">
+                                                            <Car size={11} className="shrink-0 text-muted-foreground" />
+                                                            <span className="truncate text-[11px] text-foreground">
+                                                                {lead.vehicle.year} {lead.vehicle.make}{" "}
+                                                                {lead.vehicle.model}
+                                                            </span>
                                                         </div>
                                                     )}
-                                                    {lead.customer?.phone && (
-                                                        <div className="flex items-center gap-1 mt-0.5">
-                                                            <Phone size={10} className="text-gray-400 flex-shrink-0" />
-                                                            <span className="text-gray-600 truncate">{lead.customer.phone}</span>
-                                                        </div>
-                                                    )}
-                                                </div>
 
-                                                {/* Vehicle Interest */}
-                                                {lead.vehicle && (
-                                                    <div className="flex items-center gap-1 mt-2 px-2 py-1 bg-gray-50 rounded-lg">
-                                                        <Car size={12} className="text-blue-500 flex-shrink-0" />
-                                                        <span className="text-xs text-gray-700 truncate">
-                                                            {lead.vehicle.year} {lead.vehicle.make} {lead.vehicle.model}
+                                                    <div className="mt-1.5 flex items-center justify-between border-t border-border pt-1.5">
+                                                        <span className="truncate text-[11px] text-muted-foreground">
+                                                            Next: {lead.assigned_user?.full_name || "Assign owner"}
+                                                        </span>
+                                                        <span className="shrink-0 tabular-nums text-[11px] text-muted-foreground">
+                                                            {timeAgo(lead.last_engagement)}
                                                         </span>
                                                     </div>
-                                                )}
-
-                                                {/* Assigned To & Last Engagement */}
-                                                <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
-                                                    <span className="text-xs text-gray-500">
-                                                        {lead.assigned_user?.full_name || 'Unassigned'}
-                                                    </span>
-                                                    <span className="text-xs text-gray-400">
-                                                        {new Date(lead.last_engagement).toLocaleDateString()}
-                                                    </span>
                                                 </div>
                                             </div>
-                                        </div>
-                                    ))}
-
-                                    {/* Empty State */}
-                                    {columnLeads.length === 0 && (
-                                        <div className="bg-gray-50 rounded-lg border border-dashed border-gray-300 p-6 text-center">
-                                            <ColumnIcon size={24} className={`mx-auto mb-2 ${column.iconColor} opacity-50`} />
-                                            <p className="text-xs text-gray-400">No leads</p>
-                                            <p className="text-xs text-gray-400">Drop here to move</p>
-                                        </div>
-                                    )}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         );
@@ -410,79 +406,112 @@ const LeadsKanban: React.FC<LeadsKanbanProps> = ({
                 </div>
             </div>
 
-            {/* Mobile Kanban - Card List View */}
-            <div className="lg:hidden space-y-4">
-                {columns.map((column) => {
+            <div className="space-y-4 lg:hidden">
+                {COLUMNS.map((column) => {
                     const columnLeads = getLeadsByStatus(column.status);
                     const ColumnIcon = column.icon;
 
-                    if (columnLeads.length === 0) return null;
-
                     return (
-                        <div key={column.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                            <div className={`flex items-center gap-2 px-4 py-3 ${column.bgColor} border-b ${column.borderColor}`}>
+                        <div
+                            key={column.id}
+                            className="overflow-hidden rounded-xl border border-border bg-card"
+                        >
+                            <div
+                                className={cn(
+                                    "flex items-center gap-2 border-b px-4 py-3",
+                                    column.bgColor,
+                                    column.borderColor
+                                )}
+                            >
                                 <ColumnIcon size={18} className={column.iconColor} />
-                                <h3 className="font-semibold text-gray-700 text-sm">{column.title}</h3>
-                                <span className={`text-xs px-2 py-0.5 rounded-full ${column.color} bg-white`}>
+                                <h3 className="text-sm font-semibold text-foreground">{column.title}</h3>
+                                <span
+                                    className={cn(
+                                        "rounded-full bg-card px-2 py-0.5 text-xs font-medium",
+                                        column.color
+                                    )}
+                                >
                                     {columnLeads.length}
                                 </span>
                             </div>
-                            <div className="divide-y divide-gray-100">
-                                {columnLeads.map((lead) => (
-                                    <div
-                                        key={lead.id}
-                                        className="p-4 hover:bg-gray-50 transition-colors"
-                                    >
-                                        <div className="flex items-start justify-between mb-2">
-                                            <div className="flex items-center gap-3">
-                                                {lead.customer?.avatar ? (
-                                                    <img
-                                                        src={lead.customer.avatar}
-                                                        alt={lead.customer.name || 'Customer'}
-                                                        className="w-10 h-10 rounded-full object-cover"
-                                                    />
-                                                ) : (
-                                                    <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-indigo-600 flex items-center justify-center text-white text-sm font-medium">
-                                                        {getInitials(lead.customer?.name || 'C')}
+                            {columnLeads.length === 0 ? (
+                                <EmptyState
+                                    kind="cleared"
+                                    icon={ColumnIcon}
+                                    title="Empty stage"
+                                    description="No leads in this stage."
+                                    className="m-3 border-0 bg-transparent py-8"
+                                />
+                            ) : (
+                                <div className="divide-y divide-border">
+                                    {columnLeads.map((lead) => {
+                                        const scored = scoreLead(lead);
+                                        return (
+                                            <div key={lead.id} className="p-4 transition-colors hover:bg-muted/40">
+                                                <div className="mb-2 flex items-start justify-between">
+                                                    <div className="flex items-center gap-3">
+                                                        <Avatar
+                                                            name={lead.customer?.name}
+                                                            src={lead.customer?.avatar}
+                                                            size="sm"
+                                                        />
+                                                        <div>
+                                                            <h4 className="text-sm font-semibold text-foreground">
+                                                                {lead.customer?.name || "Unknown Customer"}
+                                                            </h4>
+                                                            <div className="mt-0.5 flex flex-wrap gap-1">
+                                                                <span
+                                                                    className={cn(
+                                                                        "rounded-full px-2 py-0.5 text-xs font-medium",
+                                                                        sourceChipClass(lead.source)
+                                                                    )}
+                                                                >
+                                                                    {lead.source}
+                                                                </span>
+                                                                <span
+                                                                    className={cn(
+                                                                        "rounded-full border px-2 py-0.5 text-xs font-medium",
+                                                                        temperatureClass(scored.temperature)
+                                                                    )}
+                                                                >
+                                                                    {scored.temperature}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex gap-0.5">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => onLeadClick(lead)}
+                                                            className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted"
+                                                        >
+                                                            <Eye size={16} />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => onLeadEdit(lead)}
+                                                            className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted"
+                                                        >
+                                                            <Edit size={16} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                {lead.vehicle && (
+                                                    <div className="mb-1 text-xs text-muted-foreground">
+                                                        <Car size={12} className="mr-1 inline text-primary" />
+                                                        {lead.vehicle.year} {lead.vehicle.make}{" "}
+                                                        {lead.vehicle.model}
                                                     </div>
                                                 )}
-                                                <div>
-                                                    <h4 className="font-semibold text-gray-900 text-sm">
-                                                        {lead.customer?.name || 'Unknown Customer'}
-                                                    </h4>
-                                                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getSourceColor(lead.source)}`}>
-                                                        {lead.source}
-                                                    </span>
+                                                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                                                    <span>{lead.assigned_user?.full_name || "Unassigned"}</span>
+                                                    <span>{timeAgo(lead.last_engagement)}</span>
                                                 </div>
                                             </div>
-                                            <div className="flex gap-1">
-                                                <button
-                                                    onClick={() => onLeadClick(lead)}
-                                                    className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
-                                                >
-                                                    <Eye size={16} className="text-blue-500" />
-                                                </button>
-                                                <button
-                                                    onClick={() => onLeadEdit(lead)}
-                                                    className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
-                                                >
-                                                    <Edit size={16} className="text-amber-500" />
-                                                </button>
-                                            </div>
-                                        </div>
-                                        {lead.vehicle && (
-                                            <div className="text-xs text-gray-600 mb-1">
-                                                <Car size={12} className="inline mr-1 text-blue-500" />
-                                                {lead.vehicle.year} {lead.vehicle.make} {lead.vehicle.model}
-                                            </div>
-                                        )}
-                                        <div className="flex items-center justify-between text-xs text-gray-500">
-                                            <span>{lead.assigned_user?.full_name || 'Unassigned'}</span>
-                                            <span>{new Date(lead.last_engagement).toLocaleDateString()}</span>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
                     );
                 })}

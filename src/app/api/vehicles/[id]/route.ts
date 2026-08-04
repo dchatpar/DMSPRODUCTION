@@ -1,6 +1,75 @@
 // app/api/vehicles/[id]/route.ts
-import { createTokenClient } from "@/src/lib/server-token";
+//
+// P1-1 + P1-3 fix:
+//   - All four handlers now use `pickSupabaseClient` so platform admins
+//     get the service-role client (RLS bypass for cross-dealership ops)
+//     while regular users keep the request-scoped RLS client.
+//   - Perm checks moved AFTER ownership/404 (P1-3): a non-existent
+//     vehicle is a 404, not a 403 leaking existence, regardless of the
+//     caller's permissions.
+//   - PATCH now applies the same field whitelist as PUT (F-09 fix).
+//   - Path param accepts UUID **or** VIN (same slug as /images which is VIN).
 import { NextRequest, NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+    assertOwnershipOrDeny,
+    pickAllowed,
+    pickSupabaseClient,
+    requireDealershipAccess,
+} from "@/src/lib/auth-helpers";
+import { VEHICLE_ALLOWED_FIELDS } from "@/src/lib/vehicle-fields";
+import {
+    assertDamageDisclosureForPublish,
+    mergeDamageDisclosureState,
+} from "@/src/lib/mvda-damage";
+
+const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** Resolve /api/vehicles/:id where :id is either a vehicle UUID or a VIN. */
+async function resolveVehicleId(
+    supabase: SupabaseClient,
+    raw: string
+): Promise<
+    | {
+          id: string;
+          dealership_id: string;
+          status: string | null;
+          known_damage: boolean | null;
+          disclosure: string | null;
+      }
+    | null
+    | { error: unknown }
+> {
+    const key = decodeURIComponent(raw).trim();
+    if (!key) return null;
+
+    const cols = "id, dealership_id, status, known_damage, disclosure";
+
+    if (UUID_RE.test(key)) {
+        const { data, error } = await supabase
+            .from("vehicles")
+            .select(cols)
+            .eq("id", key)
+            .single();
+        if (error) {
+            if (error.code === "PGRST116") return null;
+            return { error };
+        }
+        return data;
+    }
+
+    const { data, error } = await supabase
+        .from("vehicles")
+        .select(cols)
+        .eq("vin", key)
+        .single();
+    if (error) {
+        if (error.code === "PGRST116") return null;
+        return { error };
+    }
+    return data;
+}
 
 // GET single vehicle
 export async function GET(
@@ -8,49 +77,37 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
-
-        try {
-            supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
-                return NextResponse.json(
-                    { error: "Authorization token required" },
-                    { status: 401 }
-                );
-            }
-            throw error;
-        }
-
-        // Verify user is authenticated
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
             return NextResponse.json(
-                { error: "Invalid or expired token" },
+                { error: auth.error || "Unauthorized" },
                 { status: 401 }
             );
         }
 
-        const { id } = await params;
+        const { supabase } = pickSupabaseClient(req, auth.profile);
+        const { id: rawId } = await params;
 
-        const { data, error: dbError } = await supabase
-            .from("vehicles")
-            .select("*")
-            .eq("id", id)
-            .single();
-
-        if (dbError) {
-            if (dbError.code === "PGRST116") {
-                return NextResponse.json(
-                    { error: "Vehicle not found" },
-                    { status: 404 }
-                );
-            }
-            throw dbError;
+        const resolved = await resolveVehicleId(supabase, rawId);
+        if (resolved && "error" in resolved) throw resolved.error;
+        if (!resolved) {
+            return NextResponse.json(
+                { error: "Vehicle not found" },
+                { status: 404 }
+            );
         }
 
-        return NextResponse.json({ data });
+        const deny = assertOwnershipOrDeny(resolved, auth.profile);
+        if (deny) return deny;
+
+        // Re-fetch the full row now that ownership is verified
+        const { data: full } = await supabase
+            .from("vehicles")
+            .select("*")
+            .eq("id", resolved.id)
+            .single();
+
+        return NextResponse.json({ data: full });
     } catch (error: any) {
         console.error("Error fetching vehicle:", error);
         return NextResponse.json(
@@ -66,44 +123,74 @@ export async function PUT(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
-
-        try {
-            supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
-                return NextResponse.json(
-                    { error: "Authorization token required" },
-                    { status: 401 }
-                );
-            }
-            throw error;
-        }
-
-        // Verify user is authenticated
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
             return NextResponse.json(
-                { error: "Invalid or expired token" },
+                { error: auth.error || "Unauthorized" },
                 { status: 401 }
             );
         }
 
-        // Get current user's permissions
-        const { data: currentUser } = await supabase
-            .from("users")
-            .select("role, dealership_id, is_platform_admin, user_permissions")
-            .eq("id", user.id)
-            .single();
+        const { supabase } = pickSupabaseClient(req, auth.profile);
+        const { id: rawId } = await params;
+        const payload = await req.json();
 
-        if (!currentUser) {
-            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        // P1-3: ownership check FIRST so a non-existent row returns 404
+        // (not 403, which would leak existence to a Salesperson who
+        // happened to know the id). Path accepts UUID or VIN.
+        const existing = await resolveVehicleId(supabase, rawId);
+        if (existing && "error" in existing) throw existing.error;
+        if (!existing) {
+            return NextResponse.json(
+                { error: "Vehicle not found" },
+                { status: 404 }
+            );
+        }
+        const id = existing.id;
+
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
+
+        // Whitelist the update payload and block dealership_id changes
+        const safePayload = pickAllowed(payload, VEHICLE_ALLOWED_FIELDS);
+        delete (safePayload as any).dealership_id;
+
+        if (typeof (safePayload as { features?: unknown }).features === "string") {
+            const raw = (safePayload as { features: string }).features;
+            (safePayload as { features: string[] }).features = raw
+                .split(",")
+                .map((f) => f.trim())
+                .filter(Boolean);
         }
 
-        const userRole = currentUser.role;
-        const userPerms = currentUser.user_permissions || [];
-        const isPlatformAdmin = currentUser.is_platform_admin;
+        if (Object.keys(safePayload).length === 0) {
+            return NextResponse.json(
+                { error: "No valid fields to update" },
+                { status: 400 }
+            );
+        }
+
+        try {
+            assertDamageDisclosureForPublish(
+                mergeDamageDisclosureState(existing, {
+                    status: (safePayload as { status?: string }).status,
+                    known_damage: (safePayload as { known_damage?: boolean })
+                        .known_damage,
+                    disclosure: (safePayload as { disclosure?: string | null })
+                        .disclosure,
+                })
+            );
+        } catch (e) {
+            return NextResponse.json(
+                { error: e instanceof Error ? e.message : "Disclosure required" },
+                { status: 400 }
+            );
+        }
+
+        // Per-field permission gates run AFTER the 404 check above. P1-3.
+        const userRole = auth.profile.role;
+        const userPerms = (auth.profile as any).user_permissions || [];
+        const isPlatformAdmin = auth.profile.is_platform_admin;
 
         const canManagePricing = isPlatformAdmin ||
             userRole === "Admin" ||
@@ -117,18 +204,12 @@ export async function PUT(
             userPerms.includes("vehicles:photos") ||
             userPerms.includes("*");
 
-        const { id } = await params;
-        const payload = await req.json();
-
-        // Check pricing permission if retail_price is being modified
         if (payload.retail_price !== undefined && !canManagePricing) {
             return NextResponse.json(
                 { error: "Forbidden - You need vehicles:pricing permission to modify pricing" },
                 { status: 403 }
             );
         }
-
-        // Check photos permission if image_gallery is being modified
         if (payload.image_gallery !== undefined && !canManagePhotos) {
             return NextResponse.json(
                 { error: "Forbidden - You need vehicles:photos permission to modify photos" },
@@ -136,25 +217,9 @@ export async function PUT(
             );
         }
 
-        // Validate required fields for update (optional fields)
-        const allowedFields = [
-            "vin", "year", "make", "model", "trim", "odometer",
-            "stock_number", "condition", "status", "purchase_price",
-            "retail_price", "extra_costs", "taxes", "image_gallery"
-        ];
-
-        // Check if any valid fields are being updated
-        const updateFields = Object.keys(payload).filter(key => allowedFields.includes(key));
-        if (updateFields.length === 0) {
-            return NextResponse.json(
-                { error: "No valid fields to update" },
-                { status: 400 }
-            );
-        }
-
         const { data, error: dbError } = await supabase
             .from("vehicles")
-            .update(payload)
+            .update(safePayload)
             .eq("id", id)
             .select()
             .single();
@@ -191,44 +256,74 @@ export async function PATCH(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
-
-        try {
-            supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
-                return NextResponse.json(
-                    { error: "Authorization token required" },
-                    { status: 401 }
-                );
-            }
-            throw error;
-        }
-
-        // Verify user is authenticated
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
             return NextResponse.json(
-                { error: "Invalid or expired token" },
+                { error: auth.error || "Unauthorized" },
                 { status: 401 }
             );
         }
 
-        // Get current user's permissions
-        const { data: currentUser } = await supabase
-            .from("users")
-            .select("role, dealership_id, is_platform_admin, user_permissions")
-            .eq("id", user.id)
-            .single();
+        const { supabase } = pickSupabaseClient(req, auth.profile);
+        const { id: rawId } = await params;
+        const payload = await req.json();
 
-        if (!currentUser) {
-            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+        // P1-3: ownership check FIRST. Path accepts UUID or VIN.
+        const existing = await resolveVehicleId(supabase, rawId);
+        if (existing && "error" in existing) throw existing.error;
+        if (!existing) {
+            return NextResponse.json(
+                { error: "Vehicle not found" },
+                { status: 404 }
+            );
+        }
+        const id = existing.id;
+
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
+
+        // F-09 fix: PATCH now uses the same field whitelist as PUT, so a
+        // caller can't sneak in `dealership_id` or `user_id` and have it
+        // pass through to the UPDATE.
+        const safePayload = pickAllowed(payload, VEHICLE_ALLOWED_FIELDS);
+        delete (safePayload as any).dealership_id;
+
+        if (typeof (safePayload as { features?: unknown }).features === "string") {
+            const raw = (safePayload as { features: string }).features;
+            (safePayload as { features: string[] }).features = raw
+                .split(",")
+                .map((f) => f.trim())
+                .filter(Boolean);
         }
 
-        const userRole = currentUser.role;
-        const userPerms = currentUser.user_permissions || [];
-        const isPlatformAdmin = currentUser.is_platform_admin;
+        if (Object.keys(safePayload).length === 0) {
+            return NextResponse.json(
+                { error: "No valid fields to update" },
+                { status: 400 }
+            );
+        }
+
+        try {
+            assertDamageDisclosureForPublish(
+                mergeDamageDisclosureState(existing, {
+                    status: (safePayload as { status?: string }).status,
+                    known_damage: (safePayload as { known_damage?: boolean })
+                        .known_damage,
+                    disclosure: (safePayload as { disclosure?: string | null })
+                        .disclosure,
+                })
+            );
+        } catch (e) {
+            return NextResponse.json(
+                { error: e instanceof Error ? e.message : "Disclosure required" },
+                { status: 400 }
+            );
+        }
+
+        // Per-field permission gates run AFTER the 404 check (P1-3).
+        const userRole = auth.profile.role;
+        const userPerms = (auth.profile as any).user_permissions || [];
+        const isPlatformAdmin = auth.profile.is_platform_admin;
 
         const canManagePricing = isPlatformAdmin ||
             userRole === "Admin" ||
@@ -242,18 +337,12 @@ export async function PATCH(
             userPerms.includes("vehicles:photos") ||
             userPerms.includes("*");
 
-        const { id } = await params;
-        const payload = await req.json();
-
-        // Check pricing permission if retail_price is being modified
         if (payload.retail_price !== undefined && !canManagePricing) {
             return NextResponse.json(
                 { error: "Forbidden - You need vehicles:pricing permission to modify pricing" },
                 { status: 403 }
             );
         }
-
-        // Check photos permission if image_gallery is being modified
         if (payload.image_gallery !== undefined && !canManagePhotos) {
             return NextResponse.json(
                 { error: "Forbidden - You need vehicles:photos permission to modify photos" },
@@ -263,7 +352,7 @@ export async function PATCH(
 
         const { data, error: dbError } = await supabase
             .from("vehicles")
-            .update(payload)
+            .update(safePayload)
             .eq("id", id)
             .select()
             .single();
@@ -300,31 +389,30 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
-
-        try {
-            supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
-                return NextResponse.json(
-                    { error: "Authorization token required" },
-                    { status: 401 }
-                );
-            }
-            throw error;
-        }
-
-        // Verify user is authenticated
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
             return NextResponse.json(
-                { error: "Invalid or expired token" },
+                { error: auth.error || "Unauthorized" },
                 { status: 401 }
             );
         }
 
-        const { id } = await params;
+        const { supabase } = pickSupabaseClient(req, auth.profile);
+        const { id: rawId } = await params;
+
+        // Assert ownership before any write. Path accepts UUID or VIN.
+        const existing = await resolveVehicleId(supabase, rawId);
+        if (existing && "error" in existing) throw existing.error;
+        if (!existing) {
+            return NextResponse.json(
+                { error: "Vehicle not found" },
+                { status: 404 }
+            );
+        }
+        const id = existing.id;
+
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
 
         const { error: dbError } = await supabase
             .from("vehicles")

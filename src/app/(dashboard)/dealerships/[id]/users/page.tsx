@@ -16,10 +16,14 @@ import {
     Shield,
     CheckCircle,
     Building2,
-    ArrowLeft,
+    ArrowLeft
 } from "lucide-react";
 import UserFormModal from "@/src/components/UserFormModal";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
+import { apiFetch } from "@/src/lib/fetch";
+import { toast } from "@/src/lib/toast";
+import { ListPageShell } from "@/src/components/ListPageShell";
+import { Button } from "@/src/components/ui/Button";
 
 interface User {
     id: string;
@@ -69,10 +73,7 @@ export default function DealershipUsersPage() {
 
     const fetchDealership = async () => {
         try {
-            const token = localStorage.getItem("access_token");
-            const response = await fetch(`/api/dealerships/${dealershipId}`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            const response = await fetch(`/api/dealerships/${dealershipId}`, {});
             if (response.ok) {
                 const data = await response.json();
                 setDealership(data.data);
@@ -86,11 +87,7 @@ export default function DealershipUsersPage() {
         try {
             setLoading(true);
             setError(null);
-
-            const token = localStorage.getItem("access_token");
-            const response = await fetch(`/api/users?dealership_id=${dealershipId}&limit=100`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            const response = await fetch(`/api/users?dealership_id=${dealershipId}&limit=100`, {});
 
             if (!response.ok) {
                 throw new Error("Failed to fetch users");
@@ -140,10 +137,8 @@ export default function DealershipUsersPage() {
         setConfirmDialogData((prev) => ({ ...prev, loading: true }));
 
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch(`/api/users/${userId}`, {
-                method: "DELETE",
-                headers: { Authorization: `Bearer ${token}` },
+                method: "DELETE"
             });
 
             if (!response.ok) {
@@ -154,7 +149,7 @@ export default function DealershipUsersPage() {
             setShowConfirmDialog(false);
             fetchUsers();
         } catch (err) {
-            alert(err instanceof Error ? err.message : "Failed to delete user");
+            toast.error(err instanceof Error ? err.message : "Failed to delete user");
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
     };
@@ -170,7 +165,7 @@ export default function DealershipUsersPage() {
             Admin: "bg-purple-100 text-purple-800",
             Manager: "bg-blue-100 text-blue-800",
             Staff: "bg-green-100 text-green-800",
-            Salesperson: "bg-orange-100 text-orange-800",
+            Salesperson: "bg-orange-100 text-orange-800"
         };
         return colors[role] || "bg-gray-100 text-gray-800";
     };
@@ -188,13 +183,40 @@ export default function DealershipUsersPage() {
         return new Date(date).toLocaleDateString('en-US', {
             year: 'numeric',
             month: 'short',
-            day: 'numeric',
+            day: 'numeric'
         });
     };
 
     return (
-        <div className="space-y-6 py-10">
-            {/* Page Header */}
+        <ListPageShell
+            title={dealership?.name ? `${dealership.name} users` : "Dealership users"}
+            description="Platform view of users scoped to this tenant only. Soft-delete guards protect Nova data."
+            icon={Users}
+            breadcrumbs={[
+                { label: "AdaptUs Platform", href: "/dashboard" },
+                { label: "Dealerships", href: "/dealerships" },
+                { label: "Users" },
+            ]}
+            actions={
+                <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => router.push("/dealerships")}>
+                        <ArrowLeft className="h-3.5 w-3.5" />
+                        Back
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => void fetchUsers()}>
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        Refresh
+                    </Button>
+                    <Button size="sm" onClick={handleAdd}>
+                        <Plus className="h-3.5 w-3.5" />
+                        Add User
+                    </Button>
+                </div>
+            }
+        >
+            <div className="space-y-4">
+            {/* legacy header hidden */}
+            <div className="hidden">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div className="flex items-center gap-4">
                     <button
@@ -231,6 +253,7 @@ export default function DealershipUsersPage() {
                         Add User
                     </button>
                 </div>
+            </div>
             </div>
 
             {/* Filters */}
@@ -479,6 +502,7 @@ export default function DealershipUsersPage() {
                     }}
                 />
             )}
-        </div>
+            </div>
+        </ListPageShell>
     );
 }

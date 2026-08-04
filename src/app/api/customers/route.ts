@@ -1,6 +1,16 @@
 // app/api/customers/route.ts
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
+import { applyConsentTimestamps } from "@/src/lib/customer-consent";
+import { pickAllowed } from "@/src/lib/auth-helpers";
+import { clientIp } from "@/src/lib/trial";
+
+const CUSTOMER_CREATE_FIELDS = [
+    "name", "email", "phone", "address", "city", "province", "postal_code",
+    "status", "source", "notes", "company", "assigned_to",
+    "marketing_consent", "sms_consent",
+    "marketing_consent_at", "sms_consent_at",
+] as const;
 
 // GET all customers (filtered by dealership + scoping for Salesperson/Staff)
 export async function GET(req: NextRequest) {
@@ -50,11 +60,33 @@ export async function GET(req: NextRequest) {
         const isPlatformAdmin = currentUser.is_platform_admin;
 
         const url = new URL(req.url);
-        const limit = parseInt(url.searchParams.get("limit") || "50");
-        const offset = parseInt(url.searchParams.get("offset") || "0");
-        const q = url.searchParams.get("q");
+        // Support both old (limit/offset) and new (page/perPage/pageSize) pagination.
+        // Only treat as "new-style" when page/perPage/pageSize params are present —
+        // otherwise ?limit=1000 was being silently capped to 50.
+        const pageParam = url.searchParams.get("page");
+        const perPageParam = url.searchParams.get("perPage") || url.searchParams.get("pageSize");
+        let limit: number;
+        let offset: number;
+        if (pageParam !== null || perPageParam !== null) {
+            const page = parseInt(pageParam || "1") || 1;
+            const perPage = parseInt(perPageParam || "50") || 50;
+            offset = (page - 1) * perPage;
+            limit = perPage;
+        } else {
+            limit = parseInt(url.searchParams.get("limit") || "50") || 50;
+            offset = parseInt(url.searchParams.get("offset") || "0") || 0;
+        }
+        const q = url.searchParams.get("q") || url.searchParams.get("search");
         const status = url.searchParams.get("status");
+        const source = url.searchParams.get("source");
+        const assignedTo = url.searchParams.get("assigned_to");
         const distinctStatus = url.searchParams.get("distinct_status");
+
+        // sort support
+        const sortField = url.searchParams.get("sort") || url.searchParams.get("sortBy") || "created_at";
+        const sortDir = url.searchParams.get("sortDir") || "desc";
+        const isDesc = sortDir.toLowerCase() === "desc";
+        const cleanSortField = sortField.replace(/^-/, "");
 
         // If requesting distinct status values, return them from database
         if (distinctStatus === "true") {
@@ -77,7 +109,7 @@ export async function GET(req: NextRequest) {
         let query = supabase
             .from("customers")
             .select("*", { count: "exact" })
-            .order("created_at", { ascending: false })
+            .order(cleanSortField, { ascending: !isDesc })
             .range(offset, offset + limit - 1);
 
         // Platform admin sees all - no dealership filter needed
@@ -99,7 +131,9 @@ export async function GET(req: NextRequest) {
         }
 
         if (status) query = query.eq("status", status);
-        if (q) query = query.or(`name.ilike.%${q}%,phone.ilike.%${q}%,email.ilike.%${q}%`);
+        if (source) query = query.eq("source", source);
+        if (assignedTo) query = query.eq("assigned_to", assignedTo);
+        if (q) query = query.or(`name.ilike.%${q}%,phone.ilike.%${q}%,email.ilike.%${q}%,city.ilike.%${q}%,address.ilike.%${q}%,notes.ilike.%${q}%`);
 
         const { data, error: dbError, count } = await query;
 
@@ -204,8 +238,19 @@ export async function POST(req: NextRequest) {
         const isScoped = userRole === "Salesperson" || userRole === "Staff" ||
             userPermissions.includes("customers:read:assigned");
 
-        const customerData: Record<string, any> = {
-            ...payload,
+        const safe = pickAllowed(payload, CUSTOMER_CREATE_FIELDS) as Record<string, unknown>;
+        const stamped = applyConsentTimestamps(
+            {
+                ...safe,
+                marketing_consent: Boolean(safe.marketing_consent),
+                sms_consent: Boolean(safe.sms_consent),
+            },
+            null,
+            { ip: clientIp(req) }
+        );
+
+        const customerData: Record<string, unknown> = {
+            ...stamped,
             dealership_id: currentUser.dealership_id,
         };
 
@@ -214,11 +259,18 @@ export async function POST(req: NextRequest) {
             customerData.assigned_to = user.id;
         }
 
-        const { data, error: dbError } = await supabase
+        let { data, error: dbError } = await supabase
             .from("customers")
             .insert(customerData)
             .select()
             .single();
+
+        if (dbError && /marketing_consent_ip|sms_consent_ip|column/i.test(dbError.message || "")) {
+            const { marketing_consent_ip: _m, sms_consent_ip: _s, ...withoutIp } = customerData;
+            const retry = await supabase.from("customers").insert(withoutIp).select().single();
+            data = retry.data;
+            dbError = retry.error;
+        }
 
         if (dbError) throw dbError;
 

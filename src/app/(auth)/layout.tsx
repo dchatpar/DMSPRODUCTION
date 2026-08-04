@@ -1,13 +1,9 @@
 export default function AuthLayout({
-    children,
+    children
 }: {
     children: React.ReactNode;
 }) {
-    return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 p-4">
-            <div className="w-full max-w-md">
-                {children}
-            </div>
-        </div>
-    );
+    // Passthrough: login owns full-bleed viewport (lg:grid lg:grid-cols-2).
+    // Do not wrap in max-w-md — that crushes the two-column hero.
+    return children;
 }

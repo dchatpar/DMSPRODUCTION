@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { X, Loader2, AlertCircle } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
+import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
 
 interface UserData {
     id: string;
@@ -34,8 +36,10 @@ export default function TicketFormModal({
     mode,
     ticket,
     onClose,
-    onSuccess,
+    onSuccess
 }: TicketFormModalProps) {
+    useOverlayDismiss(onClose);
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [users, setUsers] = useState<UserData[]>([]);
@@ -46,7 +50,7 @@ export default function TicketFormModal({
         description: "",
         assigned_to: "",
         priority: "Medium",
-        status: "Open",
+        status: "Open"
     });
 
     useEffect(() => {
@@ -56,7 +60,7 @@ export default function TicketFormModal({
                 description: ticket.description || "",
                 assigned_to: ticket.assigned_to || "",
                 priority: ticket.priority || "Medium",
-                status: ticket.status || "Open",
+                status: ticket.status || "Open"
             });
         }
     }, [ticket]);
@@ -68,10 +72,7 @@ export default function TicketFormModal({
     const fetchUsers = async () => {
         try {
             setLoadingUsers(true);
-            const token = localStorage.getItem("access_token");
-
             const response = await fetch("/api/users?limit=100", {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (response.ok) {
@@ -97,13 +98,12 @@ export default function TicketFormModal({
         setError(null);
 
         try {
-            const token = localStorage.getItem("access_token");
             const payload = {
                 subject: formData.subject.trim(),
                 description: formData.description.trim() || null,
                 assigned_to: formData.assigned_to || null,
                 priority: formData.priority,
-                status: formData.status,
+                status: formData.status
             };
 
             const url = mode === "edit" && ticket?.id ? `/api/tickets/${ticket.id}` : "/api/tickets";
@@ -112,10 +112,8 @@ export default function TicketFormModal({
             const response = await fetch(url, {
                 method,
                 headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify(payload),
+                    "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
             });
 
             if (!response.ok) {

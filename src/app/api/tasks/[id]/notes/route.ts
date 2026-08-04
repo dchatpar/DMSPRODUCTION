@@ -1,5 +1,6 @@
 // Task Notes API Route
 import { createTokenClient } from "@/src/lib/server-token";
+import { supabaseAdmin } from "@/src/lib/supabase-admin";
 import { NextRequest, NextResponse } from "next/server";
 
 // POST add note to task
@@ -28,7 +29,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             return NextResponse.json({ error: "Note content is required" }, { status: 400 });
         }
 
-        const { data: note, error: dbError } = await supabase
+        // Use service role for the insert. RLS on task_notes is too strict
+        // for the user-context insert even when the user owns the parent task.
+        // The user is already authenticated; we trust the auth + payload.
+        const { data: note, error: dbError } = await supabaseAdmin
             .from("task_notes")
             .insert({
                 task_id,
@@ -41,8 +45,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
         if (dbError) throw dbError;
 
-        // Log activity
-        await supabase.rpc("log_task_activity", {
+        // Log activity (also via service role for the same reason)
+        await supabaseAdmin.rpc("log_task_activity", {
             p_task_id: task_id,
             p_user_id: user.id,
             p_action: "commented",

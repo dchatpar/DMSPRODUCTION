@@ -53,6 +53,7 @@ export async function GET(req: NextRequest) {
         const offset = parseInt(url.searchParams.get("offset") || "0");
         const status = url.searchParams.get("status");
         const q = url.searchParams.get("q");
+        const unlinked = url.searchParams.get("unlinked");
 
         let query = supabase
             .from("sales_deals")
@@ -64,6 +65,11 @@ export async function GET(req: NextRequest) {
             `, { count: "exact" })
             .order("created_at", { ascending: false })
             .range(offset, offset + limit - 1);
+
+        // Deal ↔ customer link queue: deals with no customer
+        if (unlinked === "1" || unlinked === "true") {
+            query = query.is("customer_id", null);
+        }
 
         // Platform admin sees all
         if (!isPlatformAdmin) {
@@ -162,7 +168,7 @@ export async function POST(req: NextRequest) {
 
         const payload = await req.json();
 
-        const required = ["vehicle_id", "customer_id", "sale_price"];
+        const required = ["vehicle_id", "sale_price"];
         for (const field of required) {
             if (!payload[field]) {
                 return NextResponse.json(
@@ -172,7 +178,7 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        const validStatuses = ['Negotiation', 'Down Payment', 'Finance', 'Paid Off', 'Cancelled'];
+        const validStatuses = ['Open', 'Negotiation', 'Down Payment', 'Finance', 'Pending', 'Paid Off', 'Closed', 'Lost', 'Cancelled'];
         if (payload.deal_status && !validStatuses.includes(payload.deal_status)) {
             return NextResponse.json(
                 { error: `Invalid deal_status. Must be one of: ${validStatuses.join(', ')}` },
@@ -182,17 +188,27 @@ export async function POST(req: NextRequest) {
 
         const dealData = {
             vehicle_id: payload.vehicle_id,
-            customer_id: payload.customer_id,
+            customer_id: payload.customer_id || null,
             deal_status: payload.deal_status || 'Negotiation',
             finance_term: payload.finance_term || null,
             interest_rate: payload.interest_rate || null,
             down_payment: payload.down_payment || 0,
+            trade_in_value: payload.trade_in_value ?? 0,
             sale_price: payload.sale_price,
             salesperson_id: payload.salesperson_id || user.id,
             finance_company: payload.finance_company || null,
             notes: payload.notes || null,
             deal_date: payload.deal_date || new Date().toISOString().split('T')[0],
             dealership_id: currentUser.dealership_id,
+            warranty_package: payload.warranty_package || null,
+            gap_coverage: Boolean(payload.gap_coverage),
+            tire_coverage: Boolean(payload.tire_coverage),
+            paint_protection: Boolean(payload.paint_protection),
+            extended_service: Boolean(payload.extended_service),
+            admin_fee: payload.admin_fee ?? 0,
+            financing_notes: payload.financing_notes || null,
+            commission_rate: payload.commission_rate ?? null,
+            commission_amount: payload.commission_amount ?? null,
         };
 
         const { data, error: dbError } = await supabase
@@ -208,7 +224,7 @@ export async function POST(req: NextRequest) {
 
         if (dbError) throw dbError;
 
-        if (payload.deal_status === 'Paid Off' || payload.close_deal) {
+        if (payload.deal_status === 'Paid Off' || payload.deal_status === 'Closed' || payload.close_deal) {
             await supabase
                 .from("vehicles")
                 .update({ status: 'Sold' })

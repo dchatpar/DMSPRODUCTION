@@ -7,8 +7,9 @@ import {
     RefreshCw,
     Loader2,
     AlertCircle,
-    CheckCircle,
+    CheckCircle
 } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
 
 interface Subscription {
     id: string;
@@ -46,15 +47,8 @@ export default function SubscriptionsPage() {
             setLoading(true);
             setError(null);
 
-            const token = localStorage.getItem("access_token");
-            if (!token) {
-                window.location.href = "/login";
-                return;
-            }
-
             // Check if user is platform admin
             const meResponse = await fetch("/api/me", {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!meResponse.ok) throw new Error("Failed to get user info");
@@ -70,7 +64,6 @@ export default function SubscriptionsPage() {
             if (planFilter) params.set("plan", planFilter);
 
             const response = await fetch(`/api/platform/subscriptions?${params}`, {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!response.ok) throw new Error("Failed to fetch subscriptions");
@@ -89,7 +82,7 @@ export default function SubscriptionsPage() {
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat("en-US", {
             style: "currency",
-            currency: "USD",
+            currency: "USD"
         }).format(amount);
     };
 
@@ -98,7 +91,7 @@ export default function SubscriptionsPage() {
         return new Date(dateStr).toLocaleDateString("en-US", {
             month: "short",
             day: "numeric",
-            year: "numeric",
+            year: "numeric"
         });
     };
 

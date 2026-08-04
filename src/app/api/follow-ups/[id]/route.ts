@@ -1,6 +1,15 @@
 // app/api/follow-ups/[id]/route.ts
-import { createTokenClient } from "@/src/lib/server-token";
+//
+// P1-1 fix: all four handlers use `pickSupabaseClient` so platform admins
+// get the service-role client (RLS bypass for cross-dealership ops) while
+// regular users keep the request-scoped RLS client.
 import { NextRequest, NextResponse } from "next/server";
+import { assertOwnershipOrDeny, pickAllowed, pickSupabaseClient, requireDealershipAccess } from "@/src/lib/auth-helpers";
+
+const FOLLOWUP_ALLOWED_FIELDS = [
+    "type", "due_date", "status", "notes", "assigned_to", "lead_id", "customer_id",
+    "title", "description", "follow_up_date", "follow_up_time", "priority",
+] as const;
 
 // GET single follow-up
 export async function GET(
@@ -8,10 +17,18 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
-            supabase = createTokenClient(req);
+            const picked = pickSupabaseClient(req, auth.profile);
+            supabase = picked.supabase;
         } catch (error: any) {
             if (error?.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
@@ -24,16 +41,27 @@ export async function GET(
 
         const { id } = await params;
 
-        // Verify user is authenticated
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        // Narrow fetch first to assert ownership
+        const { data: existing, error: existingError } = await supabase
+            .from("follow_ups")
+            .select("id, dealership_id, assigned_to")
+            .eq("id", id)
+            .single();
 
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Follow-up not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
         }
 
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
+
+        // Re-fetch the full row with relations
         const { data, error: dbError } = await supabase
             .from("follow_ups")
             .select(`
@@ -81,10 +109,18 @@ export async function PATCH(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
-            supabase = createTokenClient(req);
+            const picked = pickSupabaseClient(req, auth.profile);
+            supabase = picked.supabase;
         } catch (error: any) {
             if (error?.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
@@ -96,17 +132,6 @@ export async function PATCH(
         }
 
         const { id } = await params;
-
-        // Verify user is authenticated
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
-        }
-
         const payload = await req.json();
 
         // Validate status if provided
@@ -127,29 +152,36 @@ export async function PATCH(
             );
         }
 
-        // Build update data
-        const updateData: any = {};
-
-        if (payload.title !== undefined) updateData.title = payload.title;
-        if (payload.description !== undefined) updateData.description = payload.description;
-        if (payload.customer_id !== undefined) updateData.customer_id = payload.customer_id;
-        if (payload.lead_id !== undefined) updateData.lead_id = payload.lead_id;
-        if (payload.assigned_to !== undefined) updateData.assigned_to = payload.assigned_to;
-        if (payload.follow_up_date !== undefined) updateData.follow_up_date = payload.follow_up_date;
-        if (payload.follow_up_time !== undefined) updateData.follow_up_time = payload.follow_up_time;
-        if (payload.priority !== undefined) updateData.priority = payload.priority;
-        if (payload.status !== undefined) updateData.status = payload.status;
-        if (payload.notes !== undefined) updateData.notes = payload.notes;
-        if (payload.status === 'Completed') {
-            updateData.completed_at = new Date().toISOString();
-        }
-
-        // Get current follow-up for history
-        const { data: currentFollowUp } = await supabase
+        // Assert ownership before any write
+        const { data: existing, error: existingError } = await supabase
             .from("follow_ups")
-            .select("description, status")
+            .select("id, dealership_id, assigned_to, description, status")
             .eq("id", id)
             .single();
+
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Follow-up not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
+        }
+
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
+
+        // Whitelist the update payload and block dealership_id changes
+        const safePayload = pickAllowed(payload, FOLLOWUP_ALLOWED_FIELDS);
+        delete (safePayload as any).dealership_id;
+
+        // Build update data
+        const updateData: any = { ...safePayload };
+
+        if (updateData.status === 'Completed') {
+            updateData.completed_at = new Date().toISOString();
+        }
 
         const { data, error: dbError } = await supabase
             .from("follow_ups")
@@ -175,11 +207,11 @@ export async function PATCH(
 
         // Create history entry for the update
         let historyAction = "updated";
-        if (payload.status === 'Completed' && currentFollowUp?.status !== 'Completed') {
+        if (updateData.status === 'Completed' && existing?.status !== 'Completed') {
             historyAction = "completed";
-        } else if (payload.status === 'Cancelled') {
+        } else if (updateData.status === 'Cancelled') {
             historyAction = "cancelled";
-        } else if (payload.status !== undefined && payload.status !== currentFollowUp?.status) {
+        } else if (updateData.status !== undefined && updateData.status !== existing?.status) {
             historyAction = "status_changed";
         }
 
@@ -187,12 +219,12 @@ export async function PATCH(
             .from("follow_up_history")
             .insert({
                 follow_up_id: id,
-                edited_by: user.id,
+                edited_by: auth.user?.id,
                 action: historyAction,
-                previous_description: currentFollowUp?.description,
-                new_description: payload.description !== undefined ? payload.description : currentFollowUp?.description,
-                previous_status: currentFollowUp?.status,
-                new_status: payload.status !== undefined ? payload.status : currentFollowUp?.status,
+                previous_description: existing?.description,
+                new_description: updateData.description !== undefined ? updateData.description : existing?.description,
+                previous_status: existing?.status,
+                new_status: updateData.status !== undefined ? updateData.status : existing?.status,
             });
 
         // Get updated history
@@ -221,10 +253,18 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
-            supabase = createTokenClient(req);
+            const picked = pickSupabaseClient(req, auth.profile);
+            supabase = picked.supabase;
         } catch (error: any) {
             if (error?.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
@@ -237,15 +277,25 @@ export async function DELETE(
 
         const { id } = await params;
 
-        // Verify user is authenticated
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        // Assert ownership before any write
+        const { data: existing, error: existingError } = await supabase
+            .from("follow_ups")
+            .select("id, dealership_id, assigned_to")
+            .eq("id", id)
+            .single();
 
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Follow-up not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
         }
+
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
 
         const { error: dbError } = await supabase
             .from("follow_ups")

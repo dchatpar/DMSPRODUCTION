@@ -171,6 +171,26 @@ export async function POST(req: NextRequest) {
         const payload = await req.json();
         const { full_name, role, email, phone, start_date, password, avatar, target_dealership_id } = payload;
 
+        // Dealership Admin cannot grant platform admin via API
+        if (payload.is_platform_admin === true && !isPlatformAdmin) {
+            return NextResponse.json(
+                { error: "Forbidden - Cannot set is_platform_admin" },
+                { status: 403 }
+            );
+        }
+
+        // Reject client-supplied dealership_id spoofing for non-platform admins
+        if (
+            !isPlatformAdmin &&
+            (payload.dealership_id || target_dealership_id) &&
+            (payload.dealership_id || target_dealership_id) !== currentUser?.dealership_id
+        ) {
+            return NextResponse.json(
+                { error: "Forbidden - Cannot assign user to another dealership" },
+                { status: 403 }
+            );
+        }
+
         // Validate required fields
         const required = ["full_name", "role", "email", "start_date"];
         for (const field of required) {
@@ -190,10 +210,13 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Determine which dealership to assign user to
+        // Determine which dealership to assign user to (auth-derived for tenant admins)
         let assignedDealershipId = currentUser?.dealership_id;
         if (isPlatformAdmin && target_dealership_id) {
             assignedDealershipId = target_dealership_id;
+        } else if (!isPlatformAdmin) {
+            // Ignore any client dealership_id — force caller's tenant
+            assignedDealershipId = currentUser?.dealership_id;
         }
 
         if (!assignedDealershipId && !isPlatformAdmin) {
@@ -204,9 +227,25 @@ export async function POST(req: NextRequest) {
         }
 
         // Create auth user
+        // SECURITY: F-05 of v3 master plan. Reject creation without a password;
+        // never default to a known credential. The admin must set one explicitly,
+        // or the user will be sent a one-time reset link (TODO: implement).
+        if (!password || typeof password !== "string" || password.length < 12) {
+            return NextResponse.json(
+                { error: "Password is required and must be at least 12 characters" },
+                { status: 400 }
+            );
+        }
+        // Reject the well-known defaults explicitly (defense in depth).
+        if (password === "Password@123" || password === "password" || password === "12345678") {
+            return NextResponse.json(
+                { error: "Password is too common; please choose a stronger one" },
+                { status: 400 }
+            );
+        }
         const { data: authData, error: authError2 } = await supabaseAdmin.auth.admin.createUser({
             email,
-            password: password || "Password@123",
+            password,
             email_confirm: true,
             user_metadata: {
                 full_name,

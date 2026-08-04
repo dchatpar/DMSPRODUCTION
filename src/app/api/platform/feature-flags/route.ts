@@ -117,3 +117,70 @@ export async function PATCH(req: NextRequest) {
         );
     }
 }
+
+// POST create a new feature flag (platform admin only)
+export async function POST(req: NextRequest) {
+    try {
+        let supabase;
+
+        try {
+            supabase = createTokenClient(req);
+        } catch (error: any) {
+            if (error?.message === "MISSING_BEARER_TOKEN") {
+                return NextResponse.json({ error: "Authorization token required" }, { status: 401 });
+            }
+            throw error;
+        }
+
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) {
+            return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
+        }
+
+        // Verify platform admin
+        const { data: currentUser } = await supabase
+            .from("users")
+            .select("is_platform_admin")
+            .eq("id", user.id)
+            .single();
+
+        if (!currentUser?.is_platform_admin) {
+            return NextResponse.json({ error: "Unauthorized - Platform admin access required" }, { status: 403 });
+        }
+
+        const payload = await req.json();
+        const { key, name, enabled, value, description } = payload;
+
+        if (!key || !name) {
+            return NextResponse.json({ error: "Feature flag key and name are required" }, { status: 400 });
+        }
+
+        // Use supabaseAdmin to bypass RLS
+        const { data, error: dbError } = await supabaseAdmin
+            .from("feature_flags")
+            .insert({
+                key,
+                name,
+                enabled: enabled !== false,
+                value: value !== undefined ? value : null,
+                description: description || null,
+            })
+            .select()
+            .single();
+
+        if (dbError) {
+            if (dbError.code === "23505") {
+                return NextResponse.json({ error: "Feature flag with this key already exists" }, { status: 400 });
+            }
+            throw dbError;
+        }
+
+        return NextResponse.json({ data }, { status: 201 });
+    } catch (error: any) {
+        console.error("Error creating feature flag:", error);
+        return NextResponse.json(
+            { error: error?.message || "Internal server error" },
+            { status: 500 }
+        );
+    }
+}

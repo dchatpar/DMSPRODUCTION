@@ -19,7 +19,11 @@ import {
     Signature,
     UserPlus,
     Plus,
+    Star,
+    ClipboardCheck
 } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
+import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
 
 interface TestDrive {
     id: string;
@@ -30,11 +34,13 @@ interface TestDrive {
     driver_license_expiry: string;
     driver_license_image_url: string | null;
     signature_image_url: string | null;
-    start_time: string;
+    start_time: string | null;
+    scheduled_date?: string | null;
     end_time: string | null;
     salesperson_id: string | null;
     notes: string | null;
     status: string;
+    outcome?: string | null;
     created_at: string;
     updated_at: string;
 }
@@ -50,8 +56,10 @@ export default function TestDriveFormModal({
     mode,
     testDrive,
     onClose,
-    onSuccess,
+    onSuccess
 }: TestDriveFormModalProps) {
+    useOverlayDismiss(onClose);
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [customers, setCustomers] = useState<any[]>([]);
@@ -77,8 +85,24 @@ export default function TestDriveFormModal({
         end_time: "",
         salesperson_id: "",
         notes: "",
-        status: "Scheduled",
+        status: "Scheduled"
     });
+    const [interestStars, setInterestStars] = useState(0);
+    const [checklist, setChecklist] = useState({
+        licenseVerified: false,
+        insuranceOk: false,
+        walkaroundDone: false,
+        keysReturned: false,
+    });
+
+    const PRE_DRIVE = [
+        { key: "licenseVerified" as const, label: "Driver's license verified" },
+        { key: "insuranceOk" as const, label: "Insurance / liability acknowledged" },
+        { key: "walkaroundDone" as const, label: "Vehicle walkaround complete" },
+    ];
+    const POST_DRIVE = [
+        { key: "keysReturned" as const, label: "Keys returned / vehicle inspected" },
+    ];
 
     useEffect(() => {
         fetchFormData();
@@ -94,36 +118,33 @@ export default function TestDriveFormModal({
                 driver_license_expiry: testDrive.driver_license_expiry,
                 driver_license_image_url: testDrive.driver_license_image_url || "",
                 signature_image_url: testDrive.signature_image_url || "",
-                start_time: testDrive.start_time.slice(0, 16),
+                start_time: testDrive.start_time ? testDrive.start_time.slice(0, 16) : "",
                 end_time: testDrive.end_time ? testDrive.end_time.slice(0, 16) : "",
                 salesperson_id: testDrive.salesperson_id || "",
                 notes: testDrive.notes || "",
-                status: testDrive.status || "Scheduled",
+                status: testDrive.status || "Scheduled"
             });
             if (testDrive.customer_id) {
                 setCustomerType("customer");
             } else if (testDrive.lead_id) {
                 setCustomerType("lead");
             }
+            const outcome = (testDrive as TestDrive).outcome || "";
+            const m = /interest:(\d)/i.exec(outcome);
+            if (m) setInterestStars(Number(m[1]) || 0);
         }
     }, [mode, testDrive]);
 
     const fetchFormData = async () => {
         try {
-            const token = localStorage.getItem("access_token");
-
             const [customersRes, leadsRes, vehiclesRes, usersRes] = await Promise.all([
                 fetch("/api/customers?limit=1000", {
-                    headers: { Authorization: `Bearer ${token}` },
                 }),
                 fetch("/api/leads?limit=1000", {
-                    headers: { Authorization: `Bearer ${token}` },
                 }),
                 fetch("/api/vehicles?limit=1000&status=Active", {
-                    headers: { Authorization: `Bearer ${token}` },
                 }),
                 fetch("/api/users?limit=1000", {
-                    headers: { Authorization: `Bearer ${token}` },
                 }),
             ]);
 
@@ -149,7 +170,7 @@ export default function TestDriveFormModal({
         const { name, value } = e.target;
         setFormData((prev) => ({
             ...prev,
-            [name]: value,
+            [name]: value
         }));
         // Clear error when user types
         if (errors[name]) {
@@ -176,14 +197,11 @@ export default function TestDriveFormModal({
         setError(null);
 
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch("/api/customers", {
                 method: "POST",
                 headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify(newCustomer),
+                    "Content-Type": "application/json" },
+                body: JSON.stringify(newCustomer)
             });
 
             if (!response.ok) {
@@ -195,7 +213,6 @@ export default function TestDriveFormModal({
 
             // Refresh customers list
             const customersRes = await fetch("/api/customers?limit=1000", {
-                headers: { Authorization: `Bearer ${token}` },
             });
             const customersData = await customersRes.json();
             setCustomers(customersData.data || []);
@@ -265,7 +282,6 @@ export default function TestDriveFormModal({
         setError(null);
 
         try {
-            const token = localStorage.getItem("access_token");
             const url = mode === "add" ? "/api/test-drives" : `/api/test-drives/${testDrive?.id}`;
             const method = mode === "add" ? "POST" : "PUT";
 
@@ -275,7 +291,7 @@ export default function TestDriveFormModal({
                 driver_license_number: formData.driver_license_number,
                 driver_license_expiry: formData.driver_license_expiry,
                 start_time: formData.start_time,
-                status: formData.status || "Scheduled",
+                status: formData.status || "Scheduled"
             };
 
             // Only add optional fields if they have values
@@ -301,13 +317,22 @@ export default function TestDriveFormModal({
                 payload.salesperson_id = formData.salesperson_id;
             }
 
+            const checkedItems = [...PRE_DRIVE, ...POST_DRIVE]
+                .filter((item) => checklist[item.key])
+                .map((item) => `✓ ${item.label}`);
+            if (checkedItems.length > 0) {
+                const block = `Checklist:\n${checkedItems.join("\n")}`;
+                payload.notes = payload.notes ? `${payload.notes}\n\n${block}` : block;
+            }
+            if (interestStars > 0 || formData.status === "Completed") {
+                payload.outcome = interestStars > 0 ? `interest:${interestStars}` : null;
+            }
+
             const response = await fetch(url, {
                 method,
                 headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify(payload),
+                    "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
             });
 
             if (!response.ok) {
@@ -760,6 +785,70 @@ export default function TestDriveFormModal({
                                         <option value="Cancelled">Cancelled</option>
                                         <option value="No Show">No Show</option>
                                     </select>
+                                </div>
+                            </div>
+
+                            {/* Pre / post checklist + interest */}
+                            <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-4 space-y-3">
+                                <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
+                                    <ClipboardCheck className="w-4 h-4 text-blue-600" />
+                                    Pre-drive checklist
+                                </div>
+                                <div className="grid gap-2 sm:grid-cols-2">
+                                    {PRE_DRIVE.map((item) => (
+                                        <label key={item.key} className="flex items-center gap-2 text-sm text-gray-700">
+                                            <input
+                                                type="checkbox"
+                                                checked={checklist[item.key]}
+                                                onChange={(e) =>
+                                                    setChecklist((c) => ({ ...c, [item.key]: e.target.checked }))
+                                                }
+                                                className="rounded border-gray-300"
+                                            />
+                                            {item.label}
+                                        </label>
+                                    ))}
+                                </div>
+                                <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 pt-2 border-t border-gray-200">
+                                    Post-drive
+                                </div>
+                                {POST_DRIVE.map((item) => (
+                                    <label key={item.key} className="flex items-center gap-2 text-sm text-gray-700">
+                                        <input
+                                            type="checkbox"
+                                            checked={checklist[item.key]}
+                                            onChange={(e) =>
+                                                setChecklist((c) => ({ ...c, [item.key]: e.target.checked }))
+                                            }
+                                            className="rounded border-gray-300"
+                                        />
+                                        {item.label}
+                                    </label>
+                                ))}
+                                <div>
+                                    <p className="text-sm font-medium text-gray-700 mb-1.5">Customer interest</p>
+                                    <div className="flex items-center gap-1">
+                                        {[1, 2, 3, 4, 5].map((n) => (
+                                            <button
+                                                key={n}
+                                                type="button"
+                                                onClick={() => setInterestStars(interestStars === n ? 0 : n)}
+                                                className="p-1 rounded hover:bg-white"
+                                                title={`${n} star${n === 1 ? "" : "s"}`}
+                                            >
+                                                <Star
+                                                    className={`w-5 h-5 ${
+                                                        n <= interestStars
+                                                            ? "fill-amber-400 text-amber-400"
+                                                            : "text-gray-300"
+                                                    }`}
+                                                />
+                                            </button>
+                                        ))}
+                                        <span className="ml-2 text-xs text-gray-500">
+                                            {interestStars ? `${interestStars}/5` : "Not rated"}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
 

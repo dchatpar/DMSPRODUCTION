@@ -12,8 +12,9 @@ import {
     AlertCircle,
     CheckCircle,
     Shield,
-    Calendar,
+    Calendar
 } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
 
 interface UserProfile {
     id: string;
@@ -42,7 +43,7 @@ export default function ProfilePage() {
         phone: "",
         currentPassword: "",
         newPassword: "",
-        confirmPassword: "",
+        confirmPassword: ""
     });
 
     useEffect(() => {
@@ -53,12 +54,9 @@ export default function ProfilePage() {
         try {
             setLoading(true);
             setError(null);
-
-            const token = localStorage.getItem("access_token");
             const response = await fetch("/api/profile", {
                 headers: {
-                    Authorization: `Bearer ${token}`,
-                },
+                }
             });
 
             if (!response.ok) {
@@ -73,7 +71,7 @@ export default function ProfilePage() {
                 phone: data.data.phone || "",
                 currentPassword: "",
                 newPassword: "",
-                confirmPassword: "",
+                confirmPassword: ""
             });
             if (data.data.avatar) {
                 setAvatarPreview(data.data.avatar);
@@ -133,11 +131,9 @@ export default function ProfilePage() {
         setSuccessMessage(null);
 
         try {
-            const token = localStorage.getItem("access_token");
-
             const payload: Record<string, any> = {
                 full_name: formData.full_name,
-                phone: formData.phone || null,
+                phone: formData.phone || null
             };
 
             // Add avatar if changed
@@ -153,10 +149,8 @@ export default function ProfilePage() {
             const response = await fetch("/api/profile", {
                 method: "PATCH",
                 headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify(payload),
+                    "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
             });
 
             if (!response.ok) {
@@ -169,7 +163,7 @@ export default function ProfilePage() {
                 ...prev,
                 currentPassword: "",
                 newPassword: "",
-                confirmPassword: "",
+                confirmPassword: ""
             }));
 
             // Clear success message after 3 seconds
@@ -191,7 +185,7 @@ export default function ProfilePage() {
         return new Date(date).toLocaleDateString("en-US", {
             year: "numeric",
             month: "long",
-            day: "numeric",
+            day: "numeric"
         });
     };
 

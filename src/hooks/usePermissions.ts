@@ -1,5 +1,6 @@
 // src/hooks/usePermissions.ts
 import { useState, useEffect } from "react";
+import { apiFetch } from "@/src/lib/fetch";
 
 interface UsePermissionsResult {
   userPermissions: string[];
@@ -21,10 +22,7 @@ export function usePermissions(): UsePermissionsResult {
   useEffect(() => {
     const fetchPermissions = async () => {
       try {
-        const token = localStorage.getItem("access_token");
-        const response = await fetch("/api/me", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const response = await fetch("/api/me");
         if (response.ok) {
           const data = await response.json();
           setUserPermissions(data.data.user_permissions || []);

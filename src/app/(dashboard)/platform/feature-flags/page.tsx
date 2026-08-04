@@ -12,8 +12,9 @@ import {
     ToggleLeft,
     ToggleRight,
     RefreshCw,
-    Shield,
+    Shield
 } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
 
 interface FeatureFlag {
     id: string;
@@ -46,15 +47,8 @@ export default function FeatureFlagsPage() {
             setLoading(true);
             setError(null);
 
-            const token = localStorage.getItem("access_token");
-            if (!token) {
-                window.location.href = "/login";
-                return;
-            }
-
             // Check if user is platform admin
             const meResponse = await fetch("/api/me", {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!meResponse.ok) throw new Error("Failed to get user info");
@@ -65,7 +59,6 @@ export default function FeatureFlagsPage() {
             }
 
             const response = await fetch("/api/platform/feature-flags", {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!response.ok) throw new Error("Failed to fetch feature flags");
@@ -84,15 +77,11 @@ export default function FeatureFlagsPage() {
         try {
             setUpdating(flag.key);
             setSuccess(null);
-
-            const token = localStorage.getItem("access_token");
             const response = await fetch("/api/platform/feature-flags", {
                 method: "PATCH",
                 headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({ key: flag.key, enabled: !flag.enabled }),
+                    "Content-Type": "application/json" },
+                body: JSON.stringify({ key: flag.key, enabled: !flag.enabled })
             });
 
             if (!response.ok) {

@@ -1,6 +1,13 @@
 // app/api/invoices/[id]/route.ts
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
+import { assertOwnershipOrDeny, pickAllowed, requireDealershipAccess } from "@/src/lib/auth-helpers";
+
+const INVOICE_ALLOWED_FIELDS = [
+    "customer_id", "deal_id", "package_name", "tax_rate", "status",
+    "due_date", "notes", "line_items", "invoice_number", "invoice_date",
+    "payment_amount",
+] as const;
 
 // GET single invoice
 export async function GET(
@@ -8,8 +15,15 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -22,18 +36,29 @@ export async function GET(
             throw error;
         }
 
-        // Verify user is authenticated
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
-        }
-
         const { id } = await params;
 
+        // Narrow fetch first to assert ownership
+        const { data: existing, error: existingError } = await supabase
+            .from("invoices")
+            .select("id, dealership_id")
+            .eq("id", id)
+            .single();
+
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Invoice not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
+        }
+
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
+
+        // Re-fetch the full row with relations now that ownership is verified
         const { data, error: dbError } = await supabase
             .from("invoices")
             .select(`
@@ -69,8 +94,15 @@ export async function PUT(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -81,16 +113,6 @@ export async function PUT(
                 );
             }
             throw error;
-        }
-
-        // Verify user is authenticated
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
         }
 
         const { id } = await params;
@@ -116,26 +138,44 @@ export async function PUT(
             );
         }
 
+        // Assert ownership before any write
+        const { data: existing, error: existingError } = await supabase
+            .from("invoices")
+            .select("id, dealership_id")
+            .eq("id", id)
+            .single();
+
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Invoice not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
+        }
+
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
+
         // Recalculate tax and total
         const taxRate = payload.tax_rate ?? 13;
         const paymentAmount = parseFloat(payload.payment_amount) || 0;
         const taxAmount = (paymentAmount * taxRate) / 100;
         const total = paymentAmount + taxAmount;
 
+        // Whitelist the update payload and block dealership_id changes
+        const safePayload = pickAllowed(payload, INVOICE_ALLOWED_FIELDS);
+        delete (safePayload as any).dealership_id;
+
         const { data, error: dbError } = await supabase
             .from("invoices")
             .update({
-                invoice_number: payload.invoice_number,
-                customer_id: payload.customer_id,
-                invoice_date: payload.invoice_date,
-                due_date: payload.due_date,
-                package_name: payload.package_name,
+                ...safePayload,
                 payment_amount: paymentAmount,
                 tax_rate: taxRate,
                 tax_amount: taxAmount,
                 total: total,
-                status: payload.status,
-                notes: payload.notes,
             })
             .eq("id", id)
             .select(`
@@ -170,8 +210,15 @@ export async function PATCH(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -182,16 +229,6 @@ export async function PATCH(
                 );
             }
             throw error;
-        }
-
-        // Verify user is authenticated
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
         }
 
         const { id } = await params;
@@ -208,14 +245,48 @@ export async function PATCH(
             }
         }
 
+        // Assert ownership before any write (include tax_rate for recalc)
+        const { data: existing, error: existingError } = await supabase
+            .from("invoices")
+            .select("id, dealership_id, tax_rate, payment_amount")
+            .eq("id", id)
+            .single();
+
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Invoice not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
+        }
+
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
+
+        // Whitelist the update payload and block dealership_id changes
+        const safePayload = pickAllowed(payload, INVOICE_ALLOWED_FIELDS);
+        delete (safePayload as any).dealership_id;
+
         // If payment_amount is being updated, recalculate tax and total
-        let updates = { ...payload };
+        const updates: Record<string, unknown> = { ...safePayload };
         if (payload.payment_amount !== undefined) {
             const paymentAmount = parseFloat(payload.payment_amount) || 0;
-            const taxRate = payload.tax_rate ?? 13;
+            const taxRate =
+                payload.tax_rate !== undefined && payload.tax_rate !== null
+                    ? parseFloat(payload.tax_rate)
+                    : Number(existing.tax_rate) || 13;
+            updates.tax_rate = taxRate;
             updates.tax_amount = (paymentAmount * taxRate) / 100;
-            updates.total = paymentAmount + updates.tax_amount;
+            updates.total = paymentAmount + (updates.tax_amount as number);
             updates.payment_amount = paymentAmount;
+        } else if (payload.tax_rate !== undefined && payload.tax_rate !== null) {
+            const paymentAmount = Number(existing.payment_amount) || 0;
+            const taxRate = parseFloat(payload.tax_rate);
+            updates.tax_rate = taxRate;
+            updates.tax_amount = (paymentAmount * taxRate) / 100;
+            updates.total = paymentAmount + (updates.tax_amount as number);
         }
 
         const { data, error: dbError } = await supabase
@@ -254,8 +325,15 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -268,17 +346,27 @@ export async function DELETE(
             throw error;
         }
 
-        // Verify user is authenticated
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        const { id } = await params;
 
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
+        // Assert ownership before any write
+        const { data: existing, error: existingError } = await supabase
+            .from("invoices")
+            .select("id, dealership_id")
+            .eq("id", id)
+            .single();
+
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Invoice not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
         }
 
-        const { id } = await params;
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
 
         const { error: dbError } = await supabase
             .from("invoices")

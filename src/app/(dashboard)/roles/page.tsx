@@ -11,10 +11,12 @@ import {
     AlertCircle,
     CheckCircle,
     Lock,
-    Unlock,
+    Unlock
 } from "lucide-react";
 import RoleModal from "@/src/components/RoleModal";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
+import { apiFetch } from "@/src/lib/fetch";
+import { toast } from "@/src/lib/toast";
 
 interface Role {
     id: string;
@@ -56,22 +58,14 @@ export default function RolesPage() {
             setLoading(true);
             setError(null);
 
-            const token = localStorage.getItem("access_token");
-            if (!token) {
-                window.location.href = "/login";
-                return;
-            }
-
             const response = await fetch("/api/roles", {
                 headers: {
-                    Authorization: `Bearer ${token}`,
-                },
+                }
             });
 
             if (!response.ok) {
                 if (response.status === 401 || response.status === 403) {
-                    localStorage.removeItem("access_token");
-                    localStorage.removeItem("refresh_token");
+                    // Session is in HttpOnly cookies, not localStorage. Just redirect.
                     window.location.href = "/login";
                     return;
                 }
@@ -111,12 +105,10 @@ export default function RolesPage() {
         setConfirmDialogData((prev) => ({ ...prev, loading: true }));
 
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch(`/api/roles/${confirmDialogData.role.id}`, {
                 method: "DELETE",
                 headers: {
-                    Authorization: `Bearer ${token}`,
-                },
+                }
             });
 
             if (!response.ok) {
@@ -128,7 +120,7 @@ export default function RolesPage() {
             fetchRoles();
         } catch (error: any) {
             console.error("Error deleting role:", error);
-            alert(error.message || "Failed to delete role");
+            toast.error(error.message || "Failed to delete role");
         } finally {
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
@@ -140,7 +132,7 @@ export default function RolesPage() {
             Manager: "bg-blue-100 text-blue-700",
             Salesperson: "bg-orange-100 text-orange-700",
             Staff: "bg-green-100 text-green-700",
-            Custom: "bg-gray-100 text-gray-700",
+            Custom: "bg-gray-100 text-gray-700"
         };
         return icons[roleName] || "bg-gray-100 text-gray-700";
     };

@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Head from "next/head";
 import {
     Scan,
-    Car,
     Calculator,
     Search,
     ArrowRight,
@@ -13,7 +13,7 @@ import {
 import OCRScannerModal from "@/src/components/OCRScannerModal";
 import VINLookupModal from "@/src/components/VINLookupModal";
 import FinanceCalculatorModal from "@/src/components/FinanceCalculatorModal";
-import VehicleFormModal from "@/src/components/VehicleFormModal";
+import { PENDING_VIN_SPECS_KEY } from "@/src/lib/pending-vin-specs";
 
 interface VehicleSpec {
     vin: string;
@@ -40,9 +40,20 @@ interface Tool {
 }
 
 export default function ToolsPage() {
+    const router = useRouter();
     const [activeModal, setActiveModal] = useState<string | null>(null);
-    const [showAddVehicle, setShowAddVehicle] = useState(false);
     const [pendingVinSpecs, setPendingVinSpecs] = useState<VehicleSpec | null>(null);
+
+    const goToIntake = (specs?: VehicleSpec | null) => {
+        if (specs) {
+            try {
+                sessionStorage.setItem(PENDING_VIN_SPECS_KEY, JSON.stringify(specs));
+            } catch {
+                // ignore
+            }
+        }
+        router.push("/inventory/add");
+    };
 
     const tools: Tool[] = [
         {
@@ -78,42 +89,40 @@ export default function ToolsPage() {
             </Head>
 
             <div className="p-6">
-                {/* Header */}
                 <div className="mb-8">
-                    <h1 className="text-2xl font-bold text-gray-900">Dealership Tools</h1>
-                    <p className="text-sm text-gray-500 mt-1">
+                    <h1 className="text-2xl font-bold text-foreground">Dealership Tools</h1>
+                    <p className="mt-1 text-sm text-muted-foreground">
                         Access automation tools to streamline your workflow
                     </p>
                 </div>
 
-                {/* Tools Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
                     {tools.map((tool) => {
                         const Icon = tool.icon;
                         return (
                             <button
                                 key={tool.id}
                                 onClick={tool.onClick}
-                                className="group relative bg-white rounded-2xl border border-gray-200 p-6 hover:shadow-xl hover:border-transparent transition-all duration-300 text-left"
+                                className="group relative rounded-2xl border border-border bg-card p-6 text-left transition-all duration-300 hover:border-transparent hover:shadow-xl"
                             >
-                                <div className={`absolute inset-0 bg-gradient-to-br ${tool.gradient} rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300`} />
-
+                                <div
+                                    className={`absolute inset-0 rounded-2xl bg-gradient-to-br ${tool.gradient} opacity-0 transition-opacity duration-300 group-hover:opacity-100`}
+                                />
                                 <div className="relative z-10">
-                                    <div className={`inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br ${tool.gradient} mb-4 group-hover:bg-white/20 transition-colors`}>
-                                        <Icon className="w-7 h-7 text-white" />
+                                    <div
+                                        className={`mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br ${tool.gradient} transition-colors group-hover:bg-white/20`}
+                                    >
+                                        <Icon className="h-7 w-7 text-white" />
                                     </div>
-
-                                    <h3 className="text-lg font-semibold text-gray-900 group-hover:text-white mb-2 transition-colors">
+                                    <h3 className="mb-2 text-lg font-semibold text-foreground transition-colors group-hover:text-white">
                                         {tool.name}
                                     </h3>
-
-                                    <p className="text-sm text-gray-500 group-hover:text-white/80 transition-colors">
+                                    <p className="text-sm text-muted-foreground transition-colors group-hover:text-white/80">
                                         {tool.description}
                                     </p>
-
-                                    <div className="mt-4 flex items-center gap-1 text-sm font-medium text-gray-400 group-hover:text-white transition-colors">
+                                    <div className="mt-4 flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors group-hover:text-white">
                                         <span>Open tool</span>
-                                        <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                                        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
                                     </div>
                                 </div>
                             </button>
@@ -121,15 +130,14 @@ export default function ToolsPage() {
                     })}
                 </div>
 
-                {/* Pending VIN Specs Banner */}
                 {pendingVinSpecs && (
-                    <div className="mt-8 p-6 bg-gradient-to-r from-violet-500 to-purple-600 rounded-2xl shadow-xl">
-                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                            <div className="text-white">
-                                <h3 className="text-lg font-semibold mb-1">
+                    <div className="mt-8 rounded-2xl bg-gradient-to-r from-primary to-primary-600 p-6 shadow-xl">
+                        <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+                            <div className="text-primary-foreground">
+                                <h3 className="mb-1 text-lg font-semibold">
                                     {pendingVinSpecs.year} {pendingVinSpecs.make} {pendingVinSpecs.model}
                                 </h3>
-                                <p className="text-violet-200 text-sm">
+                                <p className="text-sm text-primary-foreground/80">
                                     VIN: {pendingVinSpecs.vin}
                                     {pendingVinSpecs.trim && ` • ${pendingVinSpecs.trim}`}
                                     {pendingVinSpecs.engine && ` • ${pendingVinSpecs.engine}`}
@@ -141,16 +149,16 @@ export default function ToolsPage() {
                                         setPendingVinSpecs(null);
                                         setActiveModal("vin");
                                     }}
-                                    className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-colors flex items-center gap-2"
+                                    className="flex items-center gap-2 rounded-lg bg-white/20 px-4 py-2 text-primary-foreground transition-colors hover:bg-white/30"
                                 >
-                                    <Search className="w-4 h-4" />
+                                    <Search className="h-4 w-4" />
                                     Search Another
                                 </button>
                                 <button
-                                    onClick={() => setShowAddVehicle(true)}
-                                    className="px-4 py-2 bg-white text-violet-700 rounded-lg hover:bg-violet-50 transition-colors flex items-center gap-2 font-medium"
+                                    onClick={() => goToIntake(pendingVinSpecs)}
+                                    className="flex items-center gap-2 rounded-lg bg-card px-4 py-2 font-medium text-primary transition-colors hover:bg-muted"
                                 >
-                                    <Plus className="w-4 h-4" />
+                                    <Plus className="h-4 w-4" />
                                     Add to Inventory
                                 </button>
                             </div>
@@ -159,20 +167,6 @@ export default function ToolsPage() {
                 )}
             </div>
 
-            {/* Add Vehicle Modal */}
-            {showAddVehicle && (
-                <VehicleFormModal
-                    mode="add"
-                    onClose={() => setShowAddVehicle(false)}
-                    onSuccess={() => {
-                        setShowAddVehicle(false);
-                        setPendingVinSpecs(null);
-                    }}
-                    pendingVinSpecs={pendingVinSpecs}
-                />
-            )}
-
-            {/* Modals */}
             {activeModal === "ocr" && (
                 <OCRScannerModal
                     onClose={() => setActiveModal(null)}
@@ -185,9 +179,8 @@ export default function ToolsPage() {
                 <VINLookupModal
                     onClose={() => setActiveModal(null)}
                     onVinFound={(specs) => {
-                        console.log("Tools page received VIN specs:", specs);
                         setPendingVinSpecs(specs);
-                        setShowAddVehicle(true);
+                        goToIntake(specs);
                     }}
                     onCarfaxRetrieved={(report) => console.log("Carfax Report:", report)}
                 />

@@ -1,12 +1,27 @@
 // Enhanced Single Task API Route
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
+import { assertOwnershipOrDeny, pickAllowed, requireDealershipAccess } from "@/src/lib/auth-helpers";
+
+const TASK_ALLOWED_FIELDS = [
+    "title", "description", "status", "priority", "due_date", "assigned_to",
+    "customer_id", "lead_id", "deal_id",
+    // Schema-actual columns used by the tasks table
+    "reminder_at", "notes", "tags", "links",
+] as const;
 
 // GET single task with all related data
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -17,10 +32,23 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         }
 
         const { id } = await params;
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        if (authError || !user) {
-            return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
+
+        // Narrow fetch first to assert ownership
+        const { data: existing, error: existingError } = await supabase
+            .from("tasks")
+            .select("id, dealership_id, assigned_to")
+            .eq("id", id)
+            .single();
+
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json({ error: "Task not found" }, { status: 404 });
+            }
+            throw existingError;
         }
+
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
 
         // Get task with relations
         const { data: task, error: dbError } = await supabase
@@ -90,8 +118,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 // PATCH update task
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -102,36 +137,41 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         }
 
         const { id } = await params;
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        if (authError || !user) {
-            return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
-        }
-
         const payload = await req.json();
 
-        // Get old task for activity logging
-        const { data: oldTask } = await supabase
+        // Assert ownership before any write
+        const { data: existing, error: existingError } = await supabase
             .from("tasks")
             .select("*")
             .eq("id", id)
             .single();
 
-        if (!oldTask) return NextResponse.json({ error: "Task not found" }, { status: 404 });
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json({ error: "Task not found" }, { status: 404 });
+            }
+            throw existingError;
+        }
 
-        const updateData: any = {};
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
 
-        if (payload.title !== undefined) updateData.title = payload.title;
-        if (payload.description !== undefined) updateData.description = payload.description;
-        if (payload.assigned_to !== undefined) updateData.assigned_to = payload.assigned_to;
-        if (payload.due_date !== undefined) updateData.due_date = payload.due_date ? new Date(payload.due_date).toISOString() : null;
-        if (payload.reminder_at !== undefined) updateData.reminder_at = payload.reminder_at ? new Date(payload.reminder_at).toISOString() : null;
-        if (payload.priority !== undefined) updateData.priority = payload.priority;
-        if (payload.status !== undefined) updateData.status = payload.status;
-        if (payload.notes !== undefined) updateData.notes = payload.notes;
-        if (payload.tags !== undefined) updateData.tags = payload.tags;
+        // Whitelist the update payload and block dealership_id changes
+        const safePayload = pickAllowed(payload, TASK_ALLOWED_FIELDS);
+        delete (safePayload as any).dealership_id;
+
+        // Build update data
+        const updateData: any = { ...safePayload };
+
+        if (payload.due_date !== undefined) {
+            updateData.due_date = payload.due_date ? new Date(payload.due_date).toISOString() : null;
+        }
+        if (payload.reminder_at !== undefined) {
+            updateData.reminder_at = payload.reminder_at ? new Date(payload.reminder_at).toISOString() : null;
+        }
 
         // Handle completion
-        if (payload.status === 'Completed' && oldTask.status !== 'Completed') {
+        if (payload.status === 'Completed' && existing.status !== 'Completed') {
             updateData.completed_at = new Date().toISOString();
         } else if (payload.status && payload.status !== 'Completed') {
             updateData.completed_at = null;
@@ -165,22 +205,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
         // Log activity
         const changes: any = {};
-        if (payload.status !== undefined && payload.status !== oldTask.status) {
-            changes.status_change = { from: oldTask.status, to: payload.status };
+        if (payload.status !== undefined && payload.status !== existing.status) {
+            changes.status_change = { from: existing.status, to: payload.status };
         }
-        if (payload.assigned_to !== undefined && payload.assigned_to !== oldTask.assigned_to) {
-            changes.assignment_change = { from: oldTask.assigned_to, to: payload.assigned_to };
+        if (payload.assigned_to !== undefined && payload.assigned_to !== existing.assigned_to) {
+            changes.assignment_change = { from: existing.assigned_to, to: payload.assigned_to };
         }
-        if (payload.priority !== undefined && payload.priority !== oldTask.priority) {
-            changes.priority_change = { from: oldTask.priority, to: payload.priority };
+        if (payload.priority !== undefined && payload.priority !== existing.priority) {
+            changes.priority_change = { from: existing.priority, to: payload.priority };
         }
 
         if (Object.keys(changes).length > 0) {
             await supabase.rpc("log_task_activity", {
                 p_task_id: id,
-                p_user_id: user.id,
+                p_user_id: auth.user?.id,
                 p_action: "updated",
-                p_old_value: JSON.stringify(oldTask),
+                p_old_value: JSON.stringify(existing),
                 p_new_value: JSON.stringify(changes),
             });
         }
@@ -195,8 +235,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 // DELETE task
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        let supabase;
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -207,25 +254,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
         }
 
         const { id } = await params;
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        if (authError || !user) {
-            return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
-        }
 
-        // Get current user's permissions
-        const { data: currentUser } = await supabase
-            .from("users")
-            .select("role, dealership_id, is_platform_admin, user_permissions")
-            .eq("id", user.id)
-            .single();
-
-        if (!currentUser) {
-            return NextResponse.json({ error: "User profile not found" }, { status: 404 });
-        }
-
-        const userRole = currentUser.role;
-        const userPerms = currentUser.user_permissions || [];
-        const isPlatformAdmin = currentUser.is_platform_admin;
+        const userRole = auth.profile.role;
+        const userPerms = (auth.profile as any).user_permissions || [];
+        const isPlatformAdmin = auth.profile.is_platform_admin;
 
         // Check tasks:delete permission
         const canDelete = isPlatformAdmin ||
@@ -240,6 +272,23 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
                 { status: 403 }
             );
         }
+
+        // Assert ownership before any write
+        const { data: existing, error: existingError } = await supabase
+            .from("tasks")
+            .select("id, dealership_id, assigned_to")
+            .eq("id", id)
+            .single();
+
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json({ error: "Task not found" }, { status: 404 });
+            }
+            throw existingError;
+        }
+
+        const deny = assertOwnershipOrDeny(existing, auth.profile);
+        if (deny) return deny;
 
         // Delete related records first (cascades should handle this, but being explicit)
         await supabase.from("task_reminders").delete().eq("task_id", id);

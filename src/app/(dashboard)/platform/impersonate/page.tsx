@@ -9,8 +9,9 @@ import {
     AlertCircle,
     CheckCircle,
     Shield,
-    LogOut,
+    LogOut
 } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
 
 interface User {
     id: string;
@@ -41,15 +42,8 @@ export default function ImpersonatePage() {
             setLoading(true);
             setError(null);
 
-            const token = localStorage.getItem("access_token");
-            if (!token) {
-                window.location.href = "/login";
-                return;
-            }
-
             // Check if user is platform admin
             const meResponse = await fetch("/api/me", {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!meResponse.ok) throw new Error("Failed to get user info");
@@ -60,7 +54,6 @@ export default function ImpersonatePage() {
             }
 
             const response = await fetch("/api/users?limit=50", {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!response.ok) throw new Error("Failed to fetch users");
@@ -84,9 +77,7 @@ export default function ImpersonatePage() {
 
         setSearching(true);
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch(`/api/users?q=${encodeURIComponent(search)}&limit=20`, {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!response.ok) throw new Error("Failed to search users");
@@ -107,14 +98,11 @@ export default function ImpersonatePage() {
         setImpersonationResult(null);
 
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch("/api/platform/impersonate", {
                 method: "POST",
                 headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({ targetUserId: userId }),
+                    "Content-Type": "application/json" },
+                body: JSON.stringify({ targetUserId: userId })
             });
 
             if (!response.ok) {

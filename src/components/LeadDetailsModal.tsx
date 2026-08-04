@@ -1,20 +1,25 @@
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Edit, FileText, Loader2, Mail, Phone, PhoneCall } from "lucide-react";
+import { RecordDrawer } from "@/src/components/ui/RecordDrawer";
+import { RecordHeader } from "@/src/components/ui/RecordHeader";
 import {
-    X,
-    User,
-    Mail,
-    Phone,
-    Calendar,
-    Edit,
-    Users,
-    Clock,
-    CheckCircle,
-    XCircle,
-    Loader2,
-    Car,
-    Building,
-} from "lucide-react";
+    PropertyList,
+    PropertyRow,
+    PropertyEmpty,
+    RecordNotes,
+} from "@/src/components/ui/PropertyList";
+import { ActivityTimeline } from "@/src/components/ui/ActivityTimeline";
+import { StatusBadge } from "@/src/components/ui/StatusBadge";
+import { Button } from "@/src/components/ui/Button";
+import { Badge } from "@/src/components/ui/Badge";
+import { LeadEmailSequencePanel } from "@/src/components/LeadEmailSequencePanel";
+import { apiFetch } from "@/src/lib/fetch";
+import { toast } from "@/src/lib/toast";
+import { scoreLead, temperatureClass } from "@/src/lib/business/lead-score";
+import { cn } from "@/src/lib/utils";
 
 interface Lead {
     id: string;
@@ -28,6 +33,9 @@ interface Lead {
     last_engagement: string;
     created_at: string;
     updated_at: string;
+    score?: number | null;
+    temperature?: string | null;
+    converted_deal_id?: string | null;
     customer: {
         id: string;
         name: string;
@@ -53,218 +61,300 @@ interface LeadDetailsModalProps {
     lead: Lead;
     onClose: () => void;
     onEdit: () => void;
+    onRefresh?: () => void;
     userRole?: string;
     userPermissions?: string[];
+}
+
+/** Surface a year+make+model string from notes when interest vehicle is unset. */
+function parseVehicleFromNotes(notes: string | null): string | null {
+    if (!notes?.trim()) return null;
+    const match = notes.match(
+        /\b((?:19|20)\d{2})\s+([A-Za-z][A-Za-z0-9\-]+)\s+([A-Za-z0-9][A-Za-z0-9\-]*(?:\s+[A-Za-z0-9][A-Za-z0-9\-]*){0,3})\b/
+    );
+    if (!match) return null;
+    return `${match[1]} ${match[2]} ${match[3]}`.replace(/\s+/g, " ").trim();
+}
+
+function formatDateTime(date: string) {
+    return new Date(date).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
 }
 
 export default function LeadDetailsModal({
     lead,
     onClose,
     onEdit,
+    onRefresh,
     userRole,
     userPermissions = [],
 }: LeadDetailsModalProps) {
-    const canEdit = userRole === "Admin" || userPermissions.includes("leads:write");
-    const getStatusColor = (status: string) => {
-        const colors: Record<string, string> = {
-            "Not Started": "bg-gray-100 text-gray-800",
-            "In Progress": "bg-blue-100 text-blue-800",
-            Qualified: "bg-green-100 text-green-800",
-            Closed: "bg-purple-100 text-purple-800",
-            Lost: "bg-red-100 text-red-800",
-        };
-        return colors[status] || "bg-gray-100 text-gray-800";
-    };
+    const router = useRouter();
+    const [converting, setConverting] = useState(false);
+    const [loggingCall, setLoggingCall] = useState(false);
 
-    const getStatusIcon = (status: string) => {
-        switch (status) {
-            case "Not Started":
-                return <Clock className="w-5 h-5 text-gray-600" />;
-            case "In Progress":
-                return <Loader2 className="w-5 h-5 text-blue-600" />;
-            case "Qualified":
-                return <CheckCircle className="w-5 h-5 text-green-600" />;
-            case "Closed":
-                return <CheckCircle className="w-5 h-5 text-purple-600" />;
-            case "Lost":
-                return <XCircle className="w-5 h-5 text-red-600" />;
-            default:
-                return null;
+    const canEdit = userRole === "Admin" || userPermissions.includes("leads:write");
+    const canDeal =
+        userRole === "Admin" ||
+        userPermissions.includes("deals:write") ||
+        userPermissions.includes("*");
+    const customerName = lead.customer?.name?.trim() || null;
+    const title = customerName ?? "Lead";
+    const email = lead.customer?.email?.trim() || null;
+    const phone = lead.customer?.phone?.trim() || null;
+
+    const vehicleLabel = lead.vehicle
+        ? `${lead.vehicle.year} ${lead.vehicle.make} ${lead.vehicle.model}`
+        : parseVehicleFromNotes(lead.notes);
+
+    const scored =
+        lead.score != null && lead.temperature
+            ? {
+                  score: lead.score,
+                  temperature: lead.temperature as "Hot" | "Warm" | "Cold",
+              }
+            : scoreLead(lead);
+
+    const activityItems = [
+        {
+            id: "created",
+            title: "Lead created",
+            timestamp: formatDateTime(lead.lead_creation_date),
+        },
+        {
+            id: "engagement",
+            title: "Last engagement",
+            timestamp: formatDateTime(lead.last_engagement),
+        },
+    ];
+
+    const logCall = async () => {
+        setLoggingCall(true);
+        try {
+            await apiFetch(`/api/leads/${lead.id}/log-call`, {
+                method: "POST",
+                body: JSON.stringify({
+                    outcome: "Connected",
+                    note: "Call logged from lead drawer",
+                }),
+            });
+            toast.success("Call logged — score updated");
+            onRefresh?.();
+            if (phone) window.location.href = `tel:${phone}`;
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Failed to log call");
+        } finally {
+            setLoggingCall(false);
         }
     };
 
-    const getSourceColor = (source: string) => {
-        const colors: Record<string, string> = {
-            Website: "bg-purple-100 text-purple-800",
-            Referral: "bg-green-100 text-green-800",
-            Event: "bg-yellow-100 text-yellow-800",
-            "Walk-in": "bg-blue-100 text-blue-800",
-            Facebook: "bg-indigo-100 text-indigo-800",
-            Craigslist: "bg-orange-100 text-orange-800",
-            Kijiji: "bg-red-100 text-red-800",
-            Phone: "bg-teal-100 text-teal-800",
-        };
-        return colors[source] || "bg-gray-100 text-gray-800";
-    };
-
-    const getInitials = (name: string) => {
-        return name
-            .split(" ")
-            .map((word) => word[0])
-            .join("")
-            .toUpperCase()
-            .slice(0, 2);
-    };
-
-    const formatDate = (date: string) => {
-        return new Date(date).toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-        });
+    const convertToDeal = async () => {
+        if (lead.converted_deal_id) {
+            router.push(`/deals/${lead.converted_deal_id}`);
+            return;
+        }
+        setConverting(true);
+        try {
+            const res = await apiFetch<{
+                data?: { deal?: { id: string } };
+                redirect?: string;
+            }>(`/api/leads/${lead.id}/convert`, {
+                method: "POST",
+                body: JSON.stringify({}),
+            });
+            toast.success("Lead converted to deal");
+            onClose();
+            router.push(res.redirect || `/deals/${res.data?.deal?.id}`);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : "Convert failed";
+            const data =
+                err && typeof err === "object" && "data" in err
+                    ? (err as { data?: { redirect?: string; code?: string } }).data
+                    : undefined;
+            if (data?.redirect) {
+                toast.error(message);
+                router.push(data.redirect);
+                onClose();
+                return;
+            }
+            if (
+                message.toLowerCase().includes("vehicle") ||
+                message.toLowerCase().includes("price")
+            ) {
+                toast.error(message);
+                router.push(
+                    `/deals/new?lead_id=${lead.id}&customer_id=${lead.customer_id || ""}${
+                        lead.interest_vehicle_id
+                            ? `&vehicle_id=${lead.interest_vehicle_id}`
+                            : ""
+                    }`
+                );
+                onClose();
+                return;
+            }
+            toast.error(message);
+        } finally {
+            setConverting(false);
+        }
     };
 
     return (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
-
-            <div className="relative min-h-screen flex items-center justify-center p-4">
-                <div className="relative bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-                    {/* Header */}
-                    <div className="sticky top-0 bg-white/95 backdrop-blur-sm z-10 border-b border-gray-100 px-6 py-4 flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl">
-                                <Users className="w-5 h-5 text-white" />
-                            </div>
-                            <div>
-                                <h2 className="text-lg font-bold text-gray-900">
-                                    Lead Details
-                                </h2>
-                                <p className="text-xs text-gray-500">View lead information</p>
-                            </div>
-                        </div>
-                        <button
-                            onClick={onClose}
-                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                        >
-                            <X className="w-5 h-5 text-gray-500" />
-                        </button>
-                    </div>
-
-                    <div className="p-6">
-                        {/* Customer Info */}
-                        <div className="flex items-center gap-4 mb-6">
-                            {lead.customer?.avatar ? (
-                                <img
-                                    src={lead.customer.avatar}
-                                    alt={lead.customer.name}
-                                    className="w-16 h-16 rounded-full object-cover ring-4 ring-blue-50"
-                                />
-                            ) : (
-                                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-xl font-medium ring-4 ring-blue-50">
-                                    {lead.customer?.name ? getInitials(lead.customer.name) : "C"}
-                                </div>
-                            )}
-                            <div>
-                                <h3 className="text-xl font-bold text-gray-900">
-                                    {lead.customer?.name || "Unknown Customer"}
-                                </h3>
-                                <div className="flex items-center gap-2 mt-1">
-                                    <span className={`px-2.5 py-0.5 text-xs font-medium rounded-full ${getStatusColor(lead.status)}`}>
-                                        {lead.status}
-                                    </span>
-                                    <span className="text-xs text-gray-400">•</span>
-                                    <span className={`px-2.5 py-0.5 text-xs font-medium rounded-full ${getSourceColor(lead.source)}`}>
-                                        {lead.source}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Info Grid */}
-                        <div className="grid grid-cols-2 gap-4 mb-6">
-                            <div className="bg-gray-50 rounded-xl p-4">
-                                <p className="text-xs text-gray-500 font-medium">Email</p>
-                                <div className="flex items-center gap-2 mt-1">
-                                    <Mail className="w-4 h-4 text-gray-400" />
-                                    <span className="text-sm text-gray-900">{lead.customer?.email || "N/A"}</span>
-                                </div>
-                            </div>
-                            <div className="bg-gray-50 rounded-xl p-4">
-                                <p className="text-xs text-gray-500 font-medium">Phone</p>
-                                <div className="flex items-center gap-2 mt-1">
-                                    <Phone className="w-4 h-4 text-gray-400" />
-                                    <span className="text-sm text-gray-900">{lead.customer?.phone || "N/A"}</span>
-                                </div>
-                            </div>
-                            <div className="bg-gray-50 rounded-xl p-4">
-                                <p className="text-xs text-gray-500 font-medium">Vehicle Interest</p>
-                                <div className="flex items-center gap-2 mt-1">
-                                    <Car className="w-4 h-4 text-gray-400" />
-                                    <span className="text-sm text-gray-900">
-                                        {lead.vehicle ? `${lead.vehicle.year} ${lead.vehicle.make} ${lead.vehicle.model}` : "N/A"}
-                                    </span>
-                                </div>
-                            </div>
-                            <div className="bg-gray-50 rounded-xl p-4">
-                                <p className="text-xs text-gray-500 font-medium">Assigned To</p>
-                                <div className="flex items-center gap-2 mt-1">
-                                    <User className="w-4 h-4 text-gray-400" />
-                                    <span className="text-sm text-gray-900">{lead.assigned_user?.full_name || "Unassigned"}</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Notes */}
-                        {lead.notes && (
-                            <div className="mb-6">
-                                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                                    Notes
-                                </h4>
-                                <div className="bg-gray-50 rounded-xl p-4">
-                                    <p className="text-sm text-gray-900 whitespace-pre-wrap">{lead.notes}</p>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Additional Info */}
-                        <div className="space-y-3">
-                            <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Timeline</h4>
-                            <div className="space-y-2">
-                                <div className="flex items-center justify-between py-1.5 border-b border-gray-50">
-                                    <span className="text-sm text-gray-500">Lead Created</span>
-                                    <span className="text-sm text-gray-900">{formatDate(lead.lead_creation_date)}</span>
-                                </div>
-                                <div className="flex items-center justify-between py-1.5">
-                                    <span className="text-sm text-gray-500">Last Engagement</span>
-                                    <span className="text-sm text-gray-900">{formatDate(lead.last_engagement)}</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Footer Actions */}
-                        <div className="mt-6 pt-4 border-t border-gray-100 flex gap-3">
-                            <button
-                                onClick={onClose}
-                                className="flex-1 px-4 py-2 text-sm text-gray-600 border border-gray-200 hover:bg-gray-50 rounded-lg transition-colors"
+        <RecordDrawer
+            open
+            onClose={onClose}
+            header={
+                <RecordHeader
+                    title={title}
+                    avatarSrc={lead.customer?.avatar}
+                    avatarName={customerName}
+                    badges={
+                        <>
+                            <StatusBadge status={lead.status} resource="lead" />
+                            <span
+                                className={cn(
+                                    "rounded-md border px-1.5 py-0.5 text-[11px] font-semibold",
+                                    temperatureClass(scored.temperature)
+                                )}
                             >
-                                Close
-                            </button>
-                            {canEdit && (
-                                <button
-                                    onClick={onEdit}
-                                    className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
-                                >
-                                    <Edit className="w-4 h-4" />
-                                    Edit Lead
-                                </button>
+                                {scored.temperature} · {scored.score}
+                            </span>
+                            {lead.source && (
+                                <Badge variant="subtle" className="text-[11px]">
+                                    {lead.source}
+                                </Badge>
                             )}
-                        </div>
-                    </div>
+                        </>
+                    }
+                />
+            }
+            actions={
+                <>
+                    {canDeal && (
+                        <Button
+                            variant="primary"
+                            size="sm"
+                            leftIcon={
+                                converting ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                    <FileText className="h-3.5 w-3.5" />
+                                )
+                            }
+                            disabled={converting}
+                            onClick={() => void convertToDeal()}
+                        >
+                            {lead.converted_deal_id ? "Open deal" : "Convert to deal"}
+                        </Button>
+                    )}
+                    {canEdit && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            leftIcon={<Edit className="h-3.5 w-3.5" />}
+                            onClick={onEdit}
+                        >
+                            Edit
+                        </Button>
+                    )}
+                    {canEdit && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            leftIcon={
+                                loggingCall ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                    <PhoneCall className="h-3.5 w-3.5" />
+                                )
+                            }
+                            disabled={loggingCall}
+                            onClick={() => void logCall()}
+                        >
+                            Log call
+                        </Button>
+                    )}
+                    {phone && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            leftIcon={<Phone className="h-3.5 w-3.5" />}
+                            onClick={() => {
+                                window.location.href = `tel:${phone}`;
+                            }}
+                        >
+                            Dial
+                        </Button>
+                    )}
+                    {email && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            leftIcon={<Mail className="h-3.5 w-3.5" />}
+                            onClick={() => {
+                                window.location.href = `mailto:${email}`;
+                            }}
+                        >
+                            Email
+                        </Button>
+                    )}
+                </>
+            }
+            footer={
+                <div className="flex justify-end">
+                    <Button variant="ghost" size="sm" onClick={onClose}>
+                        Close
+                    </Button>
                 </div>
+            }
+        >
+            <div className="space-y-6">
+                <PropertyList title="Details">
+                    <PropertyRow label="Email">
+                        {email ? (
+                            <a href={`mailto:${email}`} className="text-primary hover:underline">
+                                {email}
+                            </a>
+                        ) : (
+                            <PropertyEmpty />
+                        )}
+                    </PropertyRow>
+                    <PropertyRow label="Phone">
+                        {phone ? (
+                            <a href={`tel:${phone}`} className="text-primary hover:underline">
+                                {phone}
+                            </a>
+                        ) : (
+                            <PropertyEmpty />
+                        )}
+                    </PropertyRow>
+                    <PropertyRow label="Interest vehicle">
+                        {vehicleLabel || <PropertyEmpty />}
+                    </PropertyRow>
+                    <PropertyRow label="Assigned">
+                        {lead.assigned_user ? (
+                            <span className="text-sm">{lead.assigned_user.full_name}</span>
+                        ) : (
+                            <PropertyEmpty />
+                        )}
+                    </PropertyRow>
+                    <PropertyRow label="Score">
+                        {scored.temperature} ({scored.score})
+                    </PropertyRow>
+                </PropertyList>
+
+                <RecordNotes>{lead.notes}</RecordNotes>
+                <ActivityTimeline items={activityItems} title="Activity" />
+                <LeadEmailSequencePanel
+                    leadId={lead.id}
+                    customerEmail={email}
+                    canEdit={canEdit}
+                />
             </div>
-        </div>
+        </RecordDrawer>
     );
 }

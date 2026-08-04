@@ -208,10 +208,23 @@ export async function POST(req: NextRequest) {
         // If admin_email is provided, create the first admin user for this dealership
         if (admin_email && admin_full_name) {
             try {
+                // SECURITY: F-05. Require a real password when creating the first admin.
+                if (!admin_password || admin_password.length < 12) {
+                    return NextResponse.json(
+                        { error: "admin_password is required and must be at least 12 characters" },
+                        { status: 400 }
+                    );
+                }
+                if (admin_password === "Password@123" || admin_password === "password") {
+                    return NextResponse.json(
+                        { error: "admin_password is too common; please choose a stronger one" },
+                        { status: 400 }
+                    );
+                }
                 // Create auth user
                 const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
                     email: admin_email,
-                    password: admin_password || "Password@123",
+                    password: admin_password,
                     email_confirm: true,
                     user_metadata: {
                         full_name: admin_full_name,

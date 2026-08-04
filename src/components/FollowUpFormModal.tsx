@@ -12,8 +12,10 @@ import {
     Phone,
     Mail,
     FileText,
-    CheckCircle,
+    CheckCircle
 } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
+import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
 
 interface Customer {
     id: string;
@@ -65,8 +67,10 @@ export default function FollowUpFormModal({
     mode,
     followUp,
     onClose,
-    onSuccess,
+    onSuccess
 }: FollowUpFormModalProps) {
+    useOverlayDismiss(onClose);
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [customers, setCustomers] = useState<Customer[]>([]);
@@ -95,7 +99,7 @@ export default function FollowUpFormModal({
         follow_up_time: "",
         priority: "Medium",
         status: "Pending",
-        notes: "",
+        notes: ""
     });
 
     useEffect(() => {
@@ -114,24 +118,19 @@ export default function FollowUpFormModal({
                 follow_up_time: followUp.follow_up_time || "",
                 priority: followUp.priority || "Medium",
                 status: followUp.status || "Pending",
-                notes: followUp.notes || "",
+                notes: followUp.notes || ""
             });
         }
     }, [followUp, mode]);
 
     const fetchData = async () => {
         try {
-            const token = localStorage.getItem("access_token");
-
             const [customersRes, leadsRes, usersRes] = await Promise.all([
                 fetch("/api/customers?limit=1000", {
-                    headers: { Authorization: `Bearer ${token}` },
                 }),
                 fetch("/api/leads?limit=1000", {
-                    headers: { Authorization: `Bearer ${token}` },
                 }),
                 fetch("/api/users?limit=1000", {
-                    headers: { Authorization: `Bearer ${token}` },
                 }),
             ]);
 
@@ -164,7 +163,6 @@ export default function FollowUpFormModal({
         setError(null);
 
         try {
-            const token = localStorage.getItem("access_token");
             const url = followUp?.id ? `/api/follow-ups/${followUp.id}` : "/api/follow-ups";
             const method = followUp?.id ? "PATCH" : "POST";
 
@@ -178,16 +176,14 @@ export default function FollowUpFormModal({
                 follow_up_time: formData.follow_up_time || null,
                 priority: formData.priority,
                 status: formData.status,
-                notes: formData.notes || null,
+                notes: formData.notes || null
             };
 
             const response = await fetch(url, {
                 method,
                 headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify(payload),
+                    "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
             });
 
             if (!response.ok) {

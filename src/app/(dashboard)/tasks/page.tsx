@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 import {
     CheckSquare,
     Plus,
-    Search,
     ChevronLeft,
     ChevronRight,
     RefreshCw,
@@ -17,13 +16,20 @@ import {
     AlertTriangle,
     Filter,
     FilterX,
-    List,
-    LayoutGrid,
 } from "lucide-react";
 import TaskFormModal from "@/src/components/TaskFormModal";
 import TaskDetailsModal from "@/src/components/TaskDetailsModal";
 import TasksKanban from "@/src/components/TasksKanban";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
+import { apiFetch } from "@/src/lib/fetch";
+import { toast } from "@/src/lib/toast";
+import { ListPageShell } from "@/src/components/ListPageShell";
+import { ListToolbar } from "@/src/components/ListToolbar";
+import { MetricStrip } from "@/src/components/ui/MetricStrip";
+import { Button } from "@/src/components/ui/Button";
+import { SkeletonTable } from "@/src/components/ui/Skeleton";
+import { cn } from "@/src/lib/utils";
+import type { ListViewMode } from "@/src/components/ListToolbar";
 
 interface UserData {
     id: string;
@@ -86,21 +92,21 @@ interface FilterState {
 const TASK_STAGES = ["Pending", "In Progress", "Completed", "Cancelled", "On Hold"];
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; border: string; icon: any }> = {
-    "Pending": { bg: "bg-yellow-50", text: "text-yellow-700", border: "border-yellow-200", icon: Clock },
-    "In Progress": { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200", icon: Circle },
-    "Completed": { bg: "bg-green-50", text: "text-green-700", border: "border-green-200", icon: CheckCircle },
-    "Cancelled": { bg: "bg-gray-50", text: "text-gray-700", border: "border-gray-200", icon: AlertTriangle },
-    "On Hold": { bg: "bg-purple-50", text: "text-purple-700", border: "border-purple-200", icon: AlertTriangle },
+    "Pending": { bg: "bg-warning-50", text: "text-warning", border: "border-yellow-200", icon: Clock },
+    "In Progress": { bg: "bg-primary-50", text: "text-primary", border: "border-blue-200", icon: Circle },
+    "Completed": { bg: "bg-success-50", text: "text-success", border: "border-green-200", icon: CheckCircle },
+    "Cancelled": { bg: "bg-muted/40", text: "text-foreground/90", border: "border-border", icon: AlertTriangle },
+    "On Hold": { bg: "bg-violet-50", text: "text-violet", border: "border-purple-200", icon: AlertTriangle }
 };
 
 const PRIORITY_COLORS: Record<string, { bg: string; text: string }> = {
-    Low: { bg: "bg-gray-100", text: "text-gray-700" },
-    Medium: { bg: "bg-blue-100", text: "text-blue-700" },
+    Low: { bg: "bg-muted", text: "text-foreground/90" },
+    Medium: { bg: "bg-blue-100", text: "text-primary" },
     High: { bg: "bg-orange-100", text: "text-orange-700" },
-    Urgent: { bg: "bg-red-100", text: "text-red-700" },
+    Urgent: { bg: "bg-red-100", text: "text-destructive" }
 };
 
-type ViewMode = "table" | "kanban";
+type ViewMode = ListViewMode;
 
 export default function TasksPage() {
     const [tasks, setTasks] = useState<Task[]>([]);
@@ -109,7 +115,7 @@ export default function TasksPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [totalItems, setTotalItems] = useState(0);
     const [itemsPerPage] = useState(20);
-    const [viewMode, setViewMode] = useState<ViewMode>("kanban");
+    const [viewMode, setViewMode] = useState<ListViewMode>("kanban");
     const [users, setUsers] = useState<UserData[]>([]);
 
     const [showFilters, setShowFilters] = useState(false);
@@ -121,7 +127,7 @@ export default function TasksPage() {
         due_date_to: "",
         my_tasks: false,
         overdue: false,
-        search: "",
+        search: ""
     });
 
     const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -139,9 +145,7 @@ export default function TasksPage() {
 
     const fetchUsers = async () => {
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch("/api/users?limit=100", {
-                headers: { Authorization: `Bearer ${token}` },
             });
             if (response.ok) {
                 const data = await response.json();
@@ -156,8 +160,6 @@ export default function TasksPage() {
         try {
             setLoading(true);
             setError(null);
-
-            const token = localStorage.getItem("access_token");
             const offset = (currentPage - 1) * itemsPerPage;
 
             let url = `/api/tasks?limit=${itemsPerPage}&offset=${offset}`;
@@ -171,7 +173,6 @@ export default function TasksPage() {
             if (filters.search) url += `&q=${encodeURIComponent(filters.search)}`;
 
             const response = await fetch(url, {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!response.ok) throw new Error("Failed to fetch tasks");
@@ -188,9 +189,7 @@ export default function TasksPage() {
 
     const handleViewDetails = async (task: Task) => {
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch(`/api/tasks/${task.id}`, {
-                headers: { Authorization: `Bearer ${token}` },
             });
             if (response.ok) {
                 const data = await response.json();
@@ -204,9 +203,7 @@ export default function TasksPage() {
 
     const handleEdit = async (task: Task) => {
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch(`/api/tasks/${task.id}`, {
-                headers: { Authorization: `Bearer ${token}` },
             });
             if (response.ok) {
                 const data = await response.json();
@@ -243,10 +240,8 @@ export default function TasksPage() {
         setConfirmDialogData((prev) => ({ ...prev, loading: true }));
 
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch(`/api/tasks/${taskId}`, {
-                method: "DELETE",
-                headers: { Authorization: `Bearer ${token}` },
+                method: "DELETE"
             });
 
             if (!response.ok) throw new Error("Failed to delete task");
@@ -255,21 +250,18 @@ export default function TasksPage() {
             setConfirmDialogData({ task: null, loading: false });
             fetchTasks();
         } catch (err) {
-            alert(err instanceof Error ? err.message : "An error occurred");
+            toast.error(err instanceof Error ? err.message : "An error occurred");
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
     };
 
     const handleStatusChange = async (task: Task, newStatus: string) => {
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch(`/api/tasks/${task.id}`, {
                 method: "PATCH",
                 headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({ status: newStatus }),
+                    "Content-Type": "application/json" },
+                body: JSON.stringify({ status: newStatus })
             });
 
             if (!response.ok) throw new Error("Failed to update task status");
@@ -277,7 +269,6 @@ export default function TasksPage() {
 
             if (showDetailsModal && selectedTask?.id === task.id) {
                 const detailsRes = await fetch(`/api/tasks/${task.id}`, {
-                    headers: { Authorization: `Bearer ${token}` },
                 });
                 if (detailsRes.ok) {
                     const data = await detailsRes.json();
@@ -285,7 +276,7 @@ export default function TasksPage() {
                 }
             }
         } catch (err) {
-            alert(err instanceof Error ? err.message : "An error occurred");
+            toast.error(err instanceof Error ? err.message : "An error occurred");
         }
     };
 
@@ -298,7 +289,7 @@ export default function TasksPage() {
             due_date_to: "",
             my_tasks: false,
             overdue: false,
-            search: "",
+            search: ""
         });
         setCurrentPage(1);
     };
@@ -313,7 +304,7 @@ export default function TasksPage() {
         return new Date(date).toLocaleDateString("en-US", {
             year: "numeric",
             month: "short",
-            day: "numeric",
+            day: "numeric"
         });
     };
 
@@ -327,112 +318,86 @@ export default function TasksPage() {
     const hasActiveFilters = filters.status || filters.priority || filters.assigned_to || filters.due_date_from || filters.due_date_to || filters.my_tasks || filters.overdue || filters.search;
 
     return (
-        <div className="space-y-6 py-10">
-            {/* Page Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Tasks</h1>
-                    <p className="text-sm text-gray-500 mt-1">Manage and track your team's tasks</p>
+        <ListPageShell
+            title="Tasks"
+            description="Manage and track your team's tasks"
+            icon={CheckSquare}
+            actions={
+                <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={fetchTasks} disabled={loading}>
+                        <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                        Refresh
+                    </Button>
+                    <Button size="sm" onClick={handleAdd}>
+                        <Plus className="h-4 w-4" />
+                        Add Task
+                    </Button>
                 </div>
-                <div className="flex items-center gap-3">
-                    <div className="flex bg-gray-100 rounded-lg p-1">
-                        <button
-                            onClick={() => setViewMode("kanban")}
-                            className={`p-1.5 rounded-md transition-colors ${viewMode === "kanban" ? "bg-white shadow-sm text-blue-600" : "text-gray-500 hover:text-gray-700"}`}
-                        >
-                            <LayoutGrid className="w-4 h-4" />
-                        </button>
-                        <button
-                            onClick={() => setViewMode("table")}
-                            className={`p-1.5 rounded-md transition-colors ${viewMode === "table" ? "bg-white shadow-sm text-blue-600" : "text-gray-500 hover:text-gray-700"}`}
-                        >
-                            <List className="w-4 h-4" />
-                        </button>
-                    </div>
-                    <button onClick={fetchTasks} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 flex items-center gap-2">
-                        <RefreshCw className="w-4 h-4" /> Refresh
-                    </button>
-                    <button onClick={handleAdd} className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg flex items-center gap-2">
-                        <Plus className="w-4 h-4" /> Add Task
-                    </button>
-                </div>
-            </div>
-
-            {/* Dashboard Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-yellow-100 rounded-lg"><Clock className="w-5 h-5 text-yellow-600" /></div>
-                        <div><p className="text-xs text-gray-500">Pending</p><p className="text-xl font-bold text-yellow-600">{todoCount}</p></div>
-                    </div>
-                </div>
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-blue-100 rounded-lg"><Circle className="w-5 h-5 text-blue-600" /></div>
-                        <div><p className="text-xs text-gray-500">In Progress</p><p className="text-xl font-bold text-blue-600">{inProgressCount}</p></div>
-                    </div>
-                </div>
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-green-100 rounded-lg"><CheckCircle className="w-5 h-5 text-green-600" /></div>
-                        <div><p className="text-xs text-gray-500">Completed</p><p className="text-xl font-bold text-green-600">{completedCount}</p></div>
-                    </div>
-                </div>
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-red-100 rounded-lg"><AlertTriangle className="w-5 h-5 text-red-600" /></div>
-                        <div><p className="text-xs text-gray-500">Overdue</p><p className="text-xl font-bold text-red-600">{overdueCount}</p></div>
-                    </div>
-                </div>
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-purple-100 rounded-lg"><CheckSquare className="w-5 h-5 text-purple-600" /></div>
-                        <div><p className="text-xs text-gray-500">Total</p><p className="text-xl font-bold text-purple-600">{totalItems}</p></div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Search and Filters */}
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-                <div className="flex flex-col md:flex-row gap-4">
-                    <div className="relative flex-1">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                            type="text"
-                            placeholder="Search tasks..."
-                            value={filters.search}
-                            onChange={(e) => { setFilters({ ...filters, search: e.target.value }); setCurrentPage(1); }}
-                            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={() => setShowFilters(!showFilters)}
-                            className={`px-4 py-2 text-sm font-medium border rounded-lg flex items-center gap-2 ${showFilters ? "bg-blue-50 border-blue-200 text-blue-700" : "text-gray-700 bg-white border-gray-200 hover:bg-gray-50"}`}
-                        >
-                            <Filter className="w-4 h-4" /> Filters
-                            {hasActiveFilters && <span className="w-2 h-2 bg-blue-500 rounded-full" />}
-                        </button>
-                        {hasActiveFilters && (
-                            <button onClick={clearFilters} className="px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg flex items-center gap-1">
-                                <FilterX className="w-4 h-4" /> Clear
+            }
+            kpis={
+                <MetricStrip
+                    loading={loading}
+                    items={[
+                        { label: "Pending", value: todoCount, tone: "warning" },
+                        { label: "In Progress", value: inProgressCount },
+                        { label: "Completed", value: completedCount, tone: "success" },
+                        { label: "Overdue", value: overdueCount, tone: "destructive" },
+                    ]}
+                />
+            }
+            toolbar={
+                <ListToolbar
+                    searchPlaceholder="Search tasks..."
+                    searchValue={filters.search}
+                    onSearchChange={(v) => {
+                        setFilters({ ...filters, search: v });
+                        setCurrentPage(1);
+                    }}
+                    viewMode={viewMode}
+                    onViewModeChange={setViewMode}
+                    showPrimary={false}
+                    extraFilters={
+                        <>
+                            <button
+                                type="button"
+                                onClick={() => setShowFilters(!showFilters)}
+                                className={cn(
+                                    "inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm transition-colors",
+                                    showFilters || hasActiveFilters
+                                        ? "border-primary/30 bg-primary-50 text-primary"
+                                        : "border-border bg-background text-foreground hover:bg-muted"
+                                )}
+                            >
+                                <Filter className="h-3.5 w-3.5" />
+                                Filters
+                                {hasActiveFilters && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
                             </button>
-                        )}
-                    </div>
-                </div>
-
-                {showFilters && (
-                    <div className="mt-4 pt-4 border-t border-gray-200 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                            {hasActiveFilters && (
+                                <button
+                                    type="button"
+                                    onClick={clearFilters}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-2 text-sm text-foreground/80 hover:bg-muted"
+                                >
+                                    <FilterX className="h-3.5 w-3.5" /> Clear
+                                </button>
+                            )}
+                        </>
+                    }
+                />
+            }
+        >
+            {showFilters && (
+                <div className="grid grid-cols-2 gap-4 rounded-lg border border-border bg-card p-4 md:grid-cols-4 lg:grid-cols-6">
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-                            <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg">
+                            <label className="mb-1 block text-xs font-medium text-muted-foreground">Status</label>
+                            <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm">
                                 <option value="">All</option>
                                 {TASK_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
                             </select>
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Priority</label>
-                            <select value={filters.priority} onChange={(e) => setFilters({ ...filters, priority: e.target.value })} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg">
+                            <label className="mb-1 block text-xs font-medium text-muted-foreground">Priority</label>
+                            <select value={filters.priority} onChange={(e) => setFilters({ ...filters, priority: e.target.value })} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm">
                                 <option value="">All</option>
                                 <option value="Low">Low</option>
                                 <option value="Medium">Medium</option>
@@ -441,33 +406,32 @@ export default function TasksPage() {
                             </select>
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Assigned To</label>
-                            <select value={filters.assigned_to} onChange={(e) => setFilters({ ...filters, assigned_to: e.target.value })} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg">
+                            <label className="mb-1 block text-xs font-medium text-muted-foreground">Assigned To</label>
+                            <select value={filters.assigned_to} onChange={(e) => setFilters({ ...filters, assigned_to: e.target.value })} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm">
                                 <option value="">All</option>
                                 {users.map((u) => <option key={u.id} value={u.id}>{u.full_name || u.email}</option>)}
                             </select>
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Due From</label>
-                            <input type="date" value={filters.due_date_from} onChange={(e) => setFilters({ ...filters, due_date_from: e.target.value })} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg" />
+                            <label className="mb-1 block text-xs font-medium text-muted-foreground">Due From</label>
+                            <input type="date" value={filters.due_date_from} onChange={(e) => setFilters({ ...filters, due_date_from: e.target.value })} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Due To</label>
-                            <input type="date" value={filters.due_date_to} onChange={(e) => setFilters({ ...filters, due_date_to: e.target.value })} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg" />
+                            <label className="mb-1 block text-xs font-medium text-muted-foreground">Due To</label>
+                            <input type="date" value={filters.due_date_to} onChange={(e) => setFilters({ ...filters, due_date_to: e.target.value })} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
                         </div>
                         <div className="flex items-end gap-2">
-                            <label className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
-                                <input type="checkbox" checked={filters.my_tasks} onChange={(e) => setFilters({ ...filters, my_tasks: e.target.checked })} className="rounded border-gray-300 text-blue-600" />
+                            <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 hover:bg-muted/40">
+                                <input type="checkbox" checked={filters.my_tasks} onChange={(e) => setFilters({ ...filters, my_tasks: e.target.checked })} className="rounded border-input text-primary" />
                                 <span className="text-sm">My Tasks</span>
                             </label>
-                            <label className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
-                                <input type="checkbox" checked={filters.overdue} onChange={(e) => setFilters({ ...filters, overdue: e.target.checked })} className="rounded border-gray-300 text-blue-600" />
-                                <span className="text-sm text-red-600">Overdue</span>
+                            <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 hover:bg-muted/40">
+                                <input type="checkbox" checked={filters.overdue} onChange={(e) => setFilters({ ...filters, overdue: e.target.checked })} className="rounded border-input text-primary" />
+                                <span className="text-sm text-destructive">Overdue</span>
                             </label>
                         </div>
-                    </div>
-                )}
-            </div>
+                </div>
+            )}
 
             {/* Kanban View */}
             {viewMode === "kanban" ? (
@@ -483,60 +447,75 @@ export default function TasksPage() {
                 />
             ) : (
                 /* Table View */
-                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <div className="bg-card rounded-xl border border-border overflow-hidden">
                     {/* Desktop Table - Hidden on mobile */}
                     <div className="hidden lg:block overflow-x-auto">
                         <table className="w-full">
-                            <thead className="bg-gray-50 border-b border-gray-200">
+                            <thead className="bg-muted/40 border-b border-border">
                                 <tr>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Task</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Due Date</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assigned To</th>
-                                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Task</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Priority</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Due Date</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Assigned To</th>
+                                    <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-200">
+                            <tbody className="divide-y divide-border">
                                 {loading ? (
                                     <tr>
-                                        <td colSpan={6} className="px-4 py-12 text-center">
-                                            <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
-                                            <p className="mt-2 text-sm text-gray-500">Loading tasks...</p>
+                                        <td colSpan={6} className="p-6">
+                                            <SkeletonTable rows={8} cols={6} />
                                         </td>
                                     </tr>
                                 ) : error ? (
                                     <tr>
                                         <td colSpan={6} className="px-4 py-12 text-center">
-                                            <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
-                                            <p className="mt-2 text-sm text-red-600">{error}</p>
-                                            <button onClick={fetchTasks} className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Try Again</button>
+                                            <AlertCircle className="w-8 h-8 text-destructive mx-auto" />
+                                            <p className="mt-2 text-sm text-destructive">{error}</p>
+                                            <button onClick={fetchTasks} className="mt-3 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary">Try Again</button>
                                         </td>
                                     </tr>
                                 ) : tasks.length === 0 ? (
                                     <tr>
                                         <td colSpan={6} className="px-4 py-12 text-center">
-                                            <CheckSquare className="w-12 h-12 text-gray-300 mx-auto" />
-                                            <p className="mt-2 text-sm text-gray-500">No tasks found</p>
-                                            <button onClick={handleAdd} className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Your First Task</button>
+                                            <CheckSquare className="w-12 h-12 text-muted-foreground/50 mx-auto" />
+                                            <p className="mt-2 text-sm text-muted-foreground">No tasks found</p>
+                                            <button onClick={handleAdd} className="mt-3 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary">Add Your First Task</button>
                                         </td>
                                     </tr>
                                 ) : (
                                     tasks.map((task) => {
                                         const overdue = isOverdue(task);
                                         return (
-                                            <tr key={task.id} className={`hover:bg-gray-50 cursor-pointer ${overdue ? "bg-red-50/30" : ""}`} onClick={() => handleViewDetails(task)}>
+                                            <tr
+                                                key={task.id}
+                                                role="button"
+                                                tabIndex={0}
+                                                className={`cursor-pointer border-l-2 border-l-transparent transition-colors hover:border-l-primary hover:bg-muted/50 focus-visible:border-l-primary focus-visible:bg-muted/50 focus-visible:outline-none ${overdue ? "bg-destructive-50/30" : ""}`}
+                                                onClick={() => handleViewDetails(task)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === "Enter") handleViewDetails(task);
+                                                }}
+                                            >
                                                 <td className="px-4 py-3">
                                                     <div className="flex items-center gap-3">
                                                         <button
+                                                            type="button"
                                                             onClick={(e) => { e.stopPropagation(); handleStatusChange(task, task.status === "Completed" ? "Pending" : "Completed"); }}
-                                                            className={`p-1 rounded ${task.status === "Completed" ? "text-green-600" : "text-gray-400 hover:text-green-600"}`}
+                                                            className={`p-1 rounded ${task.status === "Completed" ? "text-success" : "text-muted-foreground/70 hover:text-success"}`}
                                                         >
                                                             {task.status === "Completed" ? <CheckCircle className="w-5 h-5" /> : <Circle className="w-5 h-5" />}
                                                         </button>
                                                         <div>
-                                                            <p className={`text-sm font-medium ${task.status === "Completed" ? "line-through text-gray-400" : "text-gray-900"}`}>{task.title}</p>
-                                                            {task.description && <p className="text-xs text-gray-500 truncate max-w-[300px]">{task.description}</p>}
+                                                            <button
+                                                                type="button"
+                                                                className={`text-left text-sm font-medium text-primary hover:underline underline-offset-2 ${task.status === "Completed" ? "line-through text-muted-foreground/70 no-underline" : ""}`}
+                                                                onClick={(e) => { e.stopPropagation(); handleViewDetails(task); }}
+                                                            >
+                                                                {task.title}
+                                                            </button>
+                                                            {task.description && <p className="text-xs text-muted-foreground truncate max-w-[300px]">{task.description}</p>}
                                                         </div>
                                                     </div>
                                                 </td>
@@ -551,31 +530,33 @@ export default function TasksPage() {
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-3">
-                                                    <span className={`text-sm ${overdue ? "text-red-600 font-medium" : "text-gray-600"}`}>{formatDate(task.due_date)}</span>
+                                                    <span className={`text-sm tabular-nums ${overdue ? "text-destructive font-medium" : "text-muted-foreground"}`}>
+                                                        {task.due_date ? formatDate(task.due_date) : "—"}
+                                                    </span>
                                                 </td>
                                                 <td className="px-4 py-3">
                                                     <div className="flex items-center gap-2">
                                                         {task.assigned_user?.avatar ? (
                                                             <img src={task.assigned_user.avatar} alt="" className="w-6 h-6 rounded-full" />
                                                         ) : (
-                                                            <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 text-xs">
+                                                            <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-foreground/80 text-xs">
                                                                 {task.assigned_user?.full_name?.[0] || "?"}
                                                             </div>
                                                         )}
-                                                        <span className="text-sm text-gray-600">{task.assigned_user?.full_name || "Unassigned"}</span>
+                                                        <span className="text-sm text-foreground/80">{task.assigned_user?.full_name || "Unassigned"}</span>
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-3 text-right">
                                                     <div className="flex items-center justify-end gap-1">
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); handleEdit(task); }}
-                                                            className="p-1.5 hover:bg-amber-50 rounded-lg"
+                                                            className="p-1.5 hover:bg-warning-50 rounded-lg"
                                                         >
                                                             Edit
                                                         </button>
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); handleDelete(task); }}
-                                                            className="p-1.5 hover:bg-red-50 rounded-lg text-red-500"
+                                                            className="p-1.5 hover:bg-destructive-50 rounded-lg text-destructive"
                                                         >
                                                             Delete
                                                         </button>
@@ -590,57 +571,57 @@ export default function TasksPage() {
                     </div>
 
                     {/* Mobile Cards - Hidden on desktop */}
-                    <div className="lg:hidden divide-y divide-gray-200">
+                    <div className="lg:hidden divide-y divide-border">
                         {loading ? (
                             <div className="px-4 py-12 text-center">
-                                <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
-                                <p className="mt-2 text-sm text-gray-500">Loading tasks...</p>
+                                <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto" />
+                                <p className="mt-2 text-sm text-muted-foreground">Loading tasks...</p>
                             </div>
                         ) : error ? (
                             <div className="px-4 py-12 text-center">
-                                <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
-                                <p className="mt-2 text-sm text-red-600">{error}</p>
-                                <button onClick={fetchTasks} className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Try Again</button>
+                                <AlertCircle className="w-8 h-8 text-destructive mx-auto" />
+                                <p className="mt-2 text-sm text-destructive">{error}</p>
+                                <button onClick={fetchTasks} className="mt-3 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary">Try Again</button>
                             </div>
                         ) : tasks.length === 0 ? (
                             <div className="px-4 py-12 text-center">
-                                <CheckSquare className="w-12 h-12 text-gray-300 mx-auto" />
-                                <p className="mt-2 text-sm text-gray-500">No tasks found</p>
-                                <button onClick={handleAdd} className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Your First Task</button>
+                                <CheckSquare className="w-12 h-12 text-muted-foreground/50 mx-auto" />
+                                <p className="mt-2 text-sm text-muted-foreground">No tasks found</p>
+                                <button onClick={handleAdd} className="mt-3 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary">Add Your First Task</button>
                             </div>
                         ) : (
                             tasks.map((task) => {
                                 const overdue = isOverdue(task);
                                 return (
-                                    <div key={task.id} className="p-4 hover:bg-gray-50 transition-colors">
+                                    <div key={task.id} className="p-4 hover:bg-muted/40 transition-colors">
                                         {/* Header Row */}
                                         <div className="flex items-start justify-between mb-3">
                                             <div className="flex items-center gap-3">
                                                 <button
                                                     onClick={() => handleStatusChange(task, task.status === "Completed" ? "Pending" : "Completed")}
-                                                    className={`p-1.5 rounded-full ${task.status === "Completed" ? "bg-green-100 text-green-600" : "bg-gray-100 text-gray-400 hover:text-green-600"}`}
+                                                    className={`p-1.5 rounded-full ${task.status === "Completed" ? "bg-green-100 text-success" : "bg-muted text-muted-foreground/70 hover:text-success"}`}
                                                 >
                                                     {task.status === "Completed" ? <CheckCircle className="w-5 h-5" /> : <Circle className="w-5 h-5" />}
                                                 </button>
                                                 <div>
-                                                    <p className={`text-sm font-medium ${task.status === "Completed" ? "line-through text-gray-400" : "text-gray-900"}`}>
+                                                    <p className={`text-sm font-medium ${task.status === "Completed" ? "line-through text-muted-foreground/70" : "text-foreground"}`}>
                                                         {task.title}
                                                     </p>
                                                     {task.description && (
-                                                        <p className="text-xs text-gray-500 truncate max-w-[200px]">{task.description}</p>
+                                                        <p className="text-xs text-muted-foreground truncate max-w-[200px]">{task.description}</p>
                                                     )}
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-1">
                                                 <button
                                                     onClick={() => handleEdit(task)}
-                                                    className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                                    className="p-1.5 hover:bg-warning-50 rounded-lg transition-colors"
                                                 >
                                                     Edit
                                                 </button>
                                                 <button
                                                     onClick={() => handleDelete(task)}
-                                                    className="p-1.5 hover:bg-red-50 rounded-lg text-red-500 transition-colors"
+                                                    className="p-1.5 hover:bg-destructive-50 rounded-lg text-destructive transition-colors"
                                                 >
                                                     Delete
                                                 </button>
@@ -655,22 +636,22 @@ export default function TasksPage() {
                                                 {task.status}
                                             </span>
                                             {overdue && (
-                                                <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-700">
+                                                <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 text-destructive">
                                                     Overdue
                                                 </span>
                                             )}
                                         </div>
                                         {/* Details Row - Grid */}
-                                        <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
+                                        <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                                             <div className="flex items-center gap-1">
-                                                <Calendar className="w-3 h-3 text-gray-400" />
-                                                <span className={overdue ? "text-red-600 font-medium" : ""}>{formatDate(task.due_date)}</span>
+                                                <Calendar className="w-3 h-3 text-muted-foreground/70" />
+                                                <span className={overdue ? "text-destructive font-medium" : ""}>{formatDate(task.due_date)}</span>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 {task.assigned_user?.avatar ? (
                                                     <img src={task.assigned_user.avatar} alt="" className="w-4 h-4 rounded-full" />
                                                 ) : (
-                                                    <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 text-[8px]">
+                                                    <div className="w-4 h-4 rounded-full bg-muted flex items-center justify-center text-foreground/80 text-[8px]">
                                                         {task.assigned_user?.full_name?.[0] || "?"}
                                                     </div>
                                                 )}
@@ -685,25 +666,25 @@ export default function TasksPage() {
 
                     {/* Pagination */}
                     {!loading && !error && tasks.length > 0 && (
-                        <div className="px-4 py-3 border-t border-gray-200 flex items-center justify-between">
-                            <p className="text-sm text-gray-500">
+                        <div className="px-4 py-3 border-t border-border flex items-center justify-between">
+                            <p className="text-sm text-muted-foreground">
                                 Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalItems)} of {totalItems} tasks
                             </p>
                             <div className="flex items-center gap-2">
                                 <button
                                     onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
                                     disabled={currentPage === 1}
-                                    className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="p-2 border border-border rounded-lg hover:bg-muted/40 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     <ChevronLeft className="w-4 h-4" />
                                 </button>
-                                <span className="text-sm text-gray-600">
+                                <span className="text-sm text-foreground/80">
                                     Page {currentPage} of {totalPages}
                                 </span>
                                 <button
                                     onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
                                     disabled={currentPage === totalPages}
-                                    className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="p-2 border border-border rounded-lg hover:bg-muted/40 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     <ChevronRight className="w-4 h-4" />
                                 </button>
@@ -748,6 +729,6 @@ export default function TasksPage() {
                     onCancel={() => { setShowConfirmDialog(false); setConfirmDialogData({ task: null, loading: false }); }}
                 />
             )}
-        </div>
+        </ListPageShell>
     );
 }

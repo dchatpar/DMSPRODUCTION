@@ -1,5 +1,6 @@
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
+import { supabaseAdmin } from "@/src/lib/supabase-admin";
 
 function calculatePercentageChange(current: number, previous: number): number {
     if (previous === 0) return current > 0 ? 100 : 0;
@@ -105,8 +106,8 @@ export async function GET(req: NextRequest) {
             supabase.from("sales_deals").select("*", { count: "exact", head: true }).eq("deal_status", "Closed"),
             // KPI: Total deals for completion rate
             supabase.from("sales_deals").select("*", { count: "exact", head: true }),
-            // KPI: Active users count
-            supabase.from("users").select("*", { count: "exact", head: true }).eq("status", "Active"),
+            // KPI: Active users count (F-06: column is is_active boolean, not status text)
+            supabase.from("users").select("*", { count: "exact", head: true }).eq("is_active", true),
             // KPI: Avg response time - leads with last_engagement
             supabase.from("leads").select("lead_creation_date, last_engagement").not("last_engagement", "is", null),
         ]);
@@ -170,6 +171,14 @@ export async function GET(req: NextRequest) {
             avgResponseHours = Math.round(avgResponseMs / (1000 * 60 * 60) * 10) / 10; // Round to 1 decimal
         }
 
+        // Total revenue = sum of sale_price across all deals (real money, not a count).
+        // Use supabaseAdmin (service role) to bypass RLS — the user's RLS-filtered token
+        // may return 0 deals if RLS isn't yet propagating dealership_id properly.
+        const { data: allDeals } = await supabaseAdmin
+            .from("sales_deals")
+            .select("sale_price");
+        const totalRevenue = (allDeals || []).reduce((sum, deal) => sum + (deal.sale_price || 0), 0);
+
         // Get recent sales
         const { data: recentSales, error: salesError } = await supabase
             .from("sales_deals")
@@ -210,6 +219,7 @@ export async function GET(req: NextRequest) {
                 totalInvoices,
                 activeVehicles,
                 pendingInvoices,
+                totalRevenue,
             },
             changes: {
                 vehicles: calculatePercentageChange(totalVehicles, prevVehicles),

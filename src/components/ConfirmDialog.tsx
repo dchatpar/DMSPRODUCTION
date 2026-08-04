@@ -5,8 +5,9 @@ import {
     X,
     AlertTriangle,
     Trash2,
-    Loader2,
+    Loader2
 } from "lucide-react";
+import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
 
 interface ConfirmDialogProps {
     isOpen: boolean;
@@ -29,8 +30,10 @@ export default function ConfirmDialog({
     variant = "danger",
     onConfirm,
     onCancel,
-    loading = false,
+    loading = false
 }: ConfirmDialogProps) {
+    useOverlayDismiss(onCancel, { open: isOpen });
+
     // Reset loading when dialog closes
     useEffect(() => {
         if (!isOpen) {
@@ -45,20 +48,20 @@ export default function ConfirmDialog({
             icon: <Trash2 className="w-6 h-6 text-red-600" />,
             bgIcon: "bg-red-100",
             bgButton: "bg-red-600 hover:bg-red-700",
-            textButton: "text-white",
+            textButton: "text-white"
         },
         warning: {
             icon: <AlertTriangle className="w-6 h-6 text-amber-600" />,
             bgIcon: "bg-amber-100",
             bgButton: "bg-amber-600 hover:bg-amber-700",
-            textButton: "text-white",
+            textButton: "text-white"
         },
         info: {
             icon: <AlertTriangle className="w-6 h-6 text-blue-600" />,
             bgIcon: "bg-blue-100",
             bgButton: "bg-blue-600 hover:bg-blue-700",
-            textButton: "text-white",
-        },
+            textButton: "text-white"
+        }
     };
 
     const styles = variantStyles[variant];

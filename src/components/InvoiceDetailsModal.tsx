@@ -1,19 +1,25 @@
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
+import { Edit, FileDown, Mail, Plus } from "lucide-react";
+import { RecordDrawer } from "@/src/components/ui/RecordDrawer";
+import { RecordHeader } from "@/src/components/ui/RecordHeader";
 import {
-    X,
-    User,
-    Mail,
-    Phone,
-    Calendar,
-    Edit,
-    DollarSign,
-    Clock,
-    CheckCircle,
-    XCircle,
-    AlertCircle,
-    FileText,
-} from "lucide-react";
+    PropertyList,
+    PropertyRow,
+    PropertyEmpty,
+    RecordNotes,
+} from "@/src/components/ui/PropertyList";
+import { ActivityTimeline } from "@/src/components/ui/ActivityTimeline";
+import { StatusBadge } from "@/src/components/ui/StatusBadge";
+import { Button } from "@/src/components/ui/Button";
+import { RelationChip } from "@/src/components/ui/RelationChip";
+import { apiFetch } from "@/src/lib/fetch";
+import { toast } from "@/src/lib/toast";
+import {
+    openInvoicePrintWindow,
+    type InvoicePdfPayload,
+} from "@/src/lib/invoice-pdf";
 
 interface Customer {
     id: string;
@@ -37,260 +43,464 @@ interface Invoice {
     tax_rate: number;
     tax_amount: number;
     total: number;
+    amount_paid?: number | null;
     status: string;
     notes: string | null;
     created_at: string;
-    customer: Customer;
+    customer: Customer | null;
+}
+
+interface PaymentRow {
+    id: string;
+    amount: number;
+    description: string | null;
+    category: string | null;
+    transaction_date: string;
+    created_at: string;
 }
 
 interface InvoiceDetailsModalProps {
     invoice: Invoice;
     onClose: () => void;
     onEdit: () => void;
+    onUpdated?: (invoice: Invoice) => void;
     userRole?: string;
     userPermissions?: string[];
 }
 
+function formatDate(date: string) {
+    return new Date(date).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+    });
+}
+
+function formatCurrency(amount: number) {
+    return new Intl.NumberFormat("en-CA", {
+        style: "currency",
+        currency: "CAD",
+    }).format(amount);
+}
+
 export default function InvoiceDetailsModal({
-    invoice,
+    invoice: initialInvoice,
     onClose,
     onEdit,
+    onUpdated,
     userRole,
     userPermissions = [],
 }: InvoiceDetailsModalProps) {
-    const canEdit = userRole === "Admin" || userPermissions.includes("invoices:write");
-    const getStatusColor = (status: string) => {
-        const colors: Record<string, string> = {
-            "Pending": "bg-yellow-100 text-yellow-800",
-            "Paid": "bg-green-100 text-green-800",
-            "Overdue": "bg-red-100 text-red-800",
-            "Cancelled": "bg-gray-100 text-gray-800",
+    const [invoice, setInvoice] = useState(initialInvoice);
+    const [payments, setPayments] = useState<PaymentRow[]>([]);
+    const [loadingPayments, setLoadingPayments] = useState(true);
+    const [busy, setBusy] = useState(false);
+    const [payAmount, setPayAmount] = useState("");
+    const [payMethod, setPayMethod] = useState("E-Transfer");
+    const [payNote, setPayNote] = useState("");
+    const [showPayForm, setShowPayForm] = useState(false);
+
+    const canEdit =
+        userRole === "Admin" || userPermissions.includes("invoices:write");
+    const amountPaid = Number(invoice.amount_paid) || 0;
+    const balanceDue = Math.max(0, (Number(invoice.total) || 0) - amountPaid);
+    const isOverdue =
+        invoice.status !== "Paid" &&
+        invoice.status !== "Cancelled" &&
+        new Date(invoice.due_date) < new Date();
+
+    const loadPayments = useCallback(async () => {
+        try {
+            setLoadingPayments(true);
+            const res = await apiFetch<{
+                data?: PaymentRow[];
+                totals?: { amountPaid?: number };
+                error?: string;
+            }>(`/api/invoices/${invoice.id}/payments`);
+            if (res.error) throw new Error(res.error);
+            setPayments(res.data || []);
+            if (res.totals?.amountPaid != null) {
+                setInvoice((prev) => ({
+                    ...prev,
+                    amount_paid: res.totals!.amountPaid!,
+                }));
+            }
+        } catch (err) {
+            console.error(err);
+            setPayments([]);
+        } finally {
+            setLoadingPayments(false);
+        }
+    }, [invoice.id]);
+
+    useEffect(() => {
+        setInvoice(initialInvoice);
+    }, [initialInvoice]);
+
+    useEffect(() => {
+        void loadPayments();
+    }, [loadPayments]);
+
+    const buildPdfPayload = (): InvoicePdfPayload => {
+        const c = invoice.customer;
+        const addr = [c?.address, c?.city, c?.province]
+            .filter(Boolean)
+            .join(", ");
+        return {
+            invoiceNumber: invoice.invoice_number,
+            invoiceDate: invoice.invoice_date,
+            dueDate: invoice.due_date,
+            status: invoice.status,
+            packageName: invoice.package_name,
+            notes: invoice.notes,
+            subtotal: Number(invoice.payment_amount) || 0,
+            taxRate: Number(invoice.tax_rate) || 0,
+            taxAmount: Number(invoice.tax_amount) || 0,
+            total: Number(invoice.total) || 0,
+            amountPaid,
+            customerName: c?.name,
+            customerEmail: c?.email,
+            customerPhone: c?.phone,
+            customerAddress: addr || null,
+            payments: payments.map((p) => ({
+                date: p.transaction_date,
+                amount: Number(p.amount) || 0,
+                method: p.category || undefined,
+                note: p.description || undefined,
+            })),
         };
-        return colors[status] || "bg-gray-100 text-gray-800";
     };
 
-    const getStatusIcon = (status: string) => {
-        switch (status) {
-            case "Pending":
-                return <Clock className="w-5 h-5 text-yellow-600" />;
-            case "Paid":
-                return <CheckCircle className="w-5 h-5 text-green-600" />;
-            case "Overdue":
-                return <AlertCircle className="w-5 h-5 text-red-600" />;
-            case "Cancelled":
-                return <XCircle className="w-5 h-5 text-gray-600" />;
-            default:
-                return <FileText className="w-5 h-5 text-gray-600" />;
+    const handlePrint = () => {
+        try {
+            openInvoicePrintWindow(buildPdfPayload());
+        } catch (err) {
+            toast.error(
+                err instanceof Error ? err.message : "Could not open PDF"
+            );
         }
     };
 
-    const getInitials = (name: string) => {
-        return name
-            .split(" ")
-            .map((word) => word[0])
-            .join("")
-            .toUpperCase()
-            .slice(0, 2);
+    const handleEmail = async () => {
+        try {
+            setBusy(true);
+            const res = await apiFetch<{
+                success?: boolean;
+                error?: string;
+                to?: string;
+            }>(`/api/invoices/${invoice.id}/send`, {
+                method: "POST",
+                body: {},
+            });
+            if (res.error) throw new Error(res.error);
+            toast.success(`Invoice emailed to ${res.to || "customer"}`);
+        } catch (err) {
+            toast.error(
+                err instanceof Error ? err.message : "Failed to send invoice"
+            );
+        } finally {
+            setBusy(false);
+        }
     };
 
-    const formatDate = (date: string) => {
-        return new Date(date).toLocaleDateString("en-US", {
-            year: "numeric",
-            month: "long",
-            day: "numeric",
-        });
-    };
-
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat("en-US", {
-            style: "currency",
-            currency: "USD",
-        }).format(amount);
-    };
-
-    const isOverdue = () => {
-        if (invoice.status === "Paid") return false;
-        return new Date(invoice.due_date) < new Date();
+    const handleRecordPayment = async () => {
+        const amount = parseFloat(payAmount);
+        if (!Number.isFinite(amount) || amount <= 0) {
+            toast.error("Enter a positive payment amount");
+            return;
+        }
+        try {
+            setBusy(true);
+            const res = await apiFetch<{
+                invoice?: Invoice;
+                totals?: { amountPaid?: number; balanceDue?: number };
+                error?: string;
+                warning?: string;
+            }>(`/api/invoices/${invoice.id}/payments`, {
+                method: "POST",
+                body: {
+                    amount,
+                    method: payMethod,
+                    note: payNote || undefined,
+                },
+            });
+            if (res.error && !res.invoice) throw new Error(res.error);
+            if (res.warning) toast.warning(res.warning);
+            if (res.invoice) {
+                setInvoice(res.invoice);
+                onUpdated?.(res.invoice);
+            }
+            setPayAmount("");
+            setPayNote("");
+            setShowPayForm(false);
+            toast.success("Payment recorded");
+            await loadPayments();
+        } catch (err) {
+            toast.error(
+                err instanceof Error ? err.message : "Failed to record payment"
+            );
+        } finally {
+            setBusy(false);
+        }
     };
 
     return (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
-
-            <div className="relative min-h-screen flex items-center justify-center p-4">
-                <div className="relative bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-                    {/* Header */}
-                    <div className="sticky top-0 bg-white/95 backdrop-blur-sm z-10 border-b border-gray-100 px-6 py-4 flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl">
-                                <FileText className="w-5 h-5 text-white" />
-                            </div>
-                            <div>
-                                <h2 className="text-lg font-bold text-gray-900">
-                                    Invoice Details
-                                </h2>
-                                <p className="text-xs text-gray-500">{invoice.invoice_number}</p>
-                            </div>
-                        </div>
-                        <button
-                            onClick={onClose}
-                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+        <RecordDrawer
+            open
+            onClose={onClose}
+            header={
+                <RecordHeader
+                    title={invoice.invoice_number}
+                    showAvatar={false}
+                    subtitle={
+                        isOverdue ? (
+                            <span className="text-destructive">
+                                Overdue · due {formatDate(invoice.due_date)}
+                            </span>
+                        ) : balanceDue > 0 ? (
+                            <span>
+                                Balance due {formatCurrency(balanceDue)}
+                            </span>
+                        ) : undefined
+                    }
+                    badges={
+                        <StatusBadge
+                            status={invoice.status}
+                            resource="invoice"
+                        />
+                    }
+                />
+            }
+            actions={
+                <div className="flex flex-wrap items-center gap-1.5">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        leftIcon={<FileDown className="h-3.5 w-3.5" />}
+                        onClick={handlePrint}
+                    >
+                        PDF
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        leftIcon={<Mail className="h-3.5 w-3.5" />}
+                        onClick={() => void handleEmail()}
+                        disabled={busy}
+                    >
+                        Email
+                    </Button>
+                    {canEdit ? (
+                        <Button
+                            variant="primary"
+                            size="sm"
+                            leftIcon={<Edit className="h-3.5 w-3.5" />}
+                            onClick={onEdit}
                         >
-                            <X className="w-5 h-5 text-gray-500" />
-                        </button>
-                    </div>
-
-                    <div className="p-6">
-                        {/* Status Banner */}
-                        <div className={`flex items-center gap-3 p-4 rounded-xl mb-6 ${getStatusColor(invoice.status).replace("text-", "bg-").replace("100", "50")}`}>
-                            {getStatusIcon(invoice.status)}
-                            <div>
-                                <p className="text-sm font-medium">Invoice Status</p>
-                                <p className={`text-lg font-bold ${getStatusColor(invoice.status).replace("bg-", "text-").replace("-100", "-800")}`}>
-                                    {invoice.status}
-                                </p>
-                            </div>
-                            {isOverdue() && (
-                                <div className="ml-auto text-right">
-                                    <p className="text-sm font-medium text-red-600">Overdue</p>
-                                    <p className="text-xs text-red-500">Due: {formatDate(invoice.due_date)}</p>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Invoice Info */}
-                        <div className="grid grid-cols-2 gap-4 mb-6">
-                            <div className="bg-gray-50 rounded-xl p-4">
-                                <p className="text-xs text-gray-500 font-medium">Invoice Date</p>
-                                <div className="flex items-center gap-2 mt-1">
-                                    <Calendar className="w-4 h-4 text-gray-400" />
-                                    <span className="text-sm font-medium text-gray-900">
-                                        {formatDate(invoice.invoice_date)}
-                                    </span>
-                                </div>
-                            </div>
-                            <div className="bg-gray-50 rounded-xl p-4">
-                                <p className="text-xs text-gray-500 font-medium">Due Date</p>
-                                <div className="flex items-center gap-2 mt-1">
-                                    <Clock className="w-4 h-4 text-gray-400" />
-                                    <span className={`text-sm font-medium ${isOverdue() ? "text-red-600" : "text-gray-900"}`}>
-                                        {formatDate(invoice.due_date)}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Customer Info */}
-                        {invoice.customer && (
-                            <div className="mb-6">
-                                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Customer</h4>
-                                <div className="bg-gradient-to-br from-gray-50 to-slate-50 rounded-xl p-4">
-                                    <div className="flex items-center gap-4">
-                                        {invoice.customer.avatar ? (
-                                            <img
-                                                src={invoice.customer.avatar}
-                                                alt={invoice.customer.name}
-                                                className="w-12 h-12 rounded-full object-cover"
-                                            />
-                                        ) : (
-                                            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-lg font-medium">
-                                                {getInitials(invoice.customer.name)}
-                                            </div>
-                                        )}
-                                        <div>
-                                            <p className="text-lg font-bold text-gray-900">{invoice.customer.name}</p>
-                                            {invoice.customer.email && (
-                                                <div className="flex items-center gap-1">
-                                                    <Mail className="w-3.5 h-3.5 text-gray-400" />
-                                                    <span className="text-sm text-gray-500">{invoice.customer.email}</span>
-                                                </div>
-                                            )}
-                                            {invoice.customer.phone && (
-                                                <div className="flex items-center gap-1">
-                                                    <Phone className="w-3.5 h-3.5 text-gray-400" />
-                                                    <span className="text-sm text-gray-500">{invoice.customer.phone}</span>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Package/Description */}
-                        {invoice.package_name && (
-                            <div className="mb-6">
-                                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                                    Description
-                                </h4>
-                                <div className="bg-gray-50 rounded-xl p-4">
-                                    <p className="text-sm font-medium text-gray-900">{invoice.package_name}</p>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Financial Breakdown */}
-                        <div className="mb-6">
-                            <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                                Payment Details
-                            </h4>
-                            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                                <div className="divide-y divide-gray-100">
-                                    <div className="flex items-center justify-between px-4 py-3">
-                                        <span className="text-sm text-gray-600">Subtotal</span>
-                                        <span className="text-sm font-medium text-gray-900">
-                                            {formatCurrency(invoice.payment_amount)}
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center justify-between px-4 py-3">
-                                        <span className="text-sm text-gray-600">Tax ({invoice.tax_rate}%)</span>
-                                        <span className="text-sm font-medium text-gray-900">
-                                            {formatCurrency(invoice.tax_amount)}
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center justify-between px-4 py-4 bg-gradient-to-r from-blue-50 to-indigo-50">
-                                        <span className="text-base font-semibold text-orange-900">Total</span>
-                                        <span className="text-xl font-bold text-orange-900">
-                                            {formatCurrency(invoice.total)}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Notes */}
-                        {invoice.notes && (
-                            <div className="mb-6">
-                                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                                    Notes
-                                </h4>
-                                <div className="bg-gray-50 rounded-xl p-4">
-                                    <p className="text-sm text-gray-900 whitespace-pre-wrap">{invoice.notes}</p>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Footer Actions */}
-                        <div className="mt-6 pt-4 border-t border-gray-100 flex gap-3">
-                            <button
-                                onClick={onClose}
-                                className="flex-1 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
-                            >
-                                Close
-                            </button>
-                            {canEdit && (
-                                <button
-                                    onClick={onEdit}
-                                    className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
-                                >
-                                    <Edit className="w-4 h-4" />
-                                    Edit Invoice
-                                </button>
-                            )}
-                        </div>
-                    </div>
+                            Edit
+                        </Button>
+                    ) : null}
                 </div>
+            }
+            footer={
+                <div className="flex justify-end">
+                    <Button variant="ghost" size="sm" onClick={onClose}>
+                        Close
+                    </Button>
+                </div>
+            }
+        >
+            <div className="space-y-6">
+                <PropertyList title="Invoice">
+                    <PropertyRow label="Customer">
+                        <RelationChip
+                            customerId={
+                                invoice.customer_id || invoice.customer?.id
+                            }
+                            name={invoice.customer?.name}
+                            avatarUrl={invoice.customer?.avatar}
+                            emptyLabel="Unlinked"
+                            className="justify-end"
+                        />
+                    </PropertyRow>
+                    <PropertyRow label="Invoice date">
+                        {formatDate(invoice.invoice_date)}
+                    </PropertyRow>
+                    <PropertyRow label="Due date">
+                        <span
+                            className={
+                                isOverdue ? "text-destructive" : undefined
+                            }
+                        >
+                            {formatDate(invoice.due_date)}
+                        </span>
+                    </PropertyRow>
+                    <PropertyRow label="Description">
+                        {invoice.package_name?.trim() ? (
+                            invoice.package_name
+                        ) : (
+                            <PropertyEmpty />
+                        )}
+                    </PropertyRow>
+                    <PropertyRow label="Subtotal">
+                        {formatCurrency(invoice.payment_amount)}
+                    </PropertyRow>
+                    <PropertyRow label={`Tax (${invoice.tax_rate}%)`}>
+                        {formatCurrency(invoice.tax_amount)}
+                    </PropertyRow>
+                    <PropertyRow label="Total">
+                        <span className="text-base font-semibold tabular-nums">
+                            {formatCurrency(invoice.total)}
+                        </span>
+                    </PropertyRow>
+                    <PropertyRow label="Amount paid">
+                        {formatCurrency(amountPaid)}
+                    </PropertyRow>
+                    <PropertyRow label="Balance due">
+                        <span className="font-semibold tabular-nums">
+                            {formatCurrency(balanceDue)}
+                        </span>
+                    </PropertyRow>
+                </PropertyList>
+
+                <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                        <h3 className="text-sm font-semibold text-foreground">
+                            Payment ledger
+                        </h3>
+                        {canEdit && invoice.status !== "Cancelled" && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                leftIcon={<Plus className="h-3.5 w-3.5" />}
+                                onClick={() => setShowPayForm((v) => !v)}
+                            >
+                                Record payment
+                            </Button>
+                        )}
+                    </div>
+
+                    {showPayForm && (
+                        <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
+                            <div className="grid grid-cols-2 gap-2">
+                                <label className="text-xs text-muted-foreground col-span-1">
+                                    Amount
+                                    <input
+                                        type="number"
+                                        min="0.01"
+                                        step="0.01"
+                                        value={payAmount}
+                                        onChange={(e) =>
+                                            setPayAmount(e.target.value)
+                                        }
+                                        className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                                        placeholder={String(balanceDue || "")}
+                                    />
+                                </label>
+                                <label className="text-xs text-muted-foreground col-span-1">
+                                    Method
+                                    <select
+                                        value={payMethod}
+                                        onChange={(e) =>
+                                            setPayMethod(e.target.value)
+                                        }
+                                        className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                                    >
+                                        <option>E-Transfer</option>
+                                        <option>Cash</option>
+                                        <option>Cheque</option>
+                                        <option>Card</option>
+                                        <option>Financing</option>
+                                        <option>Other</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <label className="block text-xs text-muted-foreground">
+                                Note
+                                <input
+                                    type="text"
+                                    value={payNote}
+                                    onChange={(e) => setPayNote(e.target.value)}
+                                    className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                                    placeholder="Optional"
+                                />
+                            </label>
+                            <div className="flex justify-end gap-2">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setShowPayForm(false)}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    variant="primary"
+                                    size="sm"
+                                    disabled={busy}
+                                    onClick={() => void handleRecordPayment()}
+                                >
+                                    Save payment
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+
+                    {loadingPayments ? (
+                        <p className="text-sm text-muted-foreground">
+                            Loading payments…
+                        </p>
+                    ) : payments.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                            No payments recorded yet.
+                        </p>
+                    ) : (
+                        <ul className="divide-y divide-border rounded-lg border border-border">
+                            {payments.map((p) => (
+                                <li
+                                    key={p.id}
+                                    className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                                >
+                                    <div>
+                                        <p className="font-medium">
+                                            {formatDate(p.transaction_date)}
+                                            {p.category
+                                                ? ` · ${p.category}`
+                                                : ""}
+                                        </p>
+                                        {p.description ? (
+                                            <p className="text-xs text-muted-foreground">
+                                                {p.description}
+                                            </p>
+                                        ) : null}
+                                    </div>
+                                    <span className="tabular-nums font-medium">
+                                        {formatCurrency(Number(p.amount) || 0)}
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
+
+                {invoice.notes?.trim() && (
+                    <RecordNotes>{invoice.notes}</RecordNotes>
+                )}
+
+                <ActivityTimeline
+                    items={[
+                        {
+                            id: "created",
+                            title: "Invoice created",
+                            timestamp: formatDate(invoice.created_at),
+                        },
+                        {
+                            id: "due",
+                            title: "Due",
+                            timestamp: formatDate(invoice.due_date),
+                        },
+                    ]}
+                />
             </div>
-        </div>
+        </RecordDrawer>
     );
 }

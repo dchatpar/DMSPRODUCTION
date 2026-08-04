@@ -4,34 +4,38 @@ import { useState, useEffect } from "react";
 import {
     Ticket,
     Plus,
-    Search,
-    MoreVertical,
     Edit,
     Trash2,
     Eye,
     ChevronLeft,
     ChevronRight,
-    Download,
     RefreshCw,
     Loader2,
     AlertCircle,
     CheckCircle,
     Clock,
     AlertTriangle,
-    List,
-    LayoutGrid,
     XCircle,
     Inbox,
     Mail,
     Phone,
     User,
-    Filter,
+    Filter
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import TicketFormModal from "@/src/components/TicketFormModal";
 import TicketDetailsModal from "@/src/components/TicketDetailsModal";
 import TicketsKanban from "@/src/components/TicketsKanban";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
+import { apiFetch } from "@/src/lib/fetch";
+import { toast } from "@/src/lib/toast";
+import { ListPageShell } from "@/src/components/ListPageShell";
+import { ListToolbar } from "@/src/components/ListToolbar";
+import { MetricStrip } from "@/src/components/ui/MetricStrip";
+import { Button } from "@/src/components/ui/Button";
+import { SkeletonTable } from "@/src/components/ui/Skeleton";
+import { cn } from "@/src/lib/utils";
+import type { ListViewMode } from "@/src/components/ListToolbar";
 
 interface UserData {
     id: string;
@@ -65,16 +69,16 @@ const TICKET_STAGES = ["Open", "In Progress", "Resolved", "Closed"];
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; border: string; icon: any }> = {
     "Open": { bg: "bg-red-50", text: "text-red-700", border: "border-red-200", icon: AlertCircle },
-    "In Progress": { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200", icon: Clock },
+    "In Progress": { bg: "bg-primary-50", text: "text-blue-700", border: "border-blue-200", icon: Clock },
     "Resolved": { bg: "bg-green-50", text: "text-green-700", border: "border-green-200", icon: CheckCircle },
-    "Closed": { bg: "bg-gray-50", text: "text-gray-700", border: "border-gray-200", icon: XCircle },
+    "Closed": { bg: "bg-muted/40", text: "text-foreground/90", border: "border-border", icon: XCircle }
 };
 
 const PRIORITY_COLORS: Record<string, string> = {
-    Low: "bg-gray-100 text-gray-700",
+    Low: "bg-muted text-foreground/90",
     Medium: "bg-blue-100 text-blue-700",
     High: "bg-orange-100 text-orange-700",
-    Urgent: "bg-red-100 text-red-700",
+    Urgent: "bg-red-100 text-red-700"
 };
 
 export default function TicketsPage() {
@@ -92,7 +96,7 @@ export default function TicketsPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [totalItems, setTotalItems] = useState(0);
     const [itemsPerPage] = useState(20);
-    const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
+    const [viewMode, setViewMode] = useState<ListViewMode>("kanban");
     const [exportLoading, setExportLoading] = useState(false);
 
     // Modal states
@@ -124,9 +128,7 @@ export default function TicketsPage() {
     const exportToExcel = async () => {
         setExportLoading(true);
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch("/api/tickets?limit=10000", {
-                headers: { Authorization: `Bearer ${token}` },
             });
             if (!response.ok) throw new Error("Failed to fetch tickets for export");
 
@@ -141,7 +143,7 @@ export default function TicketsPage() {
                 "Created By": ticket.created_by_user?.full_name || "",
                 "Assigned To": ticket.assigned_user?.full_name || "",
                 "Created At": ticket.created_at ? new Date(ticket.created_at).toLocaleDateString() : "",
-                "Resolved At": ticket.resolved_at ? new Date(ticket.resolved_at).toLocaleDateString() : "",
+                "Resolved At": ticket.resolved_at ? new Date(ticket.resolved_at).toLocaleDateString() : ""
             }));
 
             const worksheet = XLSX.utils.json_to_sheet(worksheetData);
@@ -157,7 +159,7 @@ export default function TicketsPage() {
             XLSX.writeFile(workbook, `tickets-export-${new Date().toISOString().split("T")[0]}.xlsx`);
         } catch (error) {
             console.error("Export error:", error);
-            alert("Failed to export tickets");
+            toast.error("Failed to export tickets")
         } finally {
             setExportLoading(false);
         }
@@ -167,8 +169,6 @@ export default function TicketsPage() {
         try {
             setLoading(true);
             setError(null);
-
-            const token = localStorage.getItem("access_token");
             const offset = (currentPage - 1) * itemsPerPage;
 
             let url = `/api/tickets?limit=${itemsPerPage}&offset=${offset}`;
@@ -180,8 +180,7 @@ export default function TicketsPage() {
 
             const response = await fetch(url, {
                 headers: {
-                    Authorization: `Bearer ${token}`,
-                },
+                }
             });
 
             if (!response.ok) {
@@ -233,10 +232,8 @@ export default function TicketsPage() {
         setConfirmDialogData((prev) => ({ ...prev, loading: true }));
 
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch(`/api/tickets/${ticketId}`, {
-                method: "DELETE",
-                headers: { Authorization: `Bearer ${token}` },
+                method: "DELETE"
             });
 
             if (!response.ok) {
@@ -250,21 +247,18 @@ export default function TicketsPage() {
             setTotalItems((prev) => prev - 1);
             fetchTickets();
         } catch (err) {
-            alert(err instanceof Error ? err.message : "An error occurred");
+            toast.error(err instanceof Error ? err.message : "An error occurred");
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
     };
 
     const handleStatusChange = async (ticket: Ticket, newStatus: string) => {
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch(`/api/tickets/${ticket.id}`, {
                 method: "PATCH",
                 headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({ status: newStatus }),
+                    "Content-Type": "application/json" },
+                body: JSON.stringify({ status: newStatus })
             });
 
             if (!response.ok) {
@@ -273,7 +267,7 @@ export default function TicketsPage() {
 
             fetchTickets();
         } catch (err) {
-            alert(err instanceof Error ? err.message : "An error occurred");
+            toast.error(err instanceof Error ? err.message : "An error occurred");
         }
     };
 
@@ -282,7 +276,7 @@ export default function TicketsPage() {
         return new Date(date).toLocaleDateString("en-US", {
             year: "numeric",
             month: "short",
-            day: "numeric",
+            day: "numeric"
         });
     };
 
@@ -301,201 +295,140 @@ export default function TicketsPage() {
     const closedCount = tickets.filter((t) => t.status === "Closed").length;
 
     return (
-        <div className="space-y-6 py-10">
-            {/* Page Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Support Tickets</h1>
-                    <p className="text-sm text-gray-500 mt-1">
-                        Manage and track internal support requests
-                    </p>
-                </div>
-                <div className="flex items-center gap-3">
-                    <div className="flex bg-gray-100 rounded-lg p-1">
-                        <button
-                            onClick={() => setViewMode("kanban")}
-                            className={`p-1.5 rounded-md transition-colors ${viewMode === "kanban"
-                                    ? "bg-white shadow-sm text-blue-600"
-                                    : "text-gray-500 hover:text-gray-700"
-                                }`}
-                            title="Kanban View"
-                        >
-                            <LayoutGrid className="w-4 h-4" />
-                        </button>
-                        <button
-                            onClick={() => setViewMode("list")}
-                            className={`p-1.5 rounded-md transition-colors ${viewMode === "list"
-                                    ? "bg-white shadow-sm text-blue-600"
-                                    : "text-gray-500 hover:text-gray-700"
-                                }`}
-                            title="List View"
-                        >
-                            <List className="w-4 h-4" />
-                        </button>
-                    </div>
-                    <button
-                        onClick={fetchTickets}
-                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
-                    >
-                        <RefreshCw className="w-4 h-4" />
+        <ListPageShell
+            title="Support Tickets"
+            description="Manage and track internal support requests"
+            icon={Ticket}
+            actions={
+                <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={fetchTickets} disabled={loading}>
+                        <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
                         Refresh
-                    </button>
-                    <button
-                        onClick={handleAdd}
-                        className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2"
-                    >
-                        <Plus className="w-4 h-4" />
+                    </Button>
+                    <Button size="sm" onClick={handleAdd}>
+                        <Plus className="h-4 w-4" />
                         New Ticket
-                    </button>
+                    </Button>
                 </div>
-            </div>
-
-            {/* Quick Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-red-100 rounded-lg">
-                            <AlertCircle className="w-5 h-5 text-red-600" />
-                        </div>
-                        <div>
-                            <p className="text-xs text-gray-500">Open</p>
-                            <p className="text-xl font-bold text-red-600">{openCount}</p>
-                        </div>
-                    </div>
-                </div>
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-blue-100 rounded-lg">
-                            <Clock className="w-5 h-5 text-blue-600" />
-                        </div>
-                        <div>
-                            <p className="text-xs text-gray-500">In Progress</p>
-                            <p className="text-xl font-bold text-blue-600">{inProgressCount}</p>
-                        </div>
-                    </div>
-                </div>
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-green-100 rounded-lg">
-                            <CheckCircle className="w-5 h-5 text-green-600" />
-                        </div>
-                        <div>
-                            <p className="text-xs text-gray-500">Resolved</p>
-                            <p className="text-xl font-bold text-green-600">{resolvedCount}</p>
-                        </div>
-                    </div>
-                </div>
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-gray-100 rounded-lg">
-                            <XCircle className="w-5 h-5 text-gray-600" />
-                        </div>
-                        <div>
-                            <p className="text-xs text-gray-500">Closed</p>
-                            <p className="text-xl font-bold text-gray-600">{closedCount}</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Filters */}
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-                <div className="flex flex-col sm:flex-row gap-4">
-                    <div className="flex-1 relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                            type="text"
-                            placeholder="Search tickets by subject, description..."
-                            value={searchTerm}
-                            onChange={(e) => {
-                                setSearchTerm(e.target.value);
+            }
+            kpis={
+                <MetricStrip
+                    loading={loading}
+                    items={[
+                        { label: "Open", value: openCount, tone: "destructive" },
+                        { label: "In Progress", value: inProgressCount },
+                        { label: "Resolved", value: resolvedCount, tone: "success" },
+                        { label: "Closed", value: closedCount, tone: "cold" },
+                    ]}
+                />
+            }
+            toolbar={
+                <ListToolbar
+                    searchPlaceholder="Search tickets by subject, description..."
+                    searchValue={searchTerm}
+                    onSearchChange={(v) => {
+                        setSearchTerm(v);
+                        setCurrentPage(1);
+                    }}
+                    filters={[
+                        {
+                            id: "priority",
+                            value: priorityFilter,
+                            onChange: (v) => {
+                                setPriorityFilter(v);
                                 setCurrentPage(1);
-                            }}
-                            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        />
-                    </div>
-                    <div className="flex gap-3 flex-wrap">
-                        <select
-                            value={priorityFilter}
-                            onChange={(e) => {
-                                setPriorityFilter(e.target.value);
+                            },
+                            options: [
+                                { value: "Low", label: "Low" },
+                                { value: "Medium", label: "Medium" },
+                                { value: "High", label: "High" },
+                                { value: "Urgent", label: "Urgent" },
+                            ],
+                            allLabel: "All Priority",
+                        },
+                        {
+                            id: "status",
+                            value: statusFilter,
+                            onChange: (v) => {
+                                setStatusFilter(v);
                                 setCurrentPage(1);
-                            }}
-                            className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                        >
-                            <option value="">All Priority</option>
-                            <option value="Low">Low</option>
-                            <option value="Medium">Medium</option>
-                            <option value="High">High</option>
-                            <option value="Urgent">Urgent</option>
-                        </select>
-                        <select
-                            value={statusFilter}
-                            onChange={(e) => {
-                                setStatusFilter(e.target.value);
-                                setCurrentPage(1);
-                            }}
-                            className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                        >
-                            <option value="">All Status</option>
-                            <option value="Open">Open</option>
-                            <option value="In Progress">In Progress</option>
-                            <option value="Resolved">Resolved</option>
-                            <option value="Closed">Closed</option>
-                        </select>
+                            },
+                            options: [
+                                { value: "Open", label: "Open" },
+                                { value: "In Progress", label: "In Progress" },
+                                { value: "Resolved", label: "Resolved" },
+                                { value: "Closed", label: "Closed" },
+                            ],
+                            allLabel: "All Status",
+                        },
+                    ]}
+                    viewMode={viewMode}
+                    onViewModeChange={setViewMode}
+                    onExport={exportToExcel}
+                    exportLoading={exportLoading}
+                    showPrimary={false}
+                    extraFilters={
                         <div className="relative">
                             <button
+                                type="button"
                                 onClick={() => setShowMoreFilters(!showMoreFilters)}
-                                className={`px-4 py-2 border rounded-lg transition-colors flex items-center gap-2 ${
-                                    showMoreFilters ? "bg-blue-50 border-blue-200 text-blue-600" : "border-gray-200 hover:bg-gray-50"
-                                }`}
+                                className={cn(
+                                    "inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm transition-colors",
+                                    showMoreFilters || createdAtFrom || createdAtTo
+                                        ? "border-primary/30 bg-primary-50 text-primary"
+                                        : "border-border bg-background text-foreground hover:bg-muted"
+                                )}
                             >
-                                <Filter className="w-4 h-4" />
-                                More Filters
+                                <Filter className="h-3.5 w-3.5" />
+                                Dates
                                 {(createdAtFrom || createdAtTo) && (
-                                    <span className="w-2 h-2 bg-blue-500 rounded-full" />
+                                    <span className="h-1.5 w-1.5 rounded-full bg-primary" />
                                 )}
                             </button>
                             {showMoreFilters && (
-                                <div className="absolute right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-50 p-4">
+                                <div className="absolute right-0 z-50 mt-2 w-80 rounded-lg border border-border bg-card p-4 shadow-lg">
                                     <div className="space-y-4">
                                         <div>
-                                            <label className="block text-xs font-medium text-gray-500 mb-1.5">Created Date Range</label>
+                                            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                                                Created Date Range
+                                            </label>
                                             <div className="flex flex-col gap-2">
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-xs text-gray-400 w-8">From</span>
+                                                    <span className="w-8 text-xs text-muted-foreground">From</span>
                                                     <input
                                                         type="date"
                                                         value={createdAtFrom}
                                                         onChange={(e) => setCreatedAtFrom(e.target.value)}
-                                                        className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                        className="flex-1 rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
                                                     />
                                                 </div>
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-xs text-gray-400 w-8">To</span>
+                                                    <span className="w-8 text-xs text-muted-foreground">To</span>
                                                     <input
                                                         type="date"
                                                         value={createdAtTo}
                                                         onChange={(e) => setCreatedAtTo(e.target.value)}
-                                                        className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                        className="flex-1 rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
                                                     />
                                                 </div>
                                             </div>
                                         </div>
                                         <div className="flex gap-2 pt-1">
                                             <button
+                                                type="button"
                                                 onClick={() => {
                                                     setCreatedAtFrom("");
                                                     setCreatedAtTo("");
                                                     setShowMoreFilters(false);
                                                 }}
-                                                className="flex-1 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
+                                                className="flex-1 rounded-lg border border-border px-3 py-1.5 text-xs text-foreground/80 hover:bg-muted/40"
                                             >
                                                 Clear All
                                             </button>
                                             <button
+                                                type="button"
                                                 onClick={() => setShowMoreFilters(false)}
-                                                className="flex-1 px-3 py-1.5 text-xs text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                                                className="flex-1 rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary-600"
                                             >
                                                 Apply
                                             </button>
@@ -504,29 +437,14 @@ export default function TicketsPage() {
                                 </div>
                             )}
                         </div>
-                        <button
-                            onClick={exportToExcel}
-                            disabled={exportLoading}
-                            className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 disabled:opacity-50"
-                        >
-                            {exportLoading ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                                <Download className="w-4 h-4" />
-                            )}
-                            Export
-                        </button>
-                    </div>
-                </div>
-            </div>
-
+                    }
+                />
+            }
+        >
             {/* Loading State */}
             {loading && (
-                <div className="flex items-center justify-center min-h-[300px]">
-                    <div className="flex flex-col items-center gap-4">
-                        <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-                        <p className="text-sm text-gray-500">Loading tickets...</p>
-                    </div>
+                <div className="overflow-hidden rounded-lg border border-border bg-card p-6">
+                    <SkeletonTable rows={6} cols={5} />
                 </div>
             )}
 
@@ -534,12 +452,12 @@ export default function TicketsPage() {
             {error && !loading && (
                 <div className="flex items-center justify-center min-h-[300px]">
                     <div className="text-center">
-                        <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-3" />
-                        <p className="text-red-600 text-sm font-medium mb-2">Error loading tickets</p>
-                        <p className="text-gray-600 text-sm">{error}</p>
+                        <AlertCircle className="w-12 h-12 text-destructive mx-auto mb-3" />
+                        <p className="text-destructive text-sm font-medium mb-2">Error loading tickets</p>
+                        <p className="text-foreground/80 text-sm">{error}</p>
                         <button
                             onClick={fetchTickets}
-                            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+                            className="mt-4 px-4 py-2 bg-primary text-white rounded-lg text-sm hover:bg-primary-600"
                         >
                             Try Again
                         </button>
@@ -568,12 +486,12 @@ export default function TicketsPage() {
                 <div className="lg:hidden">
                     <div className="space-y-4">
                         {tickets.length === 0 ? (
-                            <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-                                <Ticket className="w-12 h-12 text-gray-300 mx-auto" />
-                                <p className="mt-2 text-sm text-gray-500">No tickets found</p>
+                            <div className="bg-card rounded-xl border border-border p-12 text-center">
+                                <Ticket className="w-12 h-12 text-muted-foreground/50 mx-auto" />
+                                <p className="mt-2 text-sm text-muted-foreground">No tickets found</p>
                                 <button
                                     onClick={handleAdd}
-                                    className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                    className="mt-3 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary-600"
                                 >
                                     Add Your First Ticket
                                 </button>
@@ -582,7 +500,7 @@ export default function TicketsPage() {
                             tickets.map((ticket) => (
                                 <div
                                     key={ticket.id}
-                                    className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow"
+                                    className="bg-card rounded-xl border border-border p-4 hover:shadow-md transition-shadow"
                                     onClick={() => handleViewDetails(ticket)}
                                 >
                                     <div className="flex items-start justify-between mb-3">
@@ -591,10 +509,10 @@ export default function TicketsPage() {
                                                 <Ticket className={`w-5 h-5 ${STATUS_COLORS[ticket.status].text}`} />
                                             </div>
                                             <div>
-                                                <p className="text-sm font-semibold text-gray-900 line-clamp-1">
+                                                <p className="text-sm font-semibold text-foreground line-clamp-1">
                                                     {ticket.subject}
                                                 </p>
-                                                <p className="text-xs text-gray-500">
+                                                <p className="text-xs text-muted-foreground">
                                                     #{ticket.id.slice(0, 8)}
                                                 </p>
                                             </div>
@@ -602,9 +520,9 @@ export default function TicketsPage() {
                                         <div className="flex items-center gap-1">
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); handleViewDetails(ticket); }}
-                                                className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
+                                                className="p-1.5 hover:bg-primary-50 rounded-lg transition-colors"
                                             >
-                                                <Eye className="w-4 h-4 text-blue-500" />
+                                                <Eye className="w-4 h-4 text-primary" />
                                             </button>
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); handleEdit(ticket); }}
@@ -615,7 +533,7 @@ export default function TicketsPage() {
                                         </div>
                                     </div>
                                     {ticket.description && (
-                                        <p className="text-xs text-gray-500 line-clamp-2 mb-3">
+                                        <p className="text-xs text-muted-foreground line-clamp-2 mb-3">
                                             {ticket.description}
                                         </p>
                                     )}
@@ -627,13 +545,13 @@ export default function TicketsPage() {
                                             {ticket.status}
                                         </span>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
+                                    <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                                         <div>
-                                            <span className="font-medium text-gray-400">Created:</span>{" "}
+                                            <span className="font-medium text-muted-foreground">Created:</span>{" "}
                                             {formatDate(ticket.created_at)}
                                         </div>
                                         <div>
-                                            <span className="font-medium text-gray-400">Assigned:</span>{" "}
+                                            <span className="font-medium text-muted-foreground">Assigned:</span>{" "}
                                             {ticket.assigned_user?.full_name || "Unassigned"}
                                         </div>
                                     </div>
@@ -645,42 +563,42 @@ export default function TicketsPage() {
             )}
 
             {/* List View */}
-            {!loading && !error && viewMode === "list" && (
-                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            {!loading && !error && viewMode === "table" && (
+                <div className="bg-card rounded-xl border border-border overflow-hidden">
                     {/* Desktop Table - Hidden on mobile */}
                     <div className="hidden lg:block overflow-x-auto">
                         <table className="w-full">
-                            <thead className="bg-gray-50 border-b border-gray-200">
+                            <thead className="bg-muted/40 border-b border-border">
                                 <tr>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                                         Subject
                                     </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                                         Priority
                                     </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                                         Status
                                     </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                                         Created
                                     </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                                         Assigned To
                                     </th>
-                                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
                                         Actions
                                     </th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-200">
+                            <tbody className="divide-y divide-border">
                                 {tickets.length === 0 ? (
                                     <tr>
                                         <td colSpan={6} className="px-4 py-12 text-center">
-                                            <Ticket className="w-12 h-12 text-gray-300 mx-auto" />
-                                            <p className="mt-2 text-sm text-gray-500">No tickets found</p>
+                                            <Ticket className="w-12 h-12 text-muted-foreground/50 mx-auto" />
+                                            <p className="mt-2 text-sm text-muted-foreground">No tickets found</p>
                                             <button
                                                 onClick={handleAdd}
-                                                className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                                className="mt-3 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary-600"
                                             >
                                                 Add Your First Ticket
                                             </button>
@@ -690,8 +608,13 @@ export default function TicketsPage() {
                                     tickets.map((ticket) => (
                                         <tr
                                             key={ticket.id}
-                                            className="hover:bg-gray-50 transition-colors cursor-pointer"
+                                            role="button"
+                                            tabIndex={0}
+                                            className="cursor-pointer border-l-2 border-l-transparent transition-colors hover:border-l-primary hover:bg-muted/50 focus-visible:border-l-primary focus-visible:bg-muted/50 focus-visible:outline-none"
                                             onClick={() => handleViewDetails(ticket)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter") handleViewDetails(ticket);
+                                            }}
                                         >
                                             <td className="px-4 py-3">
                                                 <div className="flex items-center gap-3">
@@ -699,11 +622,18 @@ export default function TicketsPage() {
                                                         <Ticket className={`w-4 h-4 ${STATUS_COLORS[ticket.status].text}`} />
                                                     </div>
                                                     <div>
-                                                        <p className="text-sm font-medium text-gray-900">
+                                                        <button
+                                                            type="button"
+                                                            className="text-left text-sm font-medium text-primary hover:underline underline-offset-2"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleViewDetails(ticket);
+                                                            }}
+                                                        >
                                                             {ticket.subject}
-                                                        </p>
+                                                        </button>
                                                         {ticket.description && (
-                                                            <p className="text-xs text-gray-500 truncate max-w-[250px]">
+                                                            <p className="text-xs text-muted-foreground truncate max-w-[250px]">
                                                                 {ticket.description}
                                                             </p>
                                                         )}
@@ -729,7 +659,7 @@ export default function TicketsPage() {
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3">
-                                                <span className="text-sm text-gray-600">
+                                                <span className="text-sm text-foreground/80">
                                                     {formatDate(ticket.created_at)}
                                                 </span>
                                             </td>
@@ -742,11 +672,11 @@ export default function TicketsPage() {
                                                             className="w-6 h-6 rounded-full object-cover"
                                                         />
                                                     ) : (
-                                                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-xs font-medium">
+                                                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary to-primary-600 flex items-center justify-center text-white text-xs font-medium">
                                                             {ticket.assigned_user?.full_name?.[0] || "?"}
                                                         </div>
                                                     )}
-                                                    <span className="text-sm text-gray-600">
+                                                    <span className="text-sm text-foreground/80">
                                                         {ticket.assigned_user?.full_name || "Unassigned"}
                                                     </span>
                                                 </div>
@@ -758,10 +688,10 @@ export default function TicketsPage() {
                                                             e.stopPropagation();
                                                             handleViewDetails(ticket);
                                                         }}
-                                                        className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
+                                                        className="p-1.5 hover:bg-primary-50 rounded-lg transition-colors"
                                                         title="View Details"
                                                     >
-                                                        <Eye className="w-4 h-4 text-blue-500" />
+                                                        <Eye className="w-4 h-4 text-primary" />
                                                     </button>
                                                     <button
                                                         onClick={(e) => {
@@ -783,9 +713,6 @@ export default function TicketsPage() {
                                                     >
                                                         <Trash2 className="w-4 h-4 text-red-500" />
                                                     </button>
-                                                    <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
-                                                        <MoreVertical className="w-4 h-4 text-gray-400" />
-                                                    </button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -797,25 +724,25 @@ export default function TicketsPage() {
 
                     {/* Pagination */}
                     {!loading && !error && tickets.length > 0 && (
-                        <div className="px-4 py-3 border-t border-gray-200 flex items-center justify-between">
-                            <p className="text-sm text-gray-500">
+                        <div className="px-4 py-3 border-t border-border flex items-center justify-between">
+                            <p className="text-sm text-muted-foreground">
                                 Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalItems)} of {totalItems} tickets
                             </p>
                             <div className="flex items-center gap-2">
                                 <button
                                     onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
                                     disabled={currentPage === 1}
-                                    className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    className="p-2 border border-border rounded-lg hover:bg-muted/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                 >
                                     <ChevronLeft className="w-4 h-4" />
                                 </button>
-                                <span className="text-sm text-gray-600">
+                                <span className="text-sm text-foreground/80">
                                     Page {currentPage} of {totalPages}
                                 </span>
                                 <button
                                     onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
                                     disabled={currentPage === totalPages}
-                                    className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    className="p-2 border border-border rounded-lg hover:bg-muted/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                 >
                                     <ChevronRight className="w-4 h-4" />
                                 </button>
@@ -823,21 +750,21 @@ export default function TicketsPage() {
                         </div>
                     )}
                     {/* Mobile Cards - Hidden on desktop */}
-                    <div className="lg:hidden divide-y divide-gray-200">
+                    <div className="lg:hidden divide-y divide-border">
                         {tickets.length === 0 ? (
                             <div className="px-4 py-12 text-center">
-                                <Ticket className="w-12 h-12 text-gray-300 mx-auto" />
-                                <p className="mt-2 text-sm text-gray-500">No tickets found</p>
+                                <Ticket className="w-12 h-12 text-muted-foreground/50 mx-auto" />
+                                <p className="mt-2 text-sm text-muted-foreground">No tickets found</p>
                                 <button
                                     onClick={handleAdd}
-                                    className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                    className="mt-3 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary-600"
                                 >
                                     Add Your First Ticket
                                 </button>
                             </div>
                         ) : (
                             tickets.map((ticket) => (
-                                <div key={ticket.id} className="p-4 hover:bg-gray-50 transition-colors">
+                                <div key={ticket.id} className="p-4 hover:bg-muted/40 transition-colors">
                                     {/* Header Row */}
                                     <div className="flex items-start justify-between mb-3">
                                         <div className="flex items-center gap-3">
@@ -845,11 +772,14 @@ export default function TicketsPage() {
                                                 <Ticket className={`w-4 h-4 ${STATUS_COLORS[ticket.status].text}`} />
                                             </div>
                                             <div>
-                                                <p className="text-sm font-medium text-gray-900 line-clamp-1">
+                                                <p className="text-sm font-medium text-foreground line-clamp-1">
                                                     {ticket.subject}
                                                 </p>
+                                                <span data-testid="mobile-stage-badge" className={`mt-1 inline-flex rounded-md px-2 py-0.5 text-[10px] font-semibold ${STATUS_COLORS[ticket.status]?.bg || "bg-muted"} ${STATUS_COLORS[ticket.status]?.text || "text-foreground"}`}>
+                                                    {ticket.status}
+                                                </span>
                                                 {ticket.description && (
-                                                    <p className="text-xs text-gray-500 truncate max-w-[180px]">
+                                                    <p className="text-xs text-muted-foreground truncate max-w-[180px]">
                                                         {ticket.description}
                                                     </p>
                                                 )}
@@ -858,9 +788,9 @@ export default function TicketsPage() {
                                         <div className="flex items-center gap-1">
                                             <button
                                                 onClick={() => handleViewDetails(ticket)}
-                                                className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
+                                                className="p-1.5 hover:bg-primary-50 rounded-lg transition-colors"
                                             >
-                                                <Eye className="w-4 h-4 text-blue-500" />
+                                                <Eye className="w-4 h-4 text-primary" />
                                             </button>
                                             <button
                                                 onClick={() => handleEdit(ticket)}
@@ -886,13 +816,13 @@ export default function TicketsPage() {
                                         </span>
                                     </div>
                                     {/* Details Row */}
-                                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
+                                    <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                                         <div>
-                                            <span className="font-medium text-gray-400">Created:</span>{" "}
+                                            <span className="font-medium text-muted-foreground">Created:</span>{" "}
                                             {formatDate(ticket.created_at)}
                                         </div>
                                         <div>
-                                            <span className="font-medium text-gray-400">Assigned:</span>{" "}
+                                            <span className="font-medium text-muted-foreground">Assigned:</span>{" "}
                                             {ticket.assigned_user?.full_name || "Unassigned"}
                                         </div>
                                     </div>
@@ -903,25 +833,25 @@ export default function TicketsPage() {
 
                     {/* Mobile Pagination */}
                     {!loading && !error && tickets.length > 0 && (
-                        <div className="lg:hidden px-4 py-3 border-t border-gray-200 flex items-center justify-between">
-                            <p className="text-xs text-gray-500">
+                        <div className="lg:hidden px-4 py-3 border-t border-border flex items-center justify-between">
+                            <p className="text-xs text-muted-foreground">
                                 Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalItems)} of {totalItems}
                             </p>
                             <div className="flex items-center gap-2">
                                 <button
                                     onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
                                     disabled={currentPage === 1}
-                                    className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    className="p-2 border border-border rounded-lg hover:bg-muted/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                 >
                                     <ChevronLeft className="w-4 h-4" />
                                 </button>
-                                <span className="text-xs text-gray-600">
+                                <span className="text-xs text-foreground/80">
                                     {currentPage}/{totalPages}
                                 </span>
                                 <button
                                     onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
                                     disabled={currentPage === totalPages}
-                                    className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    className="p-2 border border-border rounded-lg hover:bg-muted/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                 >
                                     <ChevronRight className="w-4 h-4" />
                                 </button>
@@ -978,6 +908,6 @@ export default function TicketsPage() {
                     }}
                 />
             )}
-        </div>
+        </ListPageShell>
     );
 }

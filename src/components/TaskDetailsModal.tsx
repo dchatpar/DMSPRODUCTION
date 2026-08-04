@@ -1,30 +1,48 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import {
-    X,
-    Calendar,
-    Clock,
-    User,
-    Edit,
-    Trash2,
-    CheckCircle,
-    AlertTriangle,
-    FileText,
-    MessageSquare,
-    Bell,
-    Activity,
-    Send,
-    Loader2,
-    Link as LinkIcon,
-} from "lucide-react";
+import { useState } from "react";
+import { Edit, Trash2, Send, Loader2, AlertTriangle } from "lucide-react";
 import ConfirmDialog from "./ConfirmDialog";
+import { toast } from "@/src/lib/toast";
+import { RecordDrawer } from "@/src/components/ui/RecordDrawer";
+import { RecordHeader } from "@/src/components/ui/RecordHeader";
+import {
+    PropertyList,
+    PropertyRow,
+    PropertyEmpty,
+    RecordNotes,
+} from "@/src/components/ui/PropertyList";
+import { ActivityTimeline, type ActivityItem } from "@/src/components/ui/ActivityTimeline";
+import { StatusBadge } from "@/src/components/ui/StatusBadge";
+import { Button } from "@/src/components/ui/Button";
+import { Badge } from "@/src/components/ui/Badge";
+import { cn } from "@/src/lib/utils";
 
 interface UserData {
     id: string;
     full_name: string;
     email: string;
     avatar: string | null;
+}
+
+interface TaskNote {
+    id: string;
+    content: string;
+    created_at: string;
+    user?: UserData | null;
+}
+
+interface TaskActivity {
+    id: string;
+    action: string;
+    created_at: string;
+    new_value?: string | Record<string, unknown> | null;
+    user?: UserData | null;
+}
+
+interface TaskLink {
+    link_type: string;
+    linked_id: string;
 }
 
 interface Task {
@@ -46,11 +64,11 @@ interface Task {
     source_id: string | null;
     assigned_user: UserData | null;
     created_by_user: UserData | null;
-    task_notes?: any[];
-    task_attachments?: any[];
-    task_reminders?: any[];
-    task_links?: any[];
-    task_activity?: any[];
+    task_notes?: TaskNote[];
+    task_attachments?: unknown[];
+    task_reminders?: unknown[];
+    task_links?: TaskLink[];
+    task_activity?: TaskActivity[];
 }
 
 interface TaskDetailsModalProps {
@@ -67,22 +85,35 @@ interface TaskDetailsModalProps {
 
 const STATUS_OPTIONS = ["Pending", "In Progress", "Completed", "Cancelled", "On Hold"];
 
-const STATUS_COLORS: Record<string, string> = {
-    "Pending": "bg-yellow-100 text-yellow-700",
-    "In Progress": "bg-blue-100 text-blue-700",
-    "Completed": "bg-green-100 text-green-700",
-    "Cancelled": "bg-gray-100 text-gray-700",
-    "On Hold": "bg-purple-100 text-purple-700",
-};
+function formatDate(date: string | null) {
+    if (!date) return null;
+    return new Date(date).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+    });
+}
 
-const PRIORITY_COLORS: Record<string, string> = {
-    Low: "bg-gray-100 text-gray-700",
-    Medium: "bg-blue-100 text-blue-700",
-    High: "bg-orange-100 text-orange-700",
-    Urgent: "bg-red-100 text-red-700",
-};
+function formatDateTime(date: string | null) {
+    if (!date) return "";
+    return new Date(date).toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
 
-export default function TaskDetailsModal({ task, users = [], onClose, onEdit, onDelete, onStatusChange, onRefresh, userRole, userPermissions = [] }: TaskDetailsModalProps) {
+export default function TaskDetailsModal({
+    task,
+    onClose,
+    onEdit,
+    onDelete,
+    onStatusChange,
+    onRefresh,
+    userRole,
+    userPermissions = [],
+}: TaskDetailsModalProps) {
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [newNote, setNewNote] = useState("");
@@ -91,42 +122,21 @@ export default function TaskDetailsModal({ task, users = [], onClose, onEdit, on
 
     const canEdit = userRole === "Admin" || userPermissions.includes("tasks:write");
     const canDelete = userRole === "Admin" || userPermissions.includes("tasks:delete");
-    const isOverdue = task.due_date && task.status !== "Completed" && task.status !== "Cancelled" && new Date(task.due_date) < new Date();
-
-    const formatDate = (date: string | null) => {
-        if (!date) return "Not set";
-        return new Date(date).toLocaleDateString("en-US", {
-            year: "numeric",
-            month: "long",
-            day: "numeric",
-        });
-    };
-
-    const formatDateTime = (date: string | null) => {
-        if (!date) return "";
-        return new Date(date).toLocaleString("en-US", {
-            month: "short",
-            day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-        });
-    };
+    const isOverdue =
+        !!task.due_date &&
+        task.status !== "Completed" &&
+        task.status !== "Cancelled" &&
+        new Date(task.due_date) < new Date();
 
     const handleDelete = async () => {
         setDeleting(true);
         try {
-            const token = localStorage.getItem("access_token");
-            const response = await fetch(`/api/tasks/${task.id}`, {
-                method: "DELETE",
-                headers: { Authorization: `Bearer ${token}` },
-            });
-
+            const response = await fetch(`/api/tasks/${task.id}`, { method: "DELETE" });
             if (!response.ok) throw new Error("Failed to delete task");
-
             setShowDeleteConfirm(false);
             onDelete();
         } catch (err) {
-            alert(err instanceof Error ? err.message : "An error occurred");
+            toast.error(err instanceof Error ? err.message : "An error occurred");
         } finally {
             setDeleting(false);
         }
@@ -134,301 +144,256 @@ export default function TaskDetailsModal({ task, users = [], onClose, onEdit, on
 
     const handleAddNote = async () => {
         if (!newNote.trim()) return;
-
         setAddingNote(true);
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch(`/api/tasks/${task.id}/notes`, {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ content: newNote.trim() }),
             });
-
             if (!response.ok) throw new Error("Failed to add note");
-
             setNewNote("");
             onRefresh();
         } catch (err) {
-            alert(err instanceof Error ? err.message : "An error occurred");
+            toast.error(err instanceof Error ? err.message : "An error occurred");
         } finally {
             setAddingNote(false);
         }
     };
 
+    const activityItems: ActivityItem[] = (task.task_activity ?? []).map((a) => ({
+        id: a.id,
+        title: a.user?.full_name?.trim() || "System",
+        description: (
+            <>
+                <span>{a.action}</span>
+                {a.new_value != null && (
+                    <span className="mt-1 block text-[12px]">
+                        {typeof a.new_value === "string" ? a.new_value : JSON.stringify(a.new_value)}
+                    </span>
+                )}
+            </>
+        ),
+        timestamp: formatDateTime(a.created_at),
+    }));
+
+    const tabs: Array<{ id: "details" | "notes" | "activity"; label: string }> = [
+        { id: "details", label: "Details" },
+        {
+            id: "notes",
+            label: `Notes${task.task_notes?.length ? ` (${task.task_notes.length})` : ""}`,
+        },
+        { id: "activity", label: "Activity" },
+    ];
+
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative w-full max-w-3xl bg-white rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-                {/* Header */}
-                <div className="flex items-start justify-between p-6 border-b border-gray-100">
-                    <div className="flex-1 pr-4">
-                        <div className="flex flex-wrap items-center gap-2 mb-2">
-                            <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${PRIORITY_COLORS[task.priority]}`}>
-                                {task.priority}
-                            </span>
-                            <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${STATUS_COLORS[task.status]}`}>
-                                {task.status}
-                            </span>
-                            {isOverdue && (
-                                <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-red-100 text-red-700 flex items-center gap-1">
-                                    <AlertTriangle className="w-3 h-3" /> Overdue
-                                </span>
-                            )}
-                        </div>
-                        <h2 className="text-xl font-semibold text-gray-900">{task.title}</h2>
+        <>
+            <RecordDrawer
+                open
+                onClose={onClose}
+                header={
+                    <RecordHeader
+                        title={task.title}
+                        showAvatar={false}
+                        badges={
+                            <>
+                                <StatusBadge status={task.status} resource="task" />
+                                {task.priority && (
+                                    <Badge variant="subtle" className="text-[11px]">
+                                        {task.priority}
+                                    </Badge>
+                                )}
+                                {isOverdue && (
+                                    <Badge variant="destructive" className="text-[11px]">
+                                        <AlertTriangle className="mr-1 h-3 w-3" />
+                                        Overdue
+                                    </Badge>
+                                )}
+                            </>
+                        }
+                    />
+                }
+                actions={
+                    <>
+                        {canEdit && (
+                            <Button variant="primary" size="sm" leftIcon={<Edit className="h-3.5 w-3.5" />} onClick={onEdit}>
+                                Edit
+                            </Button>
+                        )}
+                        {canDelete && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+                                onClick={() => setShowDeleteConfirm(true)}
+                                className="text-destructive"
+                            >
+                                Delete
+                            </Button>
+                        )}
+                    </>
+                }
+                footer={
+                    <div className="flex justify-end">
+                        <Button variant="ghost" size="sm" onClick={onClose}>
+                            Close
+                        </Button>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
-                        <X className="w-5 h-5 text-gray-500" />
-                    </button>
+                }
+            >
+                <div className="mb-4 flex gap-2 border-b border-border">
+                    {tabs.map((tab) => (
+                        <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setActiveTab(tab.id)}
+                            className={cn(
+                                "px-3 py-2 text-[13px] font-medium border-b-2 -mb-px transition-colors",
+                                activeTab === tab.id
+                                    ? "border-primary text-primary"
+                                    : "border-transparent text-muted-foreground hover:text-foreground"
+                            )}
+                        >
+                            {tab.label}
+                        </button>
+                    ))}
                 </div>
 
-                {/* Tabs */}
-                <div className="flex border-b border-gray-200">
-                    <button
-                        onClick={() => setActiveTab("details")}
-                        className={`px-4 py-3 text-sm font-medium border-b-2 ${activeTab === "details" ? "border-blue-500 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}
-                    >
-                        Details
-                    </button>
-                    <button
-                        onClick={() => setActiveTab("notes")}
-                        className={`px-4 py-3 text-sm font-medium border-b-2 flex items-center gap-2 ${activeTab === "notes" ? "border-blue-500 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}
-                    >
-                        <MessageSquare className="w-4 h-4" />
-                        Notes {task.task_notes?.length ? `(${task.task_notes.length})` : ""}
-                    </button>
-                    <button
-                        onClick={() => setActiveTab("activity")}
-                        className={`px-4 py-3 text-sm font-medium border-b-2 flex items-center gap-2 ${activeTab === "activity" ? "border-blue-500 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}
-                    >
-                        <Activity className="w-4 h-4" />
-                        Activity
-                    </button>
-                </div>
-
-                {/* Content */}
-                <div className="flex-1 overflow-y-auto">
-                    {activeTab === "details" && (
-                        <div className="p-6 space-y-6">
-                            {/* Status Change */}
-                            <div>
-                                <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Change Status</label>
-                                <div className="flex flex-wrap gap-2">
-                                    {STATUS_OPTIONS.map((status) => (
-                                        <button
-                                            key={status}
-                                            onClick={() => onStatusChange(task, status)}
-                                            disabled={task.status === status}
-                                            className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-all ${task.status === status ? `${STATUS_COLORS[status]} cursor-default` : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"}`}
-                                        >
-                                            {status}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Description */}
-                            {task.description && (
-                                <div>
-                                    <label className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase mb-2">
-                                        <FileText className="w-4 h-4" /> Description
-                                    </label>
-                                    <p className="text-gray-700 bg-gray-50 rounded-lg p-3 text-sm whitespace-pre-wrap">{task.description}</p>
-                                </div>
-                            )}
-
-                            {/* Details Grid */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="flex items-start gap-3">
-                                    <div className="p-2 bg-blue-50 rounded-lg"><Calendar className="w-4 h-4 text-blue-600" /></div>
-                                    <div>
-                                        <p className="text-xs text-gray-500">Due Date</p>
-                                        <p className={`text-sm font-medium ${isOverdue ? "text-red-600" : "text-gray-900"}`}>{formatDate(task.due_date)}</p>
-                                    </div>
-                                </div>
-
-                                <div className="flex items-start gap-3">
-                                    <div className="p-2 bg-purple-50 rounded-lg"><User className="w-4 h-4 text-purple-600" /></div>
-                                    <div>
-                                        <p className="text-xs text-gray-500">Assigned To</p>
-                                        <div className="flex items-center gap-2">
-                                            {task.assigned_user?.avatar ? (
-                                                <img src={task.assigned_user.avatar} alt="" className="w-5 h-5 rounded-full" />
-                                            ) : (
-                                                <div className="w-5 h-5 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 text-xs font-medium">
-                                                    {task.assigned_user?.full_name?.[0] || "?"}
-                                                </div>
-                                            )}
-                                            <p className="text-sm font-medium text-gray-900">{task.assigned_user?.full_name || "Unassigned"}</p>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="flex items-start gap-3">
-                                    <div className="p-2 bg-green-50 rounded-lg"><User className="w-4 h-4 text-green-600" /></div>
-                                    <div>
-                                        <p className="text-xs text-gray-500">Created By</p>
-                                        <p className="text-sm font-medium text-gray-900">{task.created_by_user?.full_name || "Unknown"}</p>
-                                    </div>
-                                </div>
-
-                                <div className="flex items-start gap-3">
-                                    <div className="p-2 bg-gray-100 rounded-lg"><Clock className="w-4 h-4 text-gray-600" /></div>
-                                    <div>
-                                        <p className="text-xs text-gray-500">Created At</p>
-                                        <p className="text-sm font-medium text-gray-900">{formatDate(task.created_at)}</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Tags */}
-                            {task.tags && task.tags.length > 0 && (
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Tags</label>
-                                    <div className="flex flex-wrap gap-2">
-                                        {task.tags.map((tag) => (
-                                            <span key={tag} className="px-2.5 py-1 bg-blue-50 text-blue-700 text-sm rounded-lg">
-                                                {tag}
-                                            </span>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Notes */}
-                            {task.notes && (
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Internal Notes</label>
-                                    <p className="text-gray-700 bg-amber-50 rounded-lg p-3 text-sm">{task.notes}</p>
-                                </div>
-                            )}
-
-                            {/* Links */}
-                            {task.task_links && task.task_links.length > 0 && (
-                                <div>
-                                    <label className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase mb-2">
-                                        <LinkIcon className="w-4 h-4" /> Related To
-                                    </label>
-                                    <div className="flex flex-wrap gap-2">
-                                        {task.task_links.map((link, i) => (
-                                            <span key={i} className="px-2.5 py-1 bg-purple-50 text-purple-700 text-sm rounded-lg">
-                                                {link.link_type}: {link.linked_id.slice(0, 8)}...
-                                            </span>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {activeTab === "notes" && (
-                        <div className="p-6">
-                            {/* Add Note */}
-                            <div className="mb-6">
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Add Note</label>
-                                <div className="flex gap-2">
-                                    <textarea
-                                        value={newNote}
-                                        onChange={(e) => setNewNote(e.target.value)}
-                                        placeholder="Write a note..."
-                                        rows={2}
-                                        className="flex-1 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                                    />
-                                    <button
-                                        onClick={handleAddNote}
-                                        disabled={addingNote || !newNote.trim()}
-                                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                {activeTab === "details" && (
+                    <div className="space-y-6">
+                        <div>
+                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                Status
+                            </p>
+                            <div className="flex flex-wrap gap-1.5">
+                                {STATUS_OPTIONS.map((status) => (
+                                    <Button
+                                        key={status}
+                                        size="sm"
+                                        variant={task.status === status ? "primary" : "outline"}
+                                        disabled={task.status === status}
+                                        onClick={() => onStatusChange(task, status)}
                                     >
-                                        {addingNote ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                                        Post
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Notes List */}
-                            <div className="space-y-4">
-                                {(!task.task_notes || task.task_notes.length === 0) ? (
-                                    <p className="text-center text-gray-500 py-8">No notes yet</p>
-                                ) : (
-                                    task.task_notes.map((note) => (
-                                        <div key={note.id} className="bg-gray-50 rounded-lg p-4">
-                                            <div className="flex items-start justify-between mb-2">
-                                                <div className="flex items-center gap-2">
-                                                    {note.user?.avatar ? (
-                                                        <img src={note.user.avatar} alt="" className="w-6 h-6 rounded-full" />
-                                                    ) : (
-                                                        <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-xs font-medium">
-                                                            {note.user?.full_name?.[0] || "?"}
-                                                        </div>
-                                                    )}
-                                                    <span className="text-sm font-medium text-gray-900">{note.user?.full_name || "Unknown"}</span>
-                                                </div>
-                                                <span className="text-xs text-gray-500">{formatDateTime(note.created_at)}</span>
-                                            </div>
-                                            <p className="text-sm text-gray-700 whitespace-pre-wrap">{note.content}</p>
-                                        </div>
-                                    ))
-                                )}
+                                        {status}
+                                    </Button>
+                                ))}
                             </div>
                         </div>
-                    )}
 
-                    {activeTab === "activity" && (
-                        <div className="p-6">
-                            <div className="space-y-4">
-                                {(!task.task_activity || task.task_activity.length === 0) ? (
-                                    <p className="text-center text-gray-500 py-8">No activity yet</p>
+                        {task.description?.trim() && (
+                            <RecordNotes title="Description">{task.description}</RecordNotes>
+                        )}
+
+                        <PropertyList title="Details">
+                            <PropertyRow label="Due">
+                                {formatDate(task.due_date) ? (
+                                    <span className={isOverdue ? "text-destructive" : undefined}>
+                                        {formatDate(task.due_date)}
+                                    </span>
                                 ) : (
-                                    task.task_activity.map((activity) => (
-                                        <div key={activity.id} className="flex gap-3">
-                                            <div className="mt-1">
-                                                <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-                                                    <Activity className="w-4 h-4 text-gray-500" />
-                                                </div>
-                                            </div>
-                                            <div className="flex-1">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-sm font-medium text-gray-900">{activity.user?.full_name || "System"}</span>
-                                                    <span className="text-sm text-gray-500">{activity.action}</span>
-                                                </div>
-                                                {activity.new_value && (
-                                                    <p className="text-xs text-gray-500 mt-1 bg-gray-50 rounded p-2">
-                                                        {typeof activity.new_value === 'string' ? activity.new_value : JSON.stringify(activity.new_value)}
-                                                    </p>
-                                                )}
-                                                <span className="text-xs text-gray-400">{formatDateTime(activity.created_at)}</span>
-                                            </div>
-                                        </div>
-                                    ))
+                                    <PropertyEmpty label="Not set" />
                                 )}
-                            </div>
-                        </div>
-                    )}
-                </div>
+                            </PropertyRow>
+                            <PropertyRow label="Assigned to">
+                                {task.assigned_user?.full_name?.trim() ? (
+                                    task.assigned_user.full_name
+                                ) : (
+                                    <PropertyEmpty label="Unassigned" />
+                                )}
+                            </PropertyRow>
+                            <PropertyRow label="Created by">
+                                {task.created_by_user?.full_name?.trim() ? (
+                                    task.created_by_user.full_name
+                                ) : (
+                                    <PropertyEmpty />
+                                )}
+                            </PropertyRow>
+                            <PropertyRow label="Created">
+                                {formatDate(task.created_at) ?? <PropertyEmpty />}
+                            </PropertyRow>
+                        </PropertyList>
 
-                {/* Footer */}
-                <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-100 bg-gray-50">
-                    {canDelete && (
-                        <button
-                            onClick={() => setShowDeleteConfirm(true)}
-                            className="px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2"
-                        >
-                            <Trash2 className="w-4 h-4" /> Delete
-                        </button>
-                    )}
-                    {canEdit && (
-                        <button
-                            onClick={onEdit}
-                            className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg flex items-center gap-2"
-                        >
-                            <Edit className="w-4 h-4" /> Edit Task
-                        </button>
-                    )}
-                </div>
-            </div>
+                        {task.tags && task.tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                                {task.tags.map((tag) => (
+                                    <Badge key={tag} variant="subtle">
+                                        {tag}
+                                    </Badge>
+                                ))}
+                            </div>
+                        )}
+
+                        {task.notes?.trim() && <RecordNotes title="Internal notes">{task.notes}</RecordNotes>}
+
+                        {task.task_links && task.task_links.length > 0 && (
+                            <PropertyList title="Related">
+                                {task.task_links.map((link, i) => (
+                                    <PropertyRow key={i} label={link.link_type}>
+                                        <span className="font-mono text-[12px]">
+                                            {link.linked_id.slice(0, 8)}…
+                                        </span>
+                                    </PropertyRow>
+                                ))}
+                            </PropertyList>
+                        )}
+                    </div>
+                )}
+
+                {activeTab === "notes" && (
+                    <div className="space-y-4">
+                        <div className="flex gap-2">
+                            <textarea
+                                value={newNote}
+                                onChange={(e) => setNewNote(e.target.value)}
+                                placeholder="Write a note…"
+                                rows={2}
+                                className="min-h-[72px] flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            />
+                            <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={handleAddNote}
+                                disabled={addingNote || !newNote.trim()}
+                                leftIcon={
+                                    addingNote ? (
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                        <Send className="h-3.5 w-3.5" />
+                                    )
+                                }
+                            >
+                                Post
+                            </Button>
+                        </div>
+                        {(!task.task_notes || task.task_notes.length === 0) ? (
+                            <p className="py-6 text-center text-sm text-muted-foreground">No notes yet</p>
+                        ) : (
+                            <div className="space-y-4">
+                                {task.task_notes.map((note) => (
+                                    <div key={note.id} className="border-b border-border/70 pb-3 last:border-0">
+                                        <div className="mb-1 flex items-baseline justify-between gap-2">
+                                            <span className="text-[13px] font-medium">
+                                                {note.user?.full_name?.trim() || "—"}
+                                            </span>
+                                            <span className="text-[11px] text-muted-foreground">
+                                                {formatDateTime(note.created_at)}
+                                            </span>
+                                        </div>
+                                        <p className="text-sm whitespace-pre-wrap text-foreground">{note.content}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {activeTab === "activity" && (
+                    <ActivityTimeline
+                        items={activityItems}
+                        emptyLabel="No activity yet"
+                    />
+                )}
+            </RecordDrawer>
 
             {showDeleteConfirm && (
                 <ConfirmDialog
@@ -442,6 +407,6 @@ export default function TaskDetailsModal({ task, users = [], onClose, onEdit, on
                     onCancel={() => setShowDeleteConfirm(false)}
                 />
             )}
-        </div>
+        </>
     );
 }

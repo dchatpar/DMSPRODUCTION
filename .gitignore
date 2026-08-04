@@ -12,6 +12,10 @@
 
 # testing
 /coverage
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
 
 # next.js
 /.next/
@@ -39,3 +43,23 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Cloudflare / OpenNext build artifacts
+.open-next/
+.wrangler/
+.wrangler-dry/
+_worker.js.bak
+
+# Deploy / debug logs
+*.log
+_deploy*
+_tail*
+_build.log
+deploy.log
+
+# Local Cloudflare / Wrangler secrets
+.dev.vars
+
+# Local sync probes / inventory dumps (PII)
+/_sync_audit/
+

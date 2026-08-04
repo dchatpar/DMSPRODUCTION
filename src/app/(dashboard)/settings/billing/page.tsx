@@ -13,8 +13,9 @@ import {
     Plus,
     Trash2,
     CheckCircle,
-    Edit,
+    Edit
 } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
 
 interface BillingInfo {
     id: string;
@@ -62,7 +63,7 @@ export default function BillingPage() {
         billing_postal_code: "",
         billing_country: "Canada",
         billing_email: "",
-        billing_phone: "",
+        billing_phone: ""
     });
 
     useEffect(() => {
@@ -74,15 +75,8 @@ export default function BillingPage() {
             setLoading(true);
             setError(null);
 
-            const token = localStorage.getItem("access_token");
-            if (!token) {
-                window.location.href = "/login";
-                return;
-            }
-
             // Get user info to find dealership
             const meResponse = await fetch("/api/me", {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!meResponse.ok) {
@@ -99,7 +93,6 @@ export default function BillingPage() {
 
             // Get dealership details
             const dealershipResponse = await fetch(`/api/dealerships/${dealershipId}`, {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (dealershipResponse.ok) {
@@ -119,7 +112,7 @@ export default function BillingPage() {
                         billing_postal_code: bi.billing_postal_code || "",
                         billing_country: bi.billing_country || "Canada",
                         billing_email: bi.billing_email || "",
-                        billing_phone: bi.billing_phone || "",
+                        billing_phone: bi.billing_phone || ""
                     });
                 }
             }
@@ -143,21 +136,11 @@ export default function BillingPage() {
         setSaving(true);
 
         try {
-            const token = localStorage.getItem("access_token");
-            if (!token) {
-                window.location.href = "/login";
-                return;
-            }
-
-            // In a real app, this would call a billing API endpoint
-            // For now, we'll simulate success
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-
-            setSuccess("Billing information updated successfully");
-            setIsEditing(false);
-
-            // Refresh data
-            fetchData();
+            // Stripe / billing persistence is not wired — do not fake a save.
+            setError(
+                "Self-serve billing is not available yet. Email support@flashfender.com (or your AdaptUs contact) to update billing details."
+            );
+            setSuccess(null);
         } catch (err: any) {
             console.error("Error saving billing info:", err);
             setError(err.message || "Failed to save billing information");
@@ -478,9 +461,14 @@ export default function BillingPage() {
                         <div className="bg-white rounded-xl border border-gray-200">
                             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
                                 <h2 className="text-lg font-semibold text-gray-900">Payment Methods</h2>
-                                <button className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors">
+                                <button
+                                    type="button"
+                                    disabled
+                                    title="Stripe card capture is not enabled yet"
+                                    className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-blue-600/50 bg-blue-50/60 rounded-lg cursor-not-allowed"
+                                >
                                     <Plus className="w-4 h-4" />
-                                    Add Card
+                                    Add Card (unavailable)
                                 </button>
                             </div>
 
@@ -500,11 +488,17 @@ export default function BillingPage() {
                                 ) : (
                                     <div className="text-center py-8">
                                         <CreditCard className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                                        <p className="text-gray-500 mb-4">No payment method on file</p>
-                                        <button className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors">
-                                            <Plus className="w-4 h-4" />
-                                            Add Payment Method
-                                        </button>
+                                        <p className="text-gray-500 mb-2">No payment method on file</p>
+                                        <p className="text-xs text-gray-400 mb-4 max-w-sm mx-auto">
+                                            Card capture via Stripe is not enabled yet. Contact AdaptUs to add a payment method.
+                                        </p>
+                                        <a
+                                            href="mailto:support@flashfender.com?subject=Add%20payment%20method"
+                                            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                                        >
+                                            <Mail className="w-4 h-4" />
+                                            Contact support
+                                        </a>
                                     </div>
                                 )}
                             </div>

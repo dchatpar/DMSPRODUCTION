@@ -12,8 +12,9 @@ import {
     AlertCircle,
     FileText,
     User,
-    Building2,
+    Building2
 } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
 
 interface AuditLog {
     id: string;
@@ -51,15 +52,8 @@ export default function AuditLogsPage() {
             setLoading(true);
             setError(null);
 
-            const token = localStorage.getItem("access_token");
-            if (!token) {
-                window.location.href = "/login";
-                return;
-            }
-
             // Check if user is platform admin
             const meResponse = await fetch("/api/me", {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!meResponse.ok) throw new Error("Failed to get user info");
@@ -72,13 +66,12 @@ export default function AuditLogsPage() {
             // Build query params
             const params = new URLSearchParams({
                 limit: limit.toString(),
-                offset: offset.toString(),
+                offset: offset.toString()
             });
             if (actionFilter) params.set("action", actionFilter);
             if (entityFilter) params.set("entity_type", entityFilter);
 
             const response = await fetch(`/api/platform/audit-logs?${params}`, {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!response.ok) throw new Error("Failed to fetch audit logs");
@@ -106,7 +99,7 @@ export default function AuditLogsPage() {
             day: "numeric",
             year: "numeric",
             hour: "2-digit",
-            minute: "2-digit",
+            minute: "2-digit"
         });
     };
 

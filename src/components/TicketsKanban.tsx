@@ -12,7 +12,7 @@ import {
     GripVertical,
     Loader2,
     AlertTriangle,
-    User,
+    User
 } from 'lucide-react';
 
 interface TicketUser {
@@ -66,7 +66,7 @@ const TicketsKanban: React.FC<TicketsKanbanProps> = ({
     onTicketClick,
     onTicketEdit,
     onTicketDelete,
-    onStatusChange,
+    onStatusChange
 }) => {
     const [draggedTicket, setDraggedTicket] = useState<Ticket | null>(null);
     const [updating, setUpdating] = useState(false);
@@ -85,7 +85,7 @@ const TicketsKanban: React.FC<TicketsKanbanProps> = ({
             bgColor: 'bg-red-50',
             borderColor: 'border-red-200',
             iconColor: 'text-red-500',
-            status: 'Open',
+            status: 'Open'
         },
         {
             id: 'in_progress',
@@ -95,7 +95,7 @@ const TicketsKanban: React.FC<TicketsKanbanProps> = ({
             bgColor: 'bg-blue-50',
             borderColor: 'border-blue-200',
             iconColor: 'text-blue-500',
-            status: 'In Progress',
+            status: 'In Progress'
         },
         {
             id: 'resolved',
@@ -105,7 +105,7 @@ const TicketsKanban: React.FC<TicketsKanbanProps> = ({
             bgColor: 'bg-green-50',
             borderColor: 'border-green-200',
             iconColor: 'text-green-500',
-            status: 'Resolved',
+            status: 'Resolved'
         },
         {
             id: 'closed',
@@ -115,7 +115,7 @@ const TicketsKanban: React.FC<TicketsKanbanProps> = ({
             bgColor: 'bg-gray-50',
             borderColor: 'border-gray-200',
             iconColor: 'text-gray-500',
-            status: 'Closed',
+            status: 'Closed'
         },
     ];
 
@@ -123,7 +123,7 @@ const TicketsKanban: React.FC<TicketsKanbanProps> = ({
         Low: 'bg-gray-100 text-gray-700',
         Medium: 'bg-blue-100 text-blue-700',
         High: 'bg-orange-100 text-orange-700',
-        Urgent: 'bg-red-100 text-red-700',
+        Urgent: 'bg-red-100 text-red-700'
     };
 
     const getTicketsByStatus = (status: string) => {
@@ -173,7 +173,7 @@ const TicketsKanban: React.FC<TicketsKanbanProps> = ({
         return new Date(date).toLocaleDateString('en-US', {
             year: 'numeric',
             month: 'short',
-            day: 'numeric',
+            day: 'numeric'
         });
     };
 

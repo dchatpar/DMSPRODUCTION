@@ -24,11 +24,16 @@ import {
     CheckCircle,
     XCircle,
     UserPlus,
-    Building2,
+    Building2
 } from "lucide-react";
 import UserDetailsModal from "@/src/components/UserDetailsModal";
 import UserFormModal from "@/src/components/UserFormModal";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
+import { apiFetch } from "@/src/lib/fetch";
+import { toast } from "@/src/lib/toast";
+import { ListPageShell } from "@/src/components/ListPageShell";
+import { MetricStrip } from "@/src/components/ui/MetricStrip";
+import { Button } from "@/src/components/ui/Button";
 
 interface User {
     id: string;
@@ -98,9 +103,7 @@ export default function UsersPage() {
 
     const fetchUserData = async () => {
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch("/api/me", {
-                headers: { Authorization: `Bearer ${token}` },
             });
             if (response.ok) {
                 const data = await response.json();
@@ -113,9 +116,7 @@ export default function UsersPage() {
 
     const fetchDealerships = async () => {
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch("/api/dealerships", {
-                headers: { Authorization: `Bearer ${token}` },
             });
             if (response.ok) {
                 const data = await response.json();
@@ -130,8 +131,6 @@ export default function UsersPage() {
         try {
             setLoading(true);
             setError(null);
-
-            const token = localStorage.getItem("access_token");
             const offset = (currentPage - 1) * itemsPerPage;
 
             let url = `/api/users?limit=${itemsPerPage}&offset=${offset}`;
@@ -143,8 +142,7 @@ export default function UsersPage() {
 
             const response = await fetch(url, {
                 headers: {
-                    Authorization: `Bearer ${token}`,
-                },
+                }
             });
 
             if (!response.ok) {
@@ -196,10 +194,8 @@ export default function UsersPage() {
         setConfirmDialogData((prev) => ({ ...prev, loading: true }));
 
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch(`/api/users/${userId}`, {
-                method: "DELETE",
-                headers: { Authorization: `Bearer ${token}` },
+                method: "DELETE"
             });
 
             if (!response.ok) {
@@ -212,7 +208,7 @@ export default function UsersPage() {
             setTotalItems((prev) => prev - 1);
             fetchUsers();
         } catch (err) {
-            alert(err instanceof Error ? err.message : "An error occurred");
+            toast.error(err instanceof Error ? err.message : "An error occurred");
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
     };
@@ -224,7 +220,7 @@ export default function UsersPage() {
             Admin: "bg-purple-100 text-purple-800",
             Manager: "bg-blue-100 text-blue-800",
             Staff: "bg-green-100 text-green-800",
-            Salesperson: "bg-orange-100 text-orange-800",
+            Salesperson: "bg-orange-100 text-orange-800"
         };
         return colors[role] || "bg-gray-100 text-gray-800";
     };
@@ -251,20 +247,143 @@ export default function UsersPage() {
             .slice(0, 2);
     };
 
-    const formatDate = (date: string) => {
-        return new Date(date).toLocaleDateString('en-US', {
+    const formatDate = (date: string | null | undefined) => {
+        if (!date) return "—";
+        const d = new Date(date);
+        if (isNaN(d.getTime()) || d.getFullYear() < 1971) return "—";
+        return d.toLocaleDateString('en-US', {
             year: 'numeric',
             month: 'short',
-            day: 'numeric',
+            day: 'numeric'
         });
+    };
+
+    const copyToClipboard = async (text: string): Promise<boolean> => {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch (error) {
+            console.error("Clipboard error:", error);
+            return false;
+        }
+    };
+
+    const handleExport = async () => {
+        try {
+            // Fetch all users (not just the current page) for a complete export.
+            let rows: User[] = users;
+            try {
+                const res = await fetch(`/api/users?limit=200`);
+                if (res.ok) {
+                    const json = await res.json();
+                    if (Array.isArray(json.data) && json.data.length > 0) rows = json.data;
+                }
+            } catch (e) {
+                // Fall back to the currently loaded page on any fetch error.
+                console.error("Full export fetch failed, using current page:", e);
+            }
+
+            if (rows.length === 0) {
+                toast.error("No users to export");
+                return;
+            }
+
+            const header = ["Name", "Email", "Role", "Phone", "Start Date", "Dealership"];
+            const escape = (v: any) => `"${(v ?? "").toString().replace(/"/g, '""')}"`;
+            const csv = [
+                header.join(","),
+                ...rows.map((u) =>
+                    [
+                        escape(u.full_name),
+                        escape(u.email),
+                        escape(u.role),
+                        escape(u.phone),
+                        escape(u.start_date ? new Date(u.start_date).toLocaleDateString() : ""),
+                        escape(u.dealership_name),
+                    ].join(",")
+                ),
+            ].join("\n");
+
+            // Blob download works in regular browsers; some embedded browsers
+            // block blob downloads silently, so ALSO copy to the clipboard as a
+            // guaranteed fallback and always show feedback.
+            const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `users-export-${new Date().toISOString().split("T")[0]}.csv`;
+            link.click();
+            URL.revokeObjectURL(url);
+            const csvCopied = await copyToClipboard(csv);
+            toast.success(
+                `Exported ${rows.length} user${rows.length === 1 ? "" : "s"}` +
+                (csvCopied ? " — CSV copied to clipboard" : "")
+            );
+        } catch (error) {
+            console.error("Export error:", error);
+            toast.error(error instanceof Error ? error.message : "Failed to export users");
+        }
     };
 
     const totalPages = Math.ceil(totalItems / itemsPerPage);
 
     return (
-        <div className="space-y-6 py-10">
-            {/* Page Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <ListPageShell
+            title={isPlatformAdmin ? "All Users" : "Users & Roles"}
+            description={
+                isPlatformAdmin
+                    ? "AdaptUs Platform — users across all dealerships. Dealership Admins cannot grant platform admin."
+                    : "Manage users in your dealership only. Manager cannot create users (Admin-only)."
+            }
+            icon={Users}
+            breadcrumbs={
+                isPlatformAdmin
+                    ? [
+                          { label: "AdaptUs Platform", href: "/dashboard" },
+                          { label: "Users" },
+                      ]
+                    : undefined
+            }
+            actions={
+                <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => void fetchUsers()}>
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        Refresh
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => void handleExport()}>
+                        <Download className="h-3.5 w-3.5" />
+                        Export
+                    </Button>
+                    <Button size="sm" onClick={handleAdd}>
+                        <UserPlus className="h-3.5 w-3.5" />
+                        Add User
+                    </Button>
+                </div>
+            }
+            kpis={
+                <MetricStrip
+                    loading={loading}
+                    items={[
+                        { label: "Total", value: totalItems, format: "number" },
+                        {
+                            label: "Admins (page)",
+                            value: users.filter((u) => u.role === "Admin").length,
+                            format: "number",
+                        },
+                        {
+                            label: "Active (page)",
+                            value: users.length,
+                            format: "number",
+                            tone: "success",
+                        },
+                    ]}
+                />
+            }
+        >
+            {/* legacy chrome removed — filters + table below */}
+            <div className="space-y-4">
+            {/* Page Header (actions moved to shell) */}
+            <div className="hidden">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900">
                         {isPlatformAdmin ? "All Users" : "Users"}
@@ -391,7 +510,7 @@ export default function UsersPage() {
                                 </div>
                             )}
                         </div>
-                        <button className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2">
+                        <button onClick={handleExport} className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2">
                             <Download className="w-4 h-4" />
                             Export
                         </button>
@@ -728,6 +847,7 @@ export default function UsersPage() {
                     }}
                 />
             )}
-        </div>
+            </div>
+        </ListPageShell>
     );
 }

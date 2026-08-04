@@ -24,12 +24,16 @@ import {
     CheckCircle,
     XCircle,
     Users,
-    FileText,
+    FileText
 } from "lucide-react";
 import TestDriveDetailsModal from "@/src/components/TestDriveDetailsModal";
 import TestDriveFormModal from "@/src/components/TestDriveFormModal";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
 import * as XLSX from "xlsx";
+import { apiFetch } from "@/src/lib/fetch";
+import { toast } from "@/src/lib/toast";
+import { PageHeader } from "@/src/components/ui/PageHeader";
+import { Button } from "@/src/components/ui/Button";
 
 interface TestDrive {
     id: string;
@@ -40,7 +44,8 @@ interface TestDrive {
     driver_license_expiry: string;
     driver_license_image_url: string | null;
     signature_image_url: string | null;
-    start_time: string;
+    start_time: string | null;
+    scheduled_date?: string | null;
     end_time: string | null;
     salesperson_id: string | null;
     notes: string | null;
@@ -140,9 +145,7 @@ export default function TestDrivesPage() {
 
     const fetchUserPermissions = async () => {
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch("/api/me", {
-                headers: { Authorization: `Bearer ${token}` },
             });
             if (response.ok) {
                 const data = await response.json();
@@ -158,8 +161,6 @@ export default function TestDrivesPage() {
         try {
             setLoading(true);
             setError(null);
-
-            const token = localStorage.getItem("access_token");
             const offset = (currentPage - 1) * itemsPerPage;
 
             let url = `/api/test-drives?limit=${itemsPerPage}&offset=${offset}`;
@@ -171,8 +172,7 @@ export default function TestDrivesPage() {
 
             const response = await fetch(url, {
                 headers: {
-                    Authorization: `Bearer ${token}`,
-                },
+                }
             });
 
             if (!response.ok) {
@@ -189,16 +189,26 @@ export default function TestDrivesPage() {
         }
     };
 
+    const toCsv = (rows: Record<string, string>[]) => {
+        const cols = Object.keys(rows[0] || {});
+        const escape = (v: string) => `"${(v ?? "").toString().replace(/"/g, '""')}"`;
+        return [cols.join(","), ...rows.map((r) => cols.map((c) => escape(r[c])).join(","))].join("\n");
+    };
+
+    const copyToClipboard = async (text: string): Promise<boolean> => {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch {
+            return false;
+        }
+    };
+
     const exportToExcel = async () => {
         setExportLoading(true);
         try {
-            const token = localStorage.getItem("access_token");
-            if (!token) {
-                throw new Error("Not authenticated. Please login again.");
-            }
 
             const response = await fetch("/api/test-drives?limit=10000", {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!response.ok) {
@@ -224,7 +234,7 @@ export default function TestDrivesPage() {
                 "Scheduled Date": td.start_time ? new Date(td.start_time).toLocaleDateString() : "",
                 "Scheduled Time": td.start_time ? new Date(td.start_time).toLocaleTimeString() : "",
                 "Salesperson": td.salesperson?.full_name || "",
-                "Notes": td.notes || "",
+                "Notes": td.notes || ""
             }));
 
             const worksheet = XLSX.utils.json_to_sheet(worksheetData);
@@ -238,10 +248,18 @@ export default function TestDrivesPage() {
             ];
             worksheet["!cols"] = colWidths;
 
+            // Trigger the XLSX download (works in regular browsers). Some embedded
+            // browsers block blob downloads silently, so ALSO copy a CSV to the
+            // clipboard as a guaranteed fallback and always give visible feedback.
             XLSX.writeFile(workbook, `test-drives-export-${new Date().toISOString().split("T")[0]}.xlsx`);
+            const csvCopied = await copyToClipboard(toCsv(worksheetData));
+            toast.success(
+                `Exported ${exportData.length} test drive${exportData.length === 1 ? "" : "s"}` +
+                (csvCopied ? " — CSV copied to clipboard" : "")
+            );
         } catch (error) {
             console.error("Export error:", error);
-            alert(error instanceof Error ? error.message : "Failed to export test drives");
+            toast.error(error instanceof Error ? error.message : "Failed to export test drives");
         } finally {
             setExportLoading(false);
         }
@@ -282,10 +300,8 @@ export default function TestDrivesPage() {
         setConfirmDialogData((prev) => ({ ...prev, loading: true }));
 
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch(`/api/test-drives/${testDriveId}`, {
-                method: "DELETE",
-                headers: { Authorization: `Bearer ${token}` },
+                method: "DELETE"
             });
 
             if (!response.ok) {
@@ -304,46 +320,49 @@ export default function TestDrivesPage() {
             // Re-fetch to ensure consistency
             fetchTestDrives();
         } catch (err) {
-            alert(err instanceof Error ? err.message : "An error occurred");
+            toast.error(err instanceof Error ? err.message : "An error occurred");
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
     };
 
     const getStatusColor = (status: string) => {
         const colors: Record<string, string> = {
-            Scheduled: "bg-blue-100 text-blue-800",
-            "In Progress": "bg-yellow-100 text-yellow-800",
-            Completed: "bg-green-100 text-green-800",
-            Cancelled: "bg-red-100 text-red-800",
-            "No Show": "bg-gray-100 text-gray-800",
+            Scheduled: "bg-primary-100 text-primary",
+            "In Progress": "bg-yellow-100 text-warning",
+            Completed: "bg-green-100 text-success",
+            Cancelled: "bg-destructive-100 text-destructive",
+            "No Show": "bg-muted text-foreground"
         };
-        return colors[status] || "bg-gray-100 text-gray-800";
+        return colors[status] || "bg-muted text-foreground";
     };
 
     const getStatusIcon = (status: string) => {
         switch (status) {
             case "Scheduled":
-                return <Clock className="w-4 h-4 text-blue-600" />;
+                return <Clock className="w-4 h-4 text-primary" />;
             case "In Progress":
-                return <Loader2 className="w-4 h-4 text-yellow-600" />;
+                return <Loader2 className="w-4 h-4 text-warning" />;
             case "Completed":
-                return <CheckCircle className="w-4 h-4 text-green-600" />;
+                return <CheckCircle className="w-4 h-4 text-success" />;
             case "Cancelled":
-                return <XCircle className="w-4 h-4 text-red-600" />;
+                return <XCircle className="w-4 h-4 text-destructive" />;
             case "No Show":
-                return <XCircle className="w-4 h-4 text-gray-600" />;
+                return <XCircle className="w-4 h-4 text-foreground/80" />;
             default:
                 return null;
         }
     };
 
-    const formatDateTime = (date: string) => {
-        return new Date(date).toLocaleString('en-US', {
+    const formatDateTime = (date: string | null | undefined) => {
+        if (!date) return "—";
+        const d = new Date(date);
+        if (isNaN(d.getTime()) || d.getFullYear() < 1971) return "—";
+        return d.toLocaleString('en-US', {
             year: 'numeric',
             month: 'short',
             day: 'numeric',
             hour: '2-digit',
-            minute: '2-digit',
+            minute: '2-digit'
         });
     };
 
@@ -380,53 +399,47 @@ export default function TestDrivesPage() {
     const totalPages = Math.ceil(totalItems / itemsPerPage);
 
     return (
-        <div className="space-y-6 py-10">
-            {/* Page Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Test Drives</h1>
-                    <p className="text-sm text-gray-500 mt-1">
-                        Manage vehicle test drives and appointments
-                    </p>
-                </div>
-                <div className="flex items-center gap-3">
-                    <button
-                        onClick={fetchTestDrives}
-                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
-                    >
-                        <RefreshCw className="w-4 h-4" />
-                        Refresh
-                    </button>
-                    {canWrite("test_drives") && (
-                        <button
-                            onClick={handleAdd}
-                            className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2"
-                        >
-                            <Plus className="w-4 h-4" />
-                            Schedule Test Drive
-                        </button>
-                    )}
-                </div>
-            </div>
+        <div className="space-y-6 p-4 sm:p-6 lg:p-8 animate-fade-in">
+            <PageHeader
+                title="Test Drives"
+                description="Manage vehicle test drives and appointments"
+                icon={Car}
+                hero
+                gradientTitle
+                actions={
+                    <>
+                        <Button variant="outline" onClick={fetchTestDrives}>
+                            <RefreshCw className="h-4 w-4 mr-2" />
+                            Refresh
+                        </Button>
+                        {canWrite("test_drives") && (
+                            <Button variant="premium" onClick={handleAdd}>
+                                <Plus className="h-4 w-4 mr-2" />
+                                Schedule Test Drive
+                            </Button>
+                        )}
+                    </>
+                }
+            />
 
             {/* Filters */}
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
                 <div className="flex flex-col sm:flex-row gap-4">
                     <div className="flex-1 relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70" />
                         <input
                             type="text"
                             placeholder="Search by customer name, vehicle, or VIN..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="w-full pl-10 pr-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
                         />
                     </div>
                     <div className="flex gap-3 flex-wrap">
                         <select
                             value={statusFilter}
                             onChange={(e) => setStatusFilter(e.target.value)}
-                            className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                            className="px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent bg-white"
                         >
                             <option value="">All Status</option>
                             <option value="Scheduled">Scheduled</option>
@@ -439,37 +452,37 @@ export default function TestDrivesPage() {
                             <button
                                 onClick={() => setShowMoreFilters(!showMoreFilters)}
                                 className={`px-4 py-2 border rounded-lg transition-colors flex items-center gap-2 ${
-                                    showMoreFilters ? "bg-blue-50 border-blue-200 text-blue-600" : "border-gray-200 hover:bg-gray-50"
+                                    showMoreFilters ? "bg-primary-50 border-blue-200 text-primary" : "border-border hover:bg-muted/40"
                                 }`}
                             >
                                 <Filter className="w-4 h-4" />
                                 More Filters
                                 {(scheduledDateFrom || scheduledDateTo || vehicleFilter) && (
-                                    <span className="w-2 h-2 bg-blue-500 rounded-full" />
+                                    <span className="w-2 h-2 bg-primary rounded-full" />
                                 )}
                             </button>
                             {showMoreFilters && (
-                                <div className="absolute right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-50 p-4">
+                                <div className="absolute right-0 mt-2 w-80 bg-white border border-border rounded-xl shadow-lg z-50 p-4">
                                     <div className="space-y-4">
                                         <div>
-                                            <label className="block text-xs font-medium text-gray-500 mb-1.5">Scheduled Date Range</label>
+                                            <label className="block text-xs font-medium text-muted-foreground mb-1.5">Scheduled Date Range</label>
                                             <div className="flex flex-col gap-2">
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-xs text-gray-400 w-8">From</span>
+                                                    <span className="text-xs text-muted-foreground/70 w-8">From</span>
                                                     <input
                                                         type="date"
                                                         value={scheduledDateFrom}
                                                         onChange={(e) => setScheduledDateFrom(e.target.value)}
-                                                        className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                        className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                                                     />
                                                 </div>
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-xs text-gray-400 w-8">To</span>
+                                                    <span className="text-xs text-muted-foreground/70 w-8">To</span>
                                                     <input
                                                         type="date"
                                                         value={scheduledDateTo}
                                                         onChange={(e) => setScheduledDateTo(e.target.value)}
-                                                        className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                        className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                                                     />
                                                 </div>
                                             </div>
@@ -481,13 +494,13 @@ export default function TestDrivesPage() {
                                                     setScheduledDateTo("");
                                                     setVehicleFilter("");
                                                 }}
-                                                className="flex-1 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
+                                                className="flex-1 px-3 py-1.5 text-xs text-foreground/80 border border-border rounded-lg hover:bg-muted/40"
                                             >
                                                 Clear All
                                             </button>
                                             <button
                                                 onClick={() => setShowMoreFilters(false)}
-                                                className="flex-1 px-3 py-1.5 text-xs text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                                                className="flex-1 px-3 py-1.5 text-xs text-white bg-primary rounded-lg hover:bg-primary"
                                             >
                                                 Apply
                                             </button>
@@ -499,7 +512,7 @@ export default function TestDrivesPage() {
                         <button
                             onClick={exportToExcel}
                             disabled={exportLoading}
-                            className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 disabled:opacity-50"
+                            className="px-4 py-2 border border-border rounded-lg hover:bg-muted/40 transition-colors flex items-center gap-2 disabled:opacity-50"
                         >
                             {exportLoading ? (
                                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -513,47 +526,47 @@ export default function TestDrivesPage() {
             </div>
 
             {/* Table */}
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="bg-white rounded-xl border border-border overflow-hidden">
                 <div className="hidden lg:block overflow-x-auto">
                     <table className="w-full">
-                        <thead className="bg-gray-50 border-b border-gray-200">
+                        <thead className="bg-muted/40 border-b border-border">
                             <tr>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                                     Customer
                                 </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                                     Vehicle
                                 </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                                     Date & Time
                                 </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                                     Salesperson
                                 </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                                     Status
                                 </th>
-                                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
                                     Actions
                                 </th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-200">
+                        <tbody className="divide-y divide-border">
                             {loading ? (
                                 <tr>
                                     <td colSpan={6} className="px-4 py-12 text-center">
-                                        <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
-                                        <p className="mt-2 text-sm text-gray-500">Loading test drives...</p>
+                                        <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto" />
+                                        <p className="mt-2 text-sm text-muted-foreground">Loading test drives...</p>
                                     </td>
                                 </tr>
                             ) : error ? (
                                 <tr>
                                     <td colSpan={6} className="px-4 py-12 text-center">
-                                        <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
-                                        <p className="mt-2 text-sm text-red-600">{error}</p>
+                                        <AlertCircle className="w-8 h-8 text-destructive mx-auto" />
+                                        <p className="mt-2 text-sm text-destructive">{error}</p>
                                         <button
                                             onClick={fetchTestDrives}
-                                            className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                            className="mt-3 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary"
                                         >
                                             Try Again
                                         </button>
@@ -562,11 +575,11 @@ export default function TestDrivesPage() {
                             ) : testDrives.length === 0 ? (
                                 <tr>
                                     <td colSpan={6} className="px-4 py-12 text-center">
-                                        <Car className="w-12 h-12 text-gray-300 mx-auto" />
-                                        <p className="mt-2 text-sm text-gray-500">No test drives found</p>
+                                        <Car className="w-12 h-12 text-muted-foreground/50 mx-auto" />
+                                        <p className="mt-2 text-sm text-muted-foreground">No test drives found</p>
                                         <button
                                             onClick={handleAdd}
-                                            className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                            className="mt-3 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary"
                                         >
                                             Schedule First Test Drive
                                         </button>
@@ -574,28 +587,28 @@ export default function TestDrivesPage() {
                                 </tr>
                             ) : (
                                 testDrives.map((testDrive) => (
-                                    <tr key={testDrive.id} className="hover:bg-gray-50 transition-colors">
+                                    <tr key={testDrive.id} className="hover:bg-muted/40 transition-colors">
                                         <td className="px-4 py-3">
                                             <div className="flex items-center gap-3">
                                                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-sm font-medium">
                                                     {getCustomerName(testDrive).split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)}
                                                 </div>
                                                 <div>
-                                                    <p className="text-sm font-medium text-gray-900">
+                                                    <p className="text-sm font-medium text-foreground">
                                                         {getCustomerName(testDrive)}
                                                     </p>
                                                     {getCustomerEmail(testDrive) && (
                                                         <div className="flex items-center gap-1">
-                                                            <Mail className="w-3 h-3 text-gray-400" />
-                                                            <span className="text-xs text-gray-500 truncate max-w-[120px]">
+                                                            <Mail className="w-3 h-3 text-muted-foreground/70" />
+                                                            <span className="text-xs text-muted-foreground truncate max-w-[120px]">
                                                                 {getCustomerEmail(testDrive)}
                                                             </span>
                                                         </div>
                                                     )}
                                                     {getCustomerPhone(testDrive) && (
                                                         <div className="flex items-center gap-1">
-                                                            <Phone className="w-3 h-3 text-gray-400" />
-                                                            <span className="text-xs text-gray-500">
+                                                            <Phone className="w-3 h-3 text-muted-foreground/70" />
+                                                            <span className="text-xs text-muted-foreground">
                                                                 {getCustomerPhone(testDrive)}
                                                             </span>
                                                         </div>
@@ -606,36 +619,36 @@ export default function TestDrivesPage() {
                                         <td className="px-4 py-3">
                                             {testDrive.vehicle ? (
                                                 <div>
-                                                    <p className="text-sm font-medium text-gray-900">
+                                                    <p className="text-sm font-medium text-foreground">
                                                         {testDrive.vehicle.year} {testDrive.vehicle.make} {testDrive.vehicle.model}
                                                     </p>
-                                                    <p className="text-xs text-gray-500 font-mono">
+                                                    <p className="text-xs text-muted-foreground font-mono">
                                                         VIN: {testDrive.vehicle.vin}
                                                     </p>
                                                     {testDrive.vehicle.stock_number && (
-                                                        <p className="text-xs text-gray-400">
+                                                        <p className="text-xs text-muted-foreground/70">
                                                             Stock: #{testDrive.vehicle.stock_number}
                                                         </p>
                                                     )}
                                                 </div>
                                             ) : (
-                                                <span className="text-sm text-gray-400">N/A</span>
+                                                <span className="text-sm text-muted-foreground/70">N/A</span>
                                             )}
                                         </td>
                                         <td className="px-4 py-3">
                                             <div className="flex flex-col">
-                                                <span className="text-sm text-gray-900">
-                                                    {formatDateTime(testDrive.start_time)}
+                                                <span className="text-sm text-foreground">
+                                                    {formatDateTime(testDrive.start_time ?? testDrive.scheduled_date)}
                                                 </span>
                                                 {testDrive.end_time && (
-                                                    <span className="text-xs text-gray-500">
+                                                    <span className="text-xs text-muted-foreground">
                                                         Ends: {new Date(testDrive.end_time).toLocaleTimeString()}
                                                     </span>
                                                 )}
                                             </div>
                                         </td>
                                         <td className="px-4 py-3">
-                                            <span className="text-sm text-gray-600">
+                                            <span className="text-sm text-foreground/80">
                                                 {testDrive.salesperson?.full_name || "Unassigned"}
                                             </span>
                                         </td>
@@ -651,31 +664,31 @@ export default function TestDrivesPage() {
                                             <div className="flex items-center justify-end gap-1">
                                                 <button
                                                     onClick={() => handleViewDetails(testDrive)}
-                                                    className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
+                                                    className="p-1.5 hover:bg-primary-50 rounded-lg transition-colors"
                                                     title="View Details"
                                                 >
-                                                    <Eye className="w-4 h-4 text-blue-500" />
+                                                    <Eye className="w-4 h-4 text-primary" />
                                                 </button>
                                                 {canWrite("test_drives") && (
                                                     <button
                                                         onClick={() => handleEdit(testDrive)}
-                                                        className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                                        className="p-1.5 hover:bg-warning-50 rounded-lg transition-colors"
                                                         title="Edit"
                                                     >
-                                                        <Edit className="w-4 h-4 text-amber-500" />
+                                                        <Edit className="w-4 h-4 text-warning" />
                                                     </button>
                                                 )}
                                                 {canDelete("test_drives") && (
                                                     <button
                                                         onClick={() => handleDelete(testDrive)}
-                                                        className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                                        className="p-1.5 hover:bg-destructive-50 rounded-lg transition-colors"
                                                         title="Delete"
                                                     >
-                                                        <Trash2 className="w-4 h-4 text-red-500" />
+                                                        <Trash2 className="w-4 h-4 text-destructive" />
                                                     </button>
                                                 )}
-                                                <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
-                                                    <MoreVertical className="w-4 h-4 text-gray-400" />
+                                                <button className="p-1.5 hover:bg-muted rounded-lg transition-colors">
+                                                    <MoreVertical className="w-4 h-4 text-muted-foreground/70" />
                                                 </button>
                                             </div>
                                         </td>
@@ -687,70 +700,70 @@ export default function TestDrivesPage() {
                 </div>
 
                 {/* Mobile Cards */}
-                <div className="lg:hidden divide-y divide-gray-200">
+                <div className="lg:hidden divide-y divide-border">
                     {loading ? (
                         <div className="px-4 py-12 text-center">
-                            <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
-                            <p className="mt-2 text-sm text-gray-500">Loading test drives...</p>
+                            <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto" />
+                            <p className="mt-2 text-sm text-muted-foreground">Loading test drives...</p>
                         </div>
                     ) : error ? (
                         <div className="px-4 py-12 text-center">
-                            <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
-                            <p className="mt-2 text-sm text-red-600">{error}</p>
+                            <AlertCircle className="w-8 h-8 text-destructive mx-auto" />
+                            <p className="mt-2 text-sm text-destructive">{error}</p>
                             <button
                                 onClick={fetchTestDrives}
-                                className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                className="mt-3 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary"
                             >
                                 Try Again
                             </button>
                         </div>
                     ) : testDrives.length === 0 ? (
                         <div className="px-4 py-12 text-center">
-                            <Car className="w-12 h-12 text-gray-300 mx-auto" />
-                            <p className="mt-2 text-sm text-gray-500">No test drives found</p>
+                            <Car className="w-12 h-12 text-muted-foreground/50 mx-auto" />
+                            <p className="mt-2 text-sm text-muted-foreground">No test drives found</p>
                             <button
                                 onClick={handleAdd}
-                                className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                className="mt-3 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary"
                             >
                                 Schedule First Test Drive
                             </button>
                         </div>
                     ) : (
                         testDrives.map((testDrive) => (
-                            <div key={testDrive.id} className="p-4 hover:bg-gray-50 transition-colors">
+                            <div key={testDrive.id} className="p-4 hover:bg-muted/40 transition-colors">
                                 <div className="flex items-start justify-between mb-3">
                                     <div className="flex items-center gap-3">
                                         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-sm font-medium">
                                             {getCustomerName(testDrive).split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)}
                                         </div>
                                         <div>
-                                            <p className="text-sm font-medium text-gray-900">{getCustomerName(testDrive)}</p>
+                                            <p className="text-sm font-medium text-foreground">{getCustomerName(testDrive)}</p>
                                             {getCustomerPhone(testDrive) && (
-                                                <p className="text-xs text-gray-500">{getCustomerPhone(testDrive)}</p>
+                                                <p className="text-xs text-muted-foreground">{getCustomerPhone(testDrive)}</p>
                                             )}
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-1">
                                         <button
                                             onClick={() => handleViewDetails(testDrive)}
-                                            className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
+                                            className="p-1.5 hover:bg-primary-50 rounded-lg transition-colors"
                                         >
-                                            <Eye className="w-4 h-4 text-blue-500" />
+                                            <Eye className="w-4 h-4 text-primary" />
                                         </button>
                                         {canWrite("test_drives") && (
                                             <button
                                                 onClick={() => handleEdit(testDrive)}
-                                                className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
+                                                className="p-1.5 hover:bg-warning-50 rounded-lg transition-colors"
                                             >
-                                                <Edit className="w-4 h-4 text-amber-500" />
+                                                <Edit className="w-4 h-4 text-warning" />
                                             </button>
                                         )}
                                         {canDelete("test_drives") && (
                                             <button
                                                 onClick={() => handleDelete(testDrive)}
-                                                className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                                className="p-1.5 hover:bg-destructive-50 rounded-lg transition-colors"
                                             >
-                                                <Trash2 className="w-4 h-4 text-red-500" />
+                                                <Trash2 className="w-4 h-4 text-destructive" />
                                             </button>
                                         )}
                                     </div>
@@ -761,17 +774,17 @@ export default function TestDrivesPage() {
                                         {testDrive.status || "Scheduled"}
                                     </span>
                                 </div>
-                                <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
+                                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                                     <div>
-                                        <span className="font-medium text-gray-400">Vehicle:</span>{" "}
+                                        <span className="font-medium text-muted-foreground/70">Vehicle:</span>{" "}
                                         {testDrive.vehicle ? `${testDrive.vehicle.year} ${testDrive.vehicle.make} ${testDrive.vehicle.model}` : "N/A"}
                                     </div>
                                     <div>
-                                        <span className="font-medium text-gray-400">Salesperson:</span>{" "}
+                                        <span className="font-medium text-muted-foreground/70">Salesperson:</span>{" "}
                                         {testDrive.salesperson?.full_name || "Unassigned"}
                                     </div>
                                     <div className="col-span-2">
-                                        <span className="font-medium text-gray-400">Date:</span> {formatDateTime(testDrive.start_time)}
+                                        <span className="font-medium text-muted-foreground/70">Date:</span> {formatDateTime(testDrive.start_time ?? testDrive.scheduled_date)}
                                     </div>
                                 </div>
                             </div>
@@ -781,25 +794,25 @@ export default function TestDrivesPage() {
 
                 {/* Pagination */}
                 {!loading && !error && testDrives.length > 0 && (
-                    <div className="px-4 py-3 border-t border-gray-200 flex items-center justify-between">
-                        <p className="text-sm text-gray-500">
+                    <div className="px-4 py-3 border-t border-border flex items-center justify-between">
+                        <p className="text-sm text-muted-foreground">
                             Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalItems)} of {totalItems} test drives
                         </p>
                         <div className="flex items-center gap-2">
                             <button
                                 onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
                                 disabled={currentPage === 1}
-                                className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                className="p-2 border border-border rounded-lg hover:bg-muted/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                             >
                                 <ChevronLeft className="w-4 h-4" />
                             </button>
-                            <span className="text-sm text-gray-600">
+                            <span className="text-sm text-foreground/80">
                                 Page {currentPage} of {totalPages}
                             </span>
                             <button
                                 onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                                 disabled={currentPage === totalPages}
-                                className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                className="p-2 border border-border rounded-lg hover:bg-muted/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                             >
                                 <ChevronRight className="w-4 h-4" />
                             </button>

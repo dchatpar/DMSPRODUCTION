@@ -1,5 +1,6 @@
 // app/api/dealerships/[id]/subscription/route.ts
 import { createTokenClient } from "@/src/lib/server-token";
+import { supabaseAdmin } from "@/src/lib/supabase-admin";
 import { NextRequest, NextResponse } from "next/server";
 
 // GET subscription for a dealership (platform admin only)
@@ -126,7 +127,9 @@ export async function PATCH(
         } = payload;
 
         // Check if subscription exists
-        const { data: existingSub } = await supabase
+        // Use service role: platform admin needs to bypass subscriptions RLS
+        // for the upsert path. The route is already gated on is_platform_admin.
+        const { data: existingSub } = await supabaseAdmin
             .from("subscriptions")
             .select("id")
             .eq("dealership_id", id)
@@ -147,7 +150,7 @@ export async function PATCH(
 
         if (existingSub) {
             // Update existing subscription
-            const { data, error: dbError } = await supabase
+            const { data, error: dbError } = await supabaseAdmin
                 .from("subscriptions")
                 .update(updateData)
                 .eq("dealership_id", id)
@@ -158,7 +161,7 @@ export async function PATCH(
             subscription = data;
         } else {
             // Create new subscription
-            const { data, error: dbError } = await supabase
+            const { data, error: dbError } = await supabaseAdmin
                 .from("subscriptions")
                 .insert({
                     dealership_id: id,

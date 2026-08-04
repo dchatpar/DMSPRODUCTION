@@ -14,7 +14,7 @@ import {
     PieChart,
     Pie,
     Cell,
-    Legend,
+    Legend
 } from "recharts";
 import {
     TrendingUp,
@@ -28,8 +28,10 @@ import {
     Download,
     RefreshCw,
     TrendingDown,
-    Target,
+    Target
 } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
+import { toast } from "@/src/lib/toast";
 
 const COLORS = ["#3B82F6", "#8B5CF6", "#EC4899", "#F59E0B", "#10B981", "#6366F1", "#EF4444", "#14B8A6"];
 
@@ -50,7 +52,7 @@ const DATE_PRESETS = [
 export default function ReportsPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState<"leads" | "sales" | "inventory" | "financial" | "expenses">("leads");
+    const [activeTab, setActiveTab] = useState<"leads" | "sales" | "inventory" | "financial" | "expenses" | "salesperson">("leads");
     const [reportData, setReportData] = useState<ReportData | null>(null);
     const [datePreset, setDatePreset] = useState(30);
     const [customDateRange, setCustomDateRange] = useState<{ start: string; end: string } | null>(null);
@@ -63,7 +65,7 @@ export default function ReportsPage() {
         start.setDate(start.getDate() - datePreset);
         return {
             start: start.toISOString().split("T")[0],
-            end: end.toISOString().split("T")[0],
+            end: end.toISOString().split("T")[0]
         };
     };
 
@@ -75,20 +77,13 @@ export default function ReportsPage() {
             const { data: sessionData } = await supabaseBrowser.auth.getSession();
             const token = sessionData?.session?.access_token;
 
-            if (!token) {
-                router.push("/login");
-                return;
-            }
 
             const { start, end } = getDateRange();
-            const type = activeTab === "financial" ? "summary" : activeTab;
+            // "Summary" tab id is `financial` — must hit type=financial (not summary)
+            // so outstanding invoices / expense categories / net income populate.
+            const type = activeTab;
 
-            const res = await fetch(`/api/reports?type=${type}&start_date=${start}&end_date=${end}`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-
-            if (!res.ok) throw new Error("Failed to fetch report");
-            const json = await res.json();
+            const json = await apiFetch<any>(`/api/reports?type=${type}&start_date=${start}&end_date=${end}`);
             if (json.error) throw new Error(json.error);
             setReportData(json);
         } catch (err) {
@@ -106,7 +101,17 @@ export default function ReportsPage() {
         return new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }).format(value);
     };
 
-    const exportToCSV = () => {
+    const copyToClipboard = async (text: string): Promise<boolean> => {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch (error) {
+            console.error("Clipboard error:", error);
+            return false;
+        }
+    };
+
+    const exportToCSV = async () => {
         if (!reportData) return;
         const { data } = reportData;
         let csvContent = "";
@@ -114,24 +119,65 @@ export default function ReportsPage() {
         if (activeTab === "leads" && data.bySource) {
             csvContent = "Source,Count\n";
             csvContent += data.bySource.map((s: any) => `${s.source},${s.count}`).join("\n");
-        } if (activeTab === "sales" && data.salesByDate) {
-            csvContent = "Date,Amount,Deals\n";
-            csvContent += data.salesByDate.map((s: any) => `${s.date},${s.amount},${s.deals}`).join("\n");
+        } else if (activeTab === "sales" && data.salesByDate) {
+            csvContent = "Date,Revenue,Deals\n";
+            csvContent += data.salesByDate
+                .map((s: any) => `${s.date},${s.revenue ?? s.amount ?? 0},${s.count ?? s.deals ?? 0}`)
+                .join("\n");
+        } else if (activeTab === "salesperson" && data.bySalesperson) {
+            csvContent = "Salesperson,Deals,Revenue,FrontEndGross,Commission\n";
+            csvContent += data.bySalesperson
+                .map(
+                    (s: any) =>
+                        `"${String(s.name || "").replace(/"/g, '""')}",${s.deals ?? 0},${s.revenue ?? 0},${s.frontEndGross ?? 0},${s.commission ?? 0}`
+                )
+                .join("\n");
         } else if (activeTab === "inventory" && data.byStatus) {
             csvContent = "Status,Count\n";
-            csvContent += data.byStatus.map((s: any) => `${s.status},${s.count}`).join("\n");
+            // byStatus is a Record<string, number>, not an array
+            csvContent += Object.entries(data.byStatus)
+                .map(([status, count]) => `${status},${count}`)
+                .join("\n");
         } else if (activeTab === "expenses" && data.byCategory) {
             csvContent = "Category,Count,Total\n";
-            csvContent += data.byCategory.map((s: any) => `${s.category},${s.count},${s.total}`).join("\n");
+            csvContent += data.byCategory
+                .map((s: any) => `${s.category},${s.count ?? ""},${s.total ?? s.amount ?? 0}`)
+                .join("\n");
+        } else if (activeTab === "financial" && data.summary) {
+            csvContent = "Metric,Value\n";
+            csvContent += [
+                `Revenue,${data.summary.totalRevenue ?? 0}`,
+                `Expenses,${data.summary.totalExpenses ?? 0}`,
+                `Net Income,${data.summary.netIncome ?? 0}`,
+                `Profit Margin %,${data.summary.profitMargin ?? 0}`,
+                `Outstanding,${data.outstandingInvoices?.total ?? 0}`,
+            ].join("\n");
         }
 
-        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `${activeTab}-report-${new Date().toISOString().split("T")[0]}.csv`;
-        link.click();
-        URL.revokeObjectURL(url);
+        if (!csvContent) {
+            toast.error("Nothing to export for this view");
+            return;
+        }
+
+        try {
+            // Blob download works in regular browsers. Some embedded browsers
+            // block blob downloads silently, so ALSO copy the CSV to the
+            // clipboard as a guaranteed fallback and always show feedback.
+            const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `${activeTab}-report-${new Date().toISOString().split("T")[0]}.csv`;
+            link.click();
+            URL.revokeObjectURL(url);
+            const csvCopied = await copyToClipboard(csvContent);
+            toast.success(
+                `Exported ${activeTab} report` + (csvCopied ? " — CSV copied to clipboard" : "")
+            );
+        } catch (error) {
+            console.error("Export error:", error);
+            toast.error(error instanceof Error ? error.message : "Failed to export report");
+        }
     };
 
     const { start, end } = getDateRange();
@@ -139,6 +185,7 @@ export default function ReportsPage() {
     const tabs = [
         { id: "leads", label: "Leads", icon: Users },
         { id: "sales", label: "Sales", icon: TrendingUp },
+        { id: "salesperson", label: "Commissions", icon: Target },
         { id: "inventory", label: "Inventory", icon: Car },
         { id: "expenses", label: "Expenses", icon: DollarSign },
         { id: "financial", label: "Summary", icon: FileText },
@@ -391,10 +438,11 @@ function ReportContent({ data, activeTab, formatCurrency }: { data: any; activeT
         const totalRevenue = summary.totalRevenue || 0;
         const totalDeals = summary.totalDeals || 0;
         const avgDealSize = summary.avgDealPrice || 0;
+        const frontEndGross = summary.frontEndGross ?? null;
 
         return (
             <div className="space-y-6">
-                <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                     <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4 border border-green-100">
                         <div className="flex items-center gap-2 mb-2">
                             <DollarSign className="w-5 h-5 text-green-600" />
@@ -409,12 +457,22 @@ function ReportContent({ data, activeTab, formatCurrency }: { data: any; activeT
                         </div>
                         <p className="text-2xl font-bold text-blue-900">{totalDeals}</p>
                     </div>
-                    <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 border border-purple-100">
+                    <div className="bg-gradient-to-br from-slate-50 to-gray-50 rounded-xl p-4 border border-gray-200">
                         <div className="flex items-center gap-2 mb-2">
-                            <BarChart className="w-5 h-5 text-purple-600" />
-                            <span className="text-sm text-purple-700">Avg Deal Size</span>
+                            <Target className="w-5 h-5 text-slate-600" />
+                            <span className="text-sm text-slate-700">Avg Deal Size</span>
                         </div>
-                        <p className="text-2xl font-bold text-purple-900">{formatCurrency(avgDealSize)}</p>
+                        <p className="text-2xl font-bold text-slate-900">{formatCurrency(avgDealSize)}</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-teal-50 to-cyan-50 rounded-xl p-4 border border-teal-100">
+                        <div className="flex items-center gap-2 mb-2">
+                            <DollarSign className="w-5 h-5 text-teal-600" />
+                            <span className="text-sm text-teal-700">Front-end Gross</span>
+                        </div>
+                        <p className="text-2xl font-bold text-teal-900">
+                            {frontEndGross == null ? "—" : formatCurrency(frontEndGross)}
+                        </p>
+                        <p className="mt-1 text-xs text-teal-700/80">Sale − vehicle cost</p>
                     </div>
                 </div>
 
@@ -428,13 +486,110 @@ function ReportContent({ data, activeTab, formatCurrency }: { data: any; activeT
                                 <XAxis dataKey="date" tick={{ fontSize: 12 }} />
                                 <YAxis tickFormatter={(v) => `$${v / 1000}k`} />
                                 <Tooltip formatter={(value: any) => [formatCurrency(value), "Revenue"]} />
-                                <Bar dataKey="amount" fill="#10B981" radius={[4, 4, 0, 0]} />
+                                <Bar dataKey="revenue" fill="#10B981" radius={[4, 4, 0, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
                 ) : (
                     <div className="bg-gray-50 rounded-xl p-8 border border-gray-200 text-center text-gray-500">
                         No sales data available for this period
+                    </div>
+                )}
+
+                {data.topSalespeople && data.topSalespeople.length > 0 && (
+                    <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-4">Top salespeople</h3>
+                        <div className="space-y-2">
+                            {data.topSalespeople.map((sp: any, idx: number) => (
+                                <div key={sp.name} className="flex items-center justify-between text-sm">
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-6 text-gray-400">{idx + 1}.</span>
+                                        <span className="font-medium text-gray-900">{sp.name}</span>
+                                        <span className="text-gray-500">{sp.deals} deals</span>
+                                    </div>
+                                    <div className="text-right">
+                                        <span className="font-medium">{formatCurrency(sp.revenue || 0)}</span>
+                                        {sp.commission != null && sp.commission > 0 && (
+                                            <span className="ml-3 text-xs text-gray-500">
+                                                Comm. {formatCurrency(sp.commission)}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    if (activeTab === "salesperson") {
+        const summary = data.summary || {};
+        const rows = data.bySalesperson || [];
+        return (
+            <div className="space-y-6">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4 border border-green-100">
+                        <div className="flex items-center gap-2 mb-2">
+                            <DollarSign className="w-5 h-5 text-green-600" />
+                            <span className="text-sm text-green-700">Revenue</span>
+                        </div>
+                        <p className="text-2xl font-bold text-green-900">{formatCurrency(summary.revenue || 0)}</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100">
+                        <div className="flex items-center gap-2 mb-2">
+                            <TrendingUp className="w-5 h-5 text-blue-600" />
+                            <span className="text-sm text-blue-700">Deals</span>
+                        </div>
+                        <p className="text-2xl font-bold text-blue-900">{summary.deals || 0}</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-teal-50 to-cyan-50 rounded-xl p-4 border border-teal-100">
+                        <div className="flex items-center gap-2 mb-2">
+                            <Target className="w-5 h-5 text-teal-600" />
+                            <span className="text-sm text-teal-700">Front-end Gross</span>
+                        </div>
+                        <p className="text-2xl font-bold text-teal-900">{formatCurrency(summary.frontEndGross || 0)}</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl p-4 border border-amber-100">
+                        <div className="flex items-center gap-2 mb-2">
+                            <DollarSign className="w-5 h-5 text-amber-600" />
+                            <span className="text-sm text-amber-700">Commission</span>
+                        </div>
+                        <p className="text-2xl font-bold text-amber-900">{formatCurrency(summary.commission || 0)}</p>
+                    </div>
+                </div>
+                {data.note && (
+                    <p className="text-xs text-slate-500">{data.note}</p>
+                )}
+                {rows.length > 0 ? (
+                    <div className="overflow-x-auto rounded-xl border border-gray-200">
+                        <table className="min-w-full text-sm">
+                            <thead className="bg-gray-50 text-left text-xs uppercase text-gray-500">
+                                <tr>
+                                    <th className="px-4 py-3">Salesperson</th>
+                                    <th className="px-4 py-3 text-right">Deals</th>
+                                    <th className="px-4 py-3 text-right">Revenue</th>
+                                    <th className="px-4 py-3 text-right">Front-end Gross</th>
+                                    <th className="px-4 py-3 text-right">Commission</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100 bg-white">
+                                {rows.map((row: any) => (
+                                    <tr key={row.salespersonId || row.name}>
+                                        <td className="px-4 py-3 font-medium text-gray-900">{row.name}</td>
+                                        <td className="px-4 py-3 text-right tabular-nums">{row.deals}</td>
+                                        <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(row.revenue || 0)}</td>
+                                        <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(row.frontEndGross || 0)}</td>
+                                        <td className="px-4 py-3 text-right tabular-nums font-medium">{formatCurrency(row.commission || 0)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                ) : (
+                    <div className="bg-gray-50 rounded-xl p-8 border border-gray-200 text-center text-gray-500">
+                        No salesperson deals in this period
                     </div>
                 )}
             </div>
@@ -497,8 +652,8 @@ function ReportContent({ data, activeTab, formatCurrency }: { data: any; activeT
                                     dataKey="count"
                                     nameKey="status"
                                 >
-                                    {Object.entries(data.byStatus).map(([_, idx]) => (
-                                        <Cell key={idx as number} fill={COLORS[(idx as number) % COLORS.length]} />
+                                    {Object.entries(data.byStatus).map(([status], idx) => (
+                                        <Cell key={status} fill={COLORS[idx % COLORS.length]} />
                                     ))}
                                 </Pie>
                                 <Tooltip />
@@ -509,6 +664,29 @@ function ReportContent({ data, activeTab, formatCurrency }: { data: any; activeT
                 ) : (
                     <div className="bg-gray-50 rounded-xl p-8 border border-gray-200 text-center text-gray-500">
                         No inventory data available
+                    </div>
+                )}
+
+                {/* Aging buckets */}
+                {data.agingBuckets && (
+                    <div className="bg-white rounded-xl p-4 border border-gray-200">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-1">Inventory aging</h3>
+                        <p className="text-sm text-gray-500 mb-4">Days in stock (Active units)</p>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            {(["0-30", "31-60", "61-90", "90+"] as const).map((bucket) => (
+                                <div key={bucket} className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-center">
+                                    <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{bucket} days</p>
+                                    <p className="mt-1 text-2xl font-bold text-gray-900">
+                                        {data.agingBuckets[bucket] ?? 0}
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
+                        {summary.agingCount != null && (
+                            <p className="mt-3 text-xs text-gray-500">
+                                {summary.agingCount} active unit{summary.agingCount === 1 ? "" : "s"} over 30 days
+                            </p>
+                        )}
                     </div>
                 )}
             </div>

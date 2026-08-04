@@ -10,8 +10,10 @@ import {
     Car,
     Info,
     ExternalLink,
-    FileText,
+    FileText
 } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
+import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
 
 interface VehicleSpec {
     vin: string;
@@ -50,8 +52,10 @@ export default function VINLookupModal({
     onClose,
     onVinFound,
     onCarfaxRetrieved,
-    existingVin,
+    existingVin
 }: VINLookupModalProps) {
+    useOverlayDismiss(onClose);
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [vin, setVin] = useState(existingVin || "");
@@ -81,11 +85,9 @@ export default function VINLookupModal({
         setError(null);
 
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch(`/api/vin-lookup?vin=${encodeURIComponent(cleanedVin)}`, {
                 headers: {
-                    Authorization: `Bearer ${token}`,
-                },
+                }
             });
 
             if (!response.ok) {
@@ -107,7 +109,7 @@ export default function VINLookupModal({
                 transmission: data.transmission,
                 drivetrain: data.drivetrain,
                 exterior_color: data.exterior_color,
-                interior_color: data.interior_color,
+                interior_color: data.interior_color
             };
 
             setVehicleSpec(specs);

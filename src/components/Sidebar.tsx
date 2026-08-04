@@ -1,10 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { supabaseBrowser } from "@/src/lib/supabase-browser";
-import { hasPermission as checkPermission } from "@/src/lib/permission-middleware";
 import {
     LayoutDashboard,
     BarChart3,
@@ -13,15 +11,11 @@ import {
     FileText,
     Receipt,
     Car,
-    Share2,
     UserCog,
     Settings,
     LogOut,
     ChevronDown,
-    ChevronRight,
     User,
-    Mail,
-    Phone,
     Shield,
     Menu,
     X,
@@ -29,17 +23,31 @@ import {
     ReceiptIcon,
     Loader2,
     Store,
-    Wrench,
-    Scan,
-    Calculator,
-    Phone as PhoneIcon,
-    FileSignature,
-    LogIn,
     CreditCard,
     UserCheck,
     Key,
     Flag,
+    LogIn,
+    CalendarDays,
+    Calculator,
+    ShoppingCart,
+    Share2,
+    Building2,
+    Plug,
+    ListTodo,
+    Globe,
+    Wrench,
+    Images,
+    Landmark,
+    Mail,
+    type LucideIcon,
 } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
+import { toast } from "@/src/lib/toast";
+import { Avatar } from "@/src/components/ui/Avatar";
+import { ThemeToggle } from "@/src/components/ThemeToggle";
+import { cn } from "@/src/lib/utils";
+import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
 
 interface UserData {
     full_name: string;
@@ -54,21 +62,37 @@ interface UserData {
     effective_permissions?: string[];
 }
 
-// Platform admin navigation sections
-const platformAdminSections = [
+interface NavItem {
+    name: string;
+    href: string;
+    icon: LucideIcon;
+    badge?: number;
+}
+interface NavSection {
+    title: string;
+    items: NavItem[];
+}
+
+const platformAdminSections: NavSection[] = [
     {
-        title: "PLATFORM",
+        title: "AdaptUs Platform",
         items: [
             { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
             { name: "All Dealerships", href: "/dealerships", icon: Store },
+            { name: "All Users", href: "/users", icon: UserCog },
+            { name: "Analytics", href: "/platform/analytics", icon: BarChart3 },
+        ],
+    },
+    {
+        title: "Operations",
+        items: [
             { name: "Audit Logs", href: "/platform/audit-logs", icon: Shield },
             { name: "Login History", href: "/platform/login-history", icon: LogIn },
-            { name: "Analytics", href: "/platform/analytics", icon: BarChart3 },
             { name: "Subscriptions", href: "/platform/subscriptions", icon: CreditCard },
         ],
     },
     {
-        title: "ADMIN TOOLS",
+        title: "Admin tools",
         items: [
             { name: "Impersonate User", href: "/platform/impersonate", icon: UserCheck },
             { name: "Reset Password", href: "/platform/reset-password", icon: Key },
@@ -78,617 +102,477 @@ const platformAdminSections = [
     },
 ];
 
-// Regular dealership navigation sectionss
-const navigationSections = [
+interface PermNavItem extends NavItem {
+    /** If set, show when Admin or any listed permission matches. */
+    anyOf?: string[];
+}
+
+interface PermNavSection {
+    title: string;
+    items: PermNavItem[];
+}
+
+/** Master Guide nav IA + Wave A off-nav modules */
+const dealershipSections: PermNavSection[] = [
     {
-        title: "OVERVIEW",
+        title: "Overview",
         items: [
             { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-            // { name: "Calendar", href: "/calendar", icon: BarChart3 },
+            { name: "Calendar", href: "/calendar", icon: CalendarDays },
         ],
     },
     {
-        title: "SALES",
+        title: "Sales",
         items: [
             { name: "Lead Center", href: "/leads", icon: Users },
             { name: "Test Drives", href: "/test-drives", icon: TestTube },
             { name: "Deals", href: "/deals", icon: FileText },
             { name: "Follow-ups", href: "/follow-ups", icon: Receipt },
+            { name: "Email sequences", href: "/email-sequences", icon: Mail },
+            { name: "Quotations", href: "/quotations", icon: Calculator },
+            {
+                name: "Finance calculator",
+                href: "/finance",
+                icon: Landmark,
+                anyOf: ["tools:read", "tools:write", "ai:finance_calculator", "deals:read", "deals:write"],
+            },
         ],
     },
     {
-        title: "INVENTORY",
-        items: [{ name: "All Vehicles", href: "/inventory", icon: Car }],
+        title: "Inventory",
+        items: [
+            { name: "All Vehicles", href: "/inventory", icon: Car },
+            {
+                name: "Gallery",
+                href: "/inventory/gallery",
+                icon: Images,
+                anyOf: ["vehicles:read", "vehicles:write", "vehicles:photos"],
+            },
+            { name: "Purchase from Public", href: "/inventory/purchases", icon: ShoppingCart },
+        ],
     },
     {
-        title: "CUSTOMERS",
-        items: [{ name: "Customer Directory", href: "/customers", icon: Users }],
+        title: "Customers",
+        items: [{ name: "Directory", href: "/customers", icon: Users }],
     },
     {
-        title: "FINANCIAL",
+        title: "Financial",
         items: [
             { name: "Invoices", href: "/invoices", icon: Receipt },
             { name: "Expenses", href: "/expenses", icon: ReceiptIcon },
-            { name: "Vendors", href: "/vendors", icon: Store },
+            {
+                name: "Vendors",
+                href: "/vendors",
+                icon: Store,
+                anyOf: ["vendors:read", "vendors:write"],
+            },
             { name: "Reports", href: "/reports", icon: BarChart3 },
         ],
     },
-    // {
-    //     title: "MARKETING",
-    //     items: [{ name: "Social Posting", href: "/social", icon: Share2 }],
-    // },
     {
-        title: "MANAGEMENT",
+        title: "Marketing",
+        items: [{ name: "Social Posting", href: "/social", icon: Share2 }],
+    },
+    {
+        title: "Management",
         items: [
-            { name: "Users & Roles", href: "/users", icon: UserCog },
-            { name: "Roles & Permissions", href: "/roles", icon: Shield },
-            { name: "Tasks", href: "/tasks", icon: ReceiptIcon },
+            { name: "Tasks", href: "/tasks", icon: ListTodo },
             { name: "Tickets", href: "/tickets", icon: FlaskConical },
+            { name: "Users", href: "/users", icon: UserCog },
+            {
+                name: "Roles",
+                href: "/roles",
+                icon: Shield,
+                anyOf: ["users:write", "users:assign_roles", "roles:read", "roles:write"],
+            },
+            {
+                name: "Tools",
+                href: "/tools",
+                icon: Wrench,
+                anyOf: ["tools:read", "tools:write"],
+            },
         ],
     },
     {
-        title: "TOOLS",
+        title: "Settings",
         items: [
-            { name: "Dealership Tools", href: "/tools", icon: Wrench },
-        ],
-    },
-    {
-        title: "SETTINGS",
-        items: [
-            { name: "Profile", href: "/profile", icon: Settings },
-            // { name: "Business Profile", href: "/business", icon: Settings },
+            { name: "Profile", href: "/profile", icon: User },
+            {
+                name: "Business",
+                href: "/settings/business",
+                icon: Building2,
+                anyOf: ["settings:read", "settings:write", "settings:company", "settings:taxes"],
+            },
+            { name: "Website embed", href: "/settings/website", icon: Globe },
+            {
+                name: "Integrations",
+                href: "/settings/integrations",
+                icon: Plug,
+                anyOf: ["settings:read", "settings:write", "settings:integrations"],
+            },
+            {
+                name: "Subscription",
+                href: "/settings/subscription",
+                icon: CreditCard,
+                anyOf: ["settings:read", "settings:write", "settings:company"],
+            },
         ],
     },
 ];
 
+const ALL_SECTION_TITLES = dealershipSections.map((s) => s.title);
+
+function isItemActive(pathname: string, href: string): boolean {
+    if (href === "/dashboard") return pathname === "/dashboard";
+    if (href === "/inventory") {
+        if (pathname === "/inventory") return true;
+        if (!pathname.startsWith("/inventory/")) return false;
+        // Sibling inventory routes have their own nav items
+        if (pathname.startsWith("/inventory/purchases")) return false;
+        if (pathname.startsWith("/inventory/gallery")) return false;
+        return true;
+    }
+    if (href === "/users") {
+        return pathname === "/users" || pathname.startsWith("/users/");
+    }
+    return pathname === href || pathname.startsWith(href + "/");
+}
+
+function canSeeNavItem(
+    item: PermNavItem,
+    opts: { role: string; isPlatformAdmin: boolean; permissions: string[] }
+): boolean {
+    if (!item.anyOf || item.anyOf.length === 0) return true;
+    if (opts.isPlatformAdmin || opts.role === "Admin" || opts.role === "Manager") return true;
+    if (opts.permissions.includes("*")) return true;
+    return item.anyOf.some((p) => opts.permissions.includes(p));
+}
+
 export default function Sidebar() {
-    const pathname = usePathname();
+    const pathname = usePathname() ?? "";
     const router = useRouter();
-    const [isCollapsed, setIsCollapsed] = useState(false);
     const [isMobileOpen, setIsMobileOpen] = useState(false);
     const [userData, setUserData] = useState<UserData | null>(null);
     const [loading, setLoading] = useState(true);
     const [logoutLoading, setLogoutLoading] = useState(false);
-    const [expandedSections, setExpandedSections] = useState<string[]>([
-        "OVERVIEW", "SALES", "INVENTORY", "CUSTOMERS", "FINANCIAL", "MANAGEMENT", "SETTINGS"
-    ]);
+    const [expandedSections, setExpandedSections] = useState<string[]>(ALL_SECTION_TITLES);
+    const [unseenLeads, setUnseenLeads] = useState(0);
 
-    // Close mobile sidebar on route change
+    useOverlayDismiss(() => setIsMobileOpen(false), { open: isMobileOpen });
+
     useEffect(() => {
         setIsMobileOpen(false);
     }, [pathname]);
 
-    // Prevent body scroll when mobile sidebar is open
     useEffect(() => {
         if (isMobileOpen) {
+            const prev = document.body.style.overflow;
             document.body.style.overflow = "hidden";
-        } else {
-            document.body.style.overflow = "";
+            return () => {
+                document.body.style.overflow = prev;
+            };
         }
-        return () => {
-            document.body.style.overflow = "";
-        };
     }, [isMobileOpen]);
 
     useEffect(() => {
         const fetchUserData = async () => {
             try {
-                const token = localStorage.getItem("access_token");
-                if (!token) {
-                    setLoading(false);
-                    return;
-                }
-
-                const response = await fetch("/api/me", {
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                    },
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    setUserData(data.data);
-                } else if (response.status === 401) {
-                    // Token expired or invalid
-                    localStorage.removeItem("access_token");
-                    localStorage.removeItem("refresh_token");
-                    router.push("/login");
-                }
-            } catch (error) {
-                console.error("Failed to fetch user data:", error);
+                const data = await apiFetch<{ data: UserData }>("/api/me", { silent: true });
+                if (data?.data) setUserData(data.data);
+            } catch (err) {
+                console.error("Failed to fetch user data:", err);
             } finally {
                 setLoading(false);
             }
         };
-
         fetchUserData();
-    }, [router]);
+    }, []);
+
+    // Lead Center unseen badge (best-effort; ignore failures)
+    useEffect(() => {
+        if (userData?.is_platform_admin) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await apiFetch<{ count?: number; data?: unknown[] }>(
+                    "/api/leads?status=new&limit=1",
+                    { silent: true }
+                );
+                if (!cancelled) setUnseenLeads(typeof res.count === "number" ? res.count : 0);
+            } catch {
+                /* ignore */
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [userData?.is_platform_admin]);
+
+    const sections = useMemo(() => {
+        if (userData?.is_platform_admin) return platformAdminSections;
+
+        const permissions =
+            userData?.effective_permissions?.length
+                ? userData.effective_permissions
+                : userData?.user_permissions || [];
+        const role = userData?.role || "";
+
+        let base: NavSection[] = dealershipSections
+            .map((section) => ({
+                title: section.title,
+                items: section.items.filter((item) =>
+                    canSeeNavItem(item, {
+                        role,
+                        isPlatformAdmin: false,
+                        permissions,
+                    })
+                ),
+            }))
+            .filter((section) => section.items.length > 0);
+
+        if (unseenLeads <= 0) return base;
+        return base.map((section) => {
+            if (section.title !== "Sales") return section;
+            return {
+                ...section,
+                items: section.items.map((item) =>
+                    item.href === "/leads" ? { ...item, badge: unseenLeads } : item
+                ),
+            };
+        });
+    }, [userData, unseenLeads]);
+
+    const toggleSection = (title: string) => {
+        setExpandedSections((prev) =>
+            prev.includes(title) ? prev.filter((t) => t !== title) : [...prev, title]
+        );
+    };
 
     const handleLogout = async () => {
+        if (logoutLoading) return;
         setLogoutLoading(true);
         try {
-            // Sign out from Supabase
-            await supabaseBrowser.auth.signOut();
-
-            // Clear local storage
-            localStorage.removeItem("access_token");
-            localStorage.removeItem("refresh_token");
-            localStorage.removeItem("user_email");
-
-            // Redirect to login page immediately
+            await apiFetch("/api/auth/logout", { method: "POST" });
+            toast.success("Signed out", "You have been logged out.");
             router.push("/login");
             router.refresh();
-        } catch (error) {
-            console.error("Logout error:", error);
-            // Even if there's an error, clear tokens and redirect
-            localStorage.removeItem("access_token");
-            localStorage.removeItem("refresh_token");
-            router.push("/login");
-            router.refresh();
-        } finally {
+        } catch (err) {
+            toast.error("Could not sign out", err instanceof Error ? err.message : "Please try again.");
             setLogoutLoading(false);
         }
     };
 
-    const toggleSection = (title: string) => {
-        setExpandedSections((prev) =>
-            prev.includes(title)
-                ? prev.filter((t) => t !== title)
-                : [...prev, title]
-        );
-    };
-
-    const getInitials = (name: string) => {
-        if (!name) return "U";
-        return name
-            .split(" ")
-            .map((word) => word[0])
-            .join("")
-            .toUpperCase()
-            .slice(0, 2);
-    };
-
-    const getRoleColor = (role: string) => {
-        const colors: Record<string, string> = {
-            Admin: "bg-purple-100 text-purple-700",
-            Manager: "bg-blue-100 text-blue-700",
-            Staff: "bg-green-100 text-green-700",
-            Salesperson: "bg-orange-100 text-orange-700",
-        };
-        return colors[role] || "bg-gray-100 text-gray-700";
-    };
-
-    // Get user initials or default
-    const userInitials = userData?.full_name ? getInitials(userData.full_name) : "U";
-    const displayName = userData?.full_name || "User";
-    const displayEmail = userData?.email || "";
-
-    // Determine which navigation sections to show
-    const activeSections = userData?.is_platform_admin ? platformAdminSections : navigationSections;
-    const allSections = ["PLATFORM", "MANAGEMENT", "OVERVIEW", "SALES", "INVENTORY", "CUSTOMERS", "FINANCIAL", "TOOLS", "SETTINGS"];
-
-    // Map sidebar pages to their required read permissions
-    const pagePermMap: Record<string, string> = {
-        "/dashboard": "dashboard:read",
-        "/leads": "leads:read",
-        "/test-drives": "test_drives:read",
-        "/deals": "deals:read",
-        "/follow-ups": "follow_ups:read",
-        "/inventory": "vehicles:read",
-        "/customers": "customers:read",
-        "/invoices": "invoices:read",
-        "/expenses": "expenses:read",
-        "/vendors": "vendors:read",
-        "/reports": "reports:read",
-        "/users": "users:read",
-        "/roles": "roles:read",
-        "/tasks": "tasks:read",
-        "/tickets": "tickets:read",
-        "/tools": "tools:read",
-        "/profile": "profile:read",
-    };
-
-    // Check if user has permission to see a nav item
-    const hasPermission = (href: string): boolean => {
-        // Admin and platform admin see everything
-        if (userData?.role === "Admin" || userData?.is_platform_admin) return true;
-
-        // Get user's effective permissions (role + individual overrides)
-        const effectivePermissions: string[] = userData?.effective_permissions || userData?.user_permissions || [];
-
-        // If user has full access (*), show everything
-        if (effectivePermissions.includes("*")) return true;
-
-        // Check if user has the required permission for this page
-        const permKey = pagePermMap[href];
-        if (!permKey) return true; // If not in map, show it
-
-        // Check for specific permission using centralized helper
-        if (checkPermission(effectivePermissions, permKey)) return true;
-
-        // Also check for :assigned variant (user can see assigned items only)
-        // e.g., leads:read:assigned means they can see leads nav but scoped to assigned
-        const assignedPermKey = permKey + ":assigned";
-        if (checkPermission(effectivePermissions, assignedPermKey)) return true;
-
-        return false;
-    };
-
-    // Filter navigation items based on permissions
-    const filteredSections = activeSections.map(section => ({
-        ...section,
-        items: section.items.filter(item => hasPermission(item.href))
-    })).filter(section => section.items.length > 0);
-
-    return (
-        <>
-            {/* Mobile Header */}
-            <div className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white border-b border-gray-200 flex items-center justify-between p-4">
-                <img src="/logo.svg" alt="DMS Logo" className="w-28 h-10" />
+    const renderNav = () => (
+        <nav className="flex h-full flex-col" aria-label="Main">
+            <div className="flex h-14 items-center gap-2.5 border-b border-border px-3.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
+                    <Car className="h-3.5 w-3.5" aria-hidden />
+                </div>
+                <div className="min-w-0 flex-1">
+                    <p className="truncate text-base font-bold tracking-tight text-foreground">
+                        Flash Fender
+                    </p>
+                    {userData?.is_platform_admin && (
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+                            AdaptUs Platform
+                        </p>
+                    )}
+                    {!userData?.is_platform_admin && userData?.dealership_name && (
+                        <p className="truncate text-[11px] text-muted-foreground">
+                            {userData.dealership_name}
+                        </p>
+                    )}
+                </div>
                 <button
-                    onClick={() => setIsMobileOpen(true)}
-                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    type="button"
+                    onClick={() => setIsMobileOpen(false)}
+                    className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground lg:hidden"
+                    aria-label="Close menu"
                 >
-                    <Menu className="w-6 h-6 text-gray-500" />
+                    <X className="h-4 w-4" />
                 </button>
             </div>
 
-            {/* Mobile Overlay */}
+            <div className="flex-1 overflow-y-auto px-2 py-3">
+                {sections.map((section) => {
+                    const isExpanded = expandedSections.includes(section.title);
+                    return (
+                        <div key={section.title} className="mb-1.5">
+                            <button
+                                type="button"
+                                onClick={() => toggleSection(section.title)}
+                                className="flex w-full items-center justify-between rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground transition-colors hover:text-foreground"
+                                aria-expanded={isExpanded}
+                            >
+                                <span>{section.title}</span>
+                                <ChevronDown
+                                    className={cn(
+                                        "h-3 w-3 transition-transform duration-150",
+                                        !isExpanded && "-rotate-90"
+                                    )}
+                                />
+                            </button>
+                            {isExpanded && (
+                                <ul className="mt-0.5 space-y-px">
+                                    {section.items.map((item) => {
+                                        const Icon = item.icon;
+                                        const active = isItemActive(pathname, item.href);
+                                        return (
+                                            <li key={item.href}>
+                                                <Link
+                                                    href={item.href}
+                                                    className={cn(
+                                                        "group relative flex min-h-8 items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors",
+                                                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                                                        active
+                                                            ? "bg-muted/80 text-foreground"
+                                                            : "text-foreground/70 hover:bg-muted/60 hover:text-foreground"
+                                                    )}
+                                                    aria-current={active ? "page" : undefined}
+                                                >
+                                                    {active && (
+                                                        <span
+                                                            className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-primary"
+                                                            aria-hidden
+                                                        />
+                                                    )}
+                                                    <Icon
+                                                        className={cn(
+                                                            "h-3.5 w-3.5 shrink-0",
+                                                            active
+                                                                ? "text-primary"
+                                                                : "text-muted-foreground group-hover:text-foreground"
+                                                        )}
+                                                    />
+                                                    <span className="truncate flex-1">{item.name}</span>
+                                                    {item.badge != null && item.badge > 0 && (
+                                                        <span className="inline-flex min-w-[1.25rem] items-center justify-center rounded-md bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                                                            {item.badge > 99 ? "99+" : item.badge}
+                                                        </span>
+                                                    )}
+                                                </Link>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+
+            <div className="space-y-1.5 border-t border-border bg-muted/30 p-2.5">
+                {loading ? (
+                    <div className="flex items-center gap-2.5 rounded-md p-1.5">
+                        <div className="h-8 w-8 animate-shimmer rounded-full bg-muted" />
+                        <div className="flex-1 space-y-1.5">
+                            <div className="h-2.5 w-20 animate-shimmer rounded bg-muted" />
+                            <div className="h-2 w-28 animate-shimmer rounded bg-muted" />
+                        </div>
+                    </div>
+                ) : userData ? (
+                    <Link
+                        href="/profile"
+                        className="flex items-center gap-2.5 rounded-md p-1.5 transition-colors hover:bg-muted"
+                    >
+                        <Avatar
+                            src={userData.avatar}
+                            name={userData.full_name}
+                            email={userData.email}
+                            size="md"
+                        />
+                        <div className="min-w-0 flex-1">
+                            <p className="truncate text-[13px] font-semibold text-foreground">
+                                {userData.full_name || userData.email}
+                            </p>
+                            <p className="truncate text-[11px] text-muted-foreground">
+                                {userData.role}
+                            </p>
+                        </div>
+                    </Link>
+                ) : (
+                    <Link
+                        href="/login"
+                        className="flex items-center gap-2.5 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    >
+                        <User className="h-4 w-4" />
+                        <span className="text-[13px]">Sign in</span>
+                    </Link>
+                )}
+
+                <div className="flex items-center gap-1.5 lg:hidden">
+                    <ThemeToggle />
+                    {userData && (
+                        <button
+                            type="button"
+                            onClick={handleLogout}
+                            disabled={logoutLoading}
+                            className="inline-flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md border border-border bg-card px-2 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                            aria-label="Sign out"
+                        >
+                            {logoutLoading ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                                <LogOut className="h-3.5 w-3.5" />
+                            )}
+                            <span>Sign out</span>
+                        </button>
+                    )}
+                </div>
+            </div>
+        </nav>
+    );
+
+    return (
+        <>
+            <div className="fixed inset-x-0 top-0 z-40 flex h-14 items-center gap-2.5 border-b border-border bg-card px-3 shadow-sm safe-top lg:hidden">
+                <button
+                    type="button"
+                    onClick={() => setIsMobileOpen(true)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-md text-foreground hover:bg-muted"
+                    aria-label="Open menu"
+                >
+                    <Menu className="h-5 w-5" />
+                </button>
+                <div className="flex min-w-0 items-center gap-2">
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+                        <Car className="h-3.5 w-3.5" />
+                    </div>
+                    <div className="min-w-0">
+                        <p className="truncate text-sm font-bold tracking-tight text-foreground leading-tight">
+                            Flash Fender
+                        </p>
+                        {userData?.dealership_name && !userData?.is_platform_admin && (
+                            <p className="truncate text-[10px] text-muted-foreground leading-tight">
+                                {userData.dealership_name}
+                            </p>
+                        )}
+                    </div>
+                </div>
+            </div>
+
             {isMobileOpen && (
                 <div
-                    className="lg:hidden fixed inset-0 bg-black/50 z-40"
-                    onClick={() => setIsMobileOpen(false)}
-                />
+                    className="fixed inset-0 z-50 lg:hidden"
+                    role="dialog"
+                    aria-modal="true"
+                >
+                    <div
+                        className="absolute inset-0 animate-fade-in bg-foreground/40"
+                        onClick={() => setIsMobileOpen(false)}
+                        aria-hidden
+                    />
+                    <aside className="absolute inset-y-0 left-0 w-64 max-w-[85vw] animate-fade-in bg-card shadow-lg">
+                        {renderNav()}
+                    </aside>
+                </div>
             )}
 
-            {/* Mobile Sidebar */}
             <aside
-                className={`
-                    lg:hidden fixed left-0 top-0 bottom-0 z-50 bg-white flex flex-col transition-transform duration-300
-                    ${isMobileOpen ? "translate-x-0" : "-translate-x-full"}
-                    ${isCollapsed ? "w-20" : "w-64"}
-                `}
+                className="hidden w-64 shrink-0 border-r border-border bg-card lg:block"
+                aria-label="Main"
             >
-                {/* Header */}
-                <div className="flex items-center justify-between p-4 border-b border-gray-200">
-                    {!isCollapsed && (
-                        <div className="flex items-center gap-2">
-                            <img src="/logo.svg" alt="DMS Logo" className="w-28 h-10" />
-                        </div>
-                    )}
-                    <button
-                        onClick={() => setIsMobileOpen(false)}
-                        className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                        <X className="w-5 h-5 text-gray-500" />
-                    </button>
-                </div>
-
-                {/* Navigation */}
-                <nav className="flex-1 overflow-y-auto p-3 space-y-4">
-                    {filteredSections.map((section) => {
-                        const isExpanded = expandedSections.includes(section.title);
-
-                        return (
-                            <div key={section.title}>
-                                {/* Section Title */}
-                                {!isCollapsed && (
-                                    <button
-                                        onClick={() => toggleSection(section.title)}
-                                        className="flex items-center justify-between w-full px-2 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider hover:text-gray-600 transition-colors"
-                                    >
-                                        <span>{section.title}</span>
-                                        {isExpanded ? (
-                                            <ChevronDown className="w-3 h-3 transition-transform duration-200" />
-                                        ) : (
-                                            <ChevronRight className="w-3 h-3 transition-transform duration-200" />
-                                        )}
-                                    </button>
-                                )}
-
-                                {/* Navigation Items */}
-                                {isExpanded && (
-                                    <ul className="space-y-1 mt-1">
-                                        {section.items.map((item) => {
-                                            const Icon = item.icon;
-                                            const isActive = pathname === item.href;
-
-                                            return (
-                                                <li key={item.href}>
-                                                    <Link
-                                                        href={item.href}
-                                                        className={`
-                                                            flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200
-                                                            ${isActive
-                                                                ? "bg-blue-50 text-blue-700"
-                                                                : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                                                            }
-                                                            ${isCollapsed ? "justify-center" : ""}
-                                                        `}
-                                                        title={isCollapsed ? item.name : undefined}
-                                                    >
-                                                        <Icon className={`w-5 h-5 flex-shrink-0`} />
-                                                        {!isCollapsed && (
-                                                            <span className="text-sm font-medium truncate">
-                                                                {item.name}
-                                                            </span>
-                                                        )}
-                                                        {isActive && !isCollapsed && (
-                                                            <span className="ml-auto w-1.5 h-6 bg-blue-600 rounded-full"></span>
-                                                        )}
-                                                    </Link>
-                                                </li>
-                                            );
-                                        })}
-                                    </ul>
-                                )}
-                            </div>
-                        );
-                    })}
-                </nav>
-
-                {/* User Profile & Logout */}
-                <div className="border-t border-gray-200 p-3 space-y-2">
-                    {/* User Profile */}
-                    <div className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-gray-50 transition-colors">
-                        {loading ? (
-                            <div className="w-9 h-9 rounded-full bg-gray-200 animate-pulse flex items-center justify-center">
-                                <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />
-                            </div>
-                        ) : userData?.avatar ? (
-                            <img
-                                src={userData.avatar}
-                                alt={userData.full_name}
-                                className="w-9 h-9 rounded-full object-cover ring-2 ring-gray-200"
-                                onError={(e) => {
-                                    // If image fails to load, show initials
-                                    (e.target as HTMLImageElement).style.display = 'none';
-                                    const parent = (e.target as HTMLImageElement).parentElement;
-                                    if (parent) {
-                                        const fallback = document.createElement('div');
-                                        fallback.className = 'w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-sm font-medium';
-                                        fallback.textContent = userInitials;
-                                        parent.appendChild(fallback);
-                                    }
-                                }}
-                            />
-                        ) : (
-                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-sm font-medium ring-2 ring-blue-100">
-                                {userInitials}
-                            </div>
-                        )}
-
-                        {!isCollapsed && (
-                            <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-900 truncate">
-                                    {loading ? "Loading..." : displayName}
-                                </p>
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                    <p className="text-xs text-gray-500 truncate">
-                                        {loading ? "..." : displayEmail}
-                                    </p>
-                                    {userData?.is_platform_admin && (
-                                        <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-amber-100 text-amber-700">
-                                            Platform Admin
-                                        </span>
-                                    )}
-                                    {userData?.role && !userData?.is_platform_admin && (
-                                        <span
-                                            className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${getRoleColor(
-                                                userData.role
-                                            )}`}
-                                        >
-                                            {userData.role}
-                                        </span>
-                                    )}
-                                    {userData?.dealership_name && !userData?.is_platform_admin && (
-                                        <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-gray-100 text-gray-600">
-                                            {userData.dealership_name}
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Logout Button */}
-                    <button
-                        onClick={handleLogout}
-                        disabled={logoutLoading}
-                        className={`
-                            flex items-center gap-3 w-full px-3 py-2 rounded-lg text-red-600 hover:bg-red-50 transition-colors
-                            ${isCollapsed ? "justify-center" : ""}
-                            ${logoutLoading ? "opacity-50 cursor-not-allowed" : ""}
-                        `}
-                        title={isCollapsed ? "Logout" : undefined}
-                    >
-                        {logoutLoading ? (
-                            <Loader2 className="w-5 h-5 flex-shrink-0 animate-spin" />
-                        ) : (
-                            <LogOut className="w-5 h-5 flex-shrink-0" />
-                        )}
-                        {!isCollapsed && (
-                            <span className="text-sm font-medium">
-                                {logoutLoading ? "Logging out..." : "Logout"}
-                            </span>
-                        )}
-                    </button>
-                </div>
-            </aside>
-
-            {/* Desktop Sidebar */}
-            <aside
-                className={`hidden lg:flex bg-white border-r border-gray-200 flex-col transition-all duration-300 ${isCollapsed ? "w-20" : "w-64"}`}
-            >
-                {/* Header */}
-                <div className="flex items-center justify-between p-4 border-b border-gray-200">
-                    {!isCollapsed && (
-                        <div className="flex items-center gap-2">
-                            <img src="/logo.svg" alt="DMS Logo" className="w-28 h-10" />
-                        </div>
-                    )}
-                    <button
-                        onClick={() => setIsCollapsed(!isCollapsed)}
-                        className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                        {isCollapsed ? (
-                            <Menu className="w-5 h-5 text-gray-500" />
-                        ) : (
-                            <X className="w-5 h-5 text-gray-500" />
-                        )}
-                    </button>
-                </div>
-
-                {/* Navigation */}
-                <nav className="flex-1 overflow-y-auto p-3 space-y-4">
-                    {filteredSections.map((section) => {
-                        const isExpanded = expandedSections.includes(section.title);
-
-                        return (
-                            <div key={section.title}>
-                                {/* Section Title */}
-                                {!isCollapsed && (
-                                    <button
-                                        onClick={() => toggleSection(section.title)}
-                                        className="flex items-center justify-between w-full px-2 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider hover:text-gray-600 transition-colors"
-                                    >
-                                        <span>{section.title}</span>
-                                        {isExpanded ? (
-                                            <ChevronDown className="w-3 h-3 transition-transform duration-200" />
-                                        ) : (
-                                            <ChevronRight className="w-3 h-3 transition-transform duration-200" />
-                                        )}
-                                    </button>
-                                )}
-
-                                {/* Navigation Items */}
-                                {isExpanded && (
-                                    <ul className="space-y-1 mt-1">
-                                        {section.items.map((item) => {
-                                            const Icon = item.icon;
-                                            const isActive = pathname === item.href;
-
-                                            return (
-                                                <li key={item.href}>
-                                                    <Link
-                                                        href={item.href}
-                                                        className={`
-                                                            flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200
-                                                            ${isActive
-                                                                ? "bg-blue-50 text-blue-700"
-                                                                : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                                                            }
-                                                            ${isCollapsed ? "justify-center" : ""}
-                                                        `}
-                                                        title={isCollapsed ? item.name : undefined}
-                                                    >
-                                                        <Icon className={`w-5 h-5 flex-shrink-0`} />
-                                                        {!isCollapsed && (
-                                                            <span className="text-sm font-medium truncate">
-                                                                {item.name}
-                                                            </span>
-                                                        )}
-                                                        {isActive && !isCollapsed && (
-                                                            <span className="ml-auto w-1.5 h-6 bg-blue-600 rounded-full"></span>
-                                                        )}
-                                                    </Link>
-                                                </li>
-                                            );
-                                        })}
-                                    </ul>
-                                )}
-                            </div>
-                        );
-                    })}
-                </nav>
-
-                {/* User Profile & Logout */}
-                <div className="border-t border-gray-200 p-3 space-y-2">
-                    {/* User Profile */}
-                    <div className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-gray-50 transition-colors">
-                        {loading ? (
-                            <div className="w-9 h-9 rounded-full bg-gray-200 animate-pulse flex items-center justify-center">
-                                <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />
-                            </div>
-                        ) : userData?.avatar ? (
-                            <img
-                                src={userData.avatar}
-                                alt={userData.full_name}
-                                className="w-9 h-9 rounded-full object-cover ring-2 ring-gray-200"
-                                onError={(e) => {
-                                    // If image fails to load, show initials
-                                    (e.target as HTMLImageElement).style.display = 'none';
-                                    const parent = (e.target as HTMLImageElement).parentElement;
-                                    if (parent) {
-                                        const fallback = document.createElement('div');
-                                        fallback.className = 'w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-sm font-medium';
-                                        fallback.textContent = userInitials;
-                                        parent.appendChild(fallback);
-                                    }
-                                }}
-                            />
-                        ) : (
-                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-sm font-medium ring-2 ring-blue-100">
-                                {userInitials}
-                            </div>
-                        )}
-
-                        {!isCollapsed && (
-                            <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-900 truncate">
-                                    {loading ? "Loading..." : displayName}
-                                </p>
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                    <p className="text-xs text-gray-500 truncate">
-                                        {loading ? "..." : displayEmail}
-                                    </p>
-                                    {userData?.is_platform_admin && (
-                                        <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-amber-100 text-amber-700">
-                                            Platform Admin
-                                        </span>
-                                    )}
-                                    {userData?.role && !userData?.is_platform_admin && (
-                                        <span
-                                            className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${getRoleColor(
-                                                userData.role
-                                            )}`}
-                                        >
-                                            {userData.role}
-                                        </span>
-                                    )}
-                                    {userData?.dealership_name && !userData?.is_platform_admin && (
-                                        <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-gray-100 text-gray-600">
-                                            {userData.dealership_name}
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Logout Button */}
-                    <button
-                        onClick={handleLogout}
-                        disabled={logoutLoading}
-                        className={`
-                            flex items-center gap-3 w-full px-3 py-2 rounded-lg text-red-600 hover:bg-red-50 transition-colors
-                            ${isCollapsed ? "justify-center" : ""}
-                            ${logoutLoading ? "opacity-50 cursor-not-allowed" : ""}
-                        `}
-                        title={isCollapsed ? "Logout" : undefined}
-                    >
-                        {logoutLoading ? (
-                            <Loader2 className="w-5 h-5 flex-shrink-0 animate-spin" />
-                        ) : (
-                            <LogOut className="w-5 h-5 flex-shrink-0" />
-                        )}
-                        {!isCollapsed && (
-                            <span className="text-sm font-medium">
-                                {logoutLoading ? "Logging out..." : "Logout"}
-                            </span>
-                        )}
-                    </button>
-                </div>
+                {renderNav()}
             </aside>
         </>
     );

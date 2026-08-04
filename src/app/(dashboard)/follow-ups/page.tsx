@@ -22,11 +22,13 @@ import {
     XCircle,
     CalendarDays,
     List,
-    LayoutGrid,
+    LayoutGrid
 } from "lucide-react";
 import FollowUpDetailsModal from "@/src/components/FollowUpDetailsModal";
 import FollowUpFormModal from "@/src/components/FollowUpFormModal";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
+import { apiFetch } from "@/src/lib/fetch";
+import { toast } from "@/src/lib/toast";
 
 interface Customer {
     id: string;
@@ -128,8 +130,6 @@ export default function FollowUpsPage() {
         try {
             setLoading(true);
             setError(null);
-
-            const token = localStorage.getItem("access_token");
             const offset = (currentPage - 1) * itemsPerPage;
 
             let url = `/api/follow-ups?limit=${itemsPerPage}&offset=${offset}`;
@@ -140,8 +140,7 @@ export default function FollowUpsPage() {
 
             const response = await fetch(url, {
                 headers: {
-                    Authorization: `Bearer ${token}`,
-                },
+                }
             });
 
             if (!response.ok) {
@@ -160,9 +159,7 @@ export default function FollowUpsPage() {
 
     const handleViewDetails = async (followUp: FollowUp) => {
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch(`/api/follow-ups/${followUp.id}`, {
-                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (!response.ok) throw new Error("Failed to fetch follow-up details");
@@ -171,7 +168,7 @@ export default function FollowUpsPage() {
             setSelectedFollowUp(data);
             setShowDetailsModal(true);
         } catch (err) {
-            alert(err instanceof Error ? err.message : "Failed to load follow-up details");
+            toast.error(err instanceof Error ? err.message : "Failed to load follow-up details");
         }
     };
 
@@ -205,10 +202,8 @@ export default function FollowUpsPage() {
         setConfirmDialogData((prev) => ({ ...prev, loading: true }));
 
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch(`/api/follow-ups/${followUpId}`, {
-                method: "DELETE",
-                headers: { Authorization: `Bearer ${token}` },
+                method: "DELETE"
             });
 
             if (!response.ok) {
@@ -222,21 +217,18 @@ export default function FollowUpsPage() {
             setTotalItems((prev) => prev - 1);
             fetchFollowUps();
         } catch (err) {
-            alert(err instanceof Error ? err.message : "An error occurred");
+            toast.error(err instanceof Error ? err.message : "An error occurred");
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
     };
 
     const handleStatusChange = async (followUp: FollowUp, newStatus: string) => {
         try {
-            const token = localStorage.getItem("access_token");
             const response = await fetch(`/api/follow-ups/${followUp.id}`, {
                 method: "PATCH",
                 headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({ status: newStatus }),
+                    "Content-Type": "application/json" },
+                body: JSON.stringify({ status: newStatus })
             });
 
             if (!response.ok) {
@@ -245,7 +237,7 @@ export default function FollowUpsPage() {
 
             fetchFollowUps();
         } catch (err) {
-            alert(err instanceof Error ? err.message : "An error occurred");
+            toast.error(err instanceof Error ? err.message : "An error occurred");
         }
     };
 
@@ -254,7 +246,7 @@ export default function FollowUpsPage() {
             Low: "bg-gray-100 text-gray-700",
             Medium: "bg-blue-100 text-blue-700",
             High: "bg-orange-100 text-orange-700",
-            Urgent: "bg-red-100 text-red-700",
+            Urgent: "bg-red-100 text-red-700"
         };
         return colors[priority] || "bg-gray-100 text-gray-700";
     };
@@ -263,7 +255,7 @@ export default function FollowUpsPage() {
         const colors: Record<string, string> = {
             Pending: "bg-yellow-100 text-yellow-700",
             Completed: "bg-green-100 text-green-700",
-            Cancelled: "bg-gray-100 text-gray-700",
+            Cancelled: "bg-gray-100 text-gray-700"
         };
         return colors[status] || "bg-gray-100 text-gray-700";
     };
@@ -279,7 +271,7 @@ export default function FollowUpsPage() {
         return new Date(date).toLocaleDateString("en-US", {
             year: "numeric",
             month: "short",
-            day: "numeric",
+            day: "numeric"
         });
     };
 

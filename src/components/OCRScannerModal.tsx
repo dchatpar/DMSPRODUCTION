@@ -12,9 +12,10 @@ import {
     User,
     FileText,
     Shield,
-    CreditCard,
+    CreditCard
 } from "lucide-react";
 import Tesseract from "tesseract.js";
+import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
 
 interface OCRDocument {
     id: string;
@@ -45,8 +46,10 @@ export default function OCRScannerModal({
     customerId,
     onClose,
     onScanComplete,
-    onCustomerCreated,
+    onCustomerCreated
 }: OCRScannerModalProps) {
+    useOverlayDismiss(onClose);
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [documentType, setDocumentType] = useState<"drivers_license" | "government_id">("drivers_license");
@@ -158,7 +161,7 @@ export default function OCRScannerModal({
         const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
         const data: Partial<OCRDocument> = {
-            document_type: type,
+            document_type: type
         };
 
         // Common patterns for ID extraction
@@ -172,7 +175,7 @@ export default function OCRScannerModal({
             address: /(?:address|street|addr)[:\s]*([A-Za-z0-9\s,]+)/i,
             city: /(?:city|town)[:\s]*([A-Za-z\s]+)/i,
             province: /(?:province|prov|state)[:\s]*([A-Za-z]{2})/i,
-            postalCode: /(?:postal\s*code|zip|zip\s*code|postcode)[:\s]*([A-Z0-9\s]+)/i,
+            postalCode: /(?:postal\s*code|zip|zip\s*code|postcode)[:\s]*([A-Z0-9\s]+)/i
         };
 
         // Extract first name

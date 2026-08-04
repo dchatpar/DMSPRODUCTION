@@ -18,8 +18,10 @@ import {
     Key,
     Check,
     ChevronDown,
-    ChevronRight,
+    ChevronRight
 } from "lucide-react";
+import { apiFetch } from "@/src/lib/fetch";
+import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
 
 interface User {
     id: string;
@@ -87,7 +89,7 @@ const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
         "tasks:read:assigned", "tasks:write",
         "tools:read",
         "profile:read", "profile:write",
-    ],
+    ]
 };
 
 // Available permissions grouped by category
@@ -235,7 +237,7 @@ const PERMISSIONS = {
             { key: "profile:read", label: "View Profile" },
             { key: "profile:write", label: "Edit Profile" },
         ]
-    },
+    }
 };
 
 export default function UserFormModal({
@@ -243,8 +245,10 @@ export default function UserFormModal({
     user,
     targetDealershipId,
     onClose,
-    onSuccess,
+    onSuccess
 }: UserFormModalProps) {
+    useOverlayDismiss(onClose);
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [showPassword, setShowPassword] = useState(false);
@@ -258,7 +262,7 @@ export default function UserFormModal({
         role: "Staff",
         start_date: new Date().toISOString().split('T')[0],
         password: "",
-        avatar: "",
+        avatar: ""
     });
 
     useEffect(() => {
@@ -270,7 +274,7 @@ export default function UserFormModal({
                 role: user.role,
                 start_date: user.start_date,
                 password: "",
-                avatar: user.avatar || "",
+                avatar: user.avatar || ""
             });
             setSelectedPermissions(user.user_permissions || []);
         }
@@ -280,7 +284,7 @@ export default function UserFormModal({
         const { name, value } = e.target;
         setFormData((prev) => ({
             ...prev,
-            [name]: value,
+            [name]: value
         }));
 
         // Auto-populate permissions when role changes in add mode
@@ -322,7 +326,6 @@ export default function UserFormModal({
         setError(null);
 
         try {
-            const token = localStorage.getItem("access_token");
             const url = mode === "add" ? "/api/users" : `/api/users/${user?.id}`;
             const method = mode === "add" ? "POST" : "PATCH";
 
@@ -336,7 +339,7 @@ export default function UserFormModal({
                     password: formData.password || undefined,
                     avatar: formData.avatar || null,
                     target_dealership_id: targetDealershipId || undefined,
-                    user_permissions: selectedPermissions,
+                    user_permissions: selectedPermissions
                 }
                 : {
                     full_name: formData.full_name,
@@ -344,16 +347,14 @@ export default function UserFormModal({
                     role: formData.role,
                     start_date: formData.start_date,
                     avatar: formData.avatar || null,
-                    user_permissions: selectedPermissions,
+                    user_permissions: selectedPermissions
                 };
 
             const response = await fetch(url, {
                 method,
                 headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify(payload),
+                    "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
             });
 
             if (!response.ok) {

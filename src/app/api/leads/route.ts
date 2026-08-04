@@ -6,6 +6,7 @@ import {
     canViewAll,
     canCreate,
 } from "@/src/lib/permission-middleware";
+import { scoreLead } from "@/src/lib/business/lead-score";
 
 export async function GET(req: NextRequest) {
     try {
@@ -55,11 +56,26 @@ export async function GET(req: NextRequest) {
         // Salesperson/Staff sees only assigned leads
 
         const url = new URL(req.url);
-        const limit = parseInt(url.searchParams.get("limit") || "50");
-        const offset = parseInt(url.searchParams.get("offset") || "0");
+        // Support both old (limit/offset) and new (page/perPage/pageSize) pagination.
+        // Only treat as "new-style" when page/perPage/pageSize params are present —
+        // otherwise ?limit=1000 was being silently capped to 50 / page ignored → duplicate pages.
+        const pageParam = url.searchParams.get("page");
+        const perPageParam = url.searchParams.get("perPage") || url.searchParams.get("pageSize");
+        let limit: number;
+        let offset: number;
+        if (pageParam !== null || perPageParam !== null) {
+            const page = parseInt(pageParam || "1") || 1;
+            const perPage = parseInt(perPageParam || "50") || 50;
+            offset = (page - 1) * perPage;
+            limit = perPage;
+        } else {
+            limit = parseInt(url.searchParams.get("limit") || "50") || 50;
+            offset = parseInt(url.searchParams.get("offset") || "0") || 0;
+        }
         const status = url.searchParams.get("status");
         const source = url.searchParams.get("source");
         const assigned_to = url.searchParams.get("assigned_to");
+        const temperature = url.searchParams.get("temperature");
         const q = url.searchParams.get("q");
         const createdAtFrom = url.searchParams.get("created_at_from");
         const createdAtTo = url.searchParams.get("created_at_to");
@@ -99,6 +115,12 @@ export async function GET(req: NextRequest) {
 
         if (status) query = query.eq("status", status);
         if (source) query = query.eq("source", source);
+        if (
+            temperature &&
+            (temperature === "Hot" || temperature === "Warm" || temperature === "Cold")
+        ) {
+            query = query.eq("temperature", temperature);
+        }
         if (assigned_to && (userRole === "Admin" || userRole === "Manager" || isPlatformAdmin)) {
             // Only Admin/Manager/PlatformAdmin can filter by assigned_to explicitly
             query = query.eq("assigned_to", assigned_to);
@@ -233,15 +255,29 @@ export async function POST(req: NextRequest) {
 
         // Set default values
         const now = new Date().toISOString();
+        const interestVehicleId =
+            payload.interest_vehicle_id || payload.vehicle_id || null;
+        const scored = scoreLead({
+            source: payload.source || "Website",
+            status: payload.status || "Not Started",
+            interest_vehicle_id: interestVehicleId,
+            notes: payload.notes || null,
+            last_engagement: now,
+            lead_creation_date: now,
+        });
         const leadData = {
             customer_id: payload.customer_id,
             source: payload.source || 'Website',
             status: payload.status || 'Not Started',
-            interest_vehicle_id: payload.interest_vehicle_id || null,
+            // Accept BOTH interest_vehicle_id (schema canonical) and vehicle_id (caller convenience)
+            interest_vehicle_id: interestVehicleId,
             assigned_to: payload.assigned_to || null,
+            interest_level: payload.interest_level || null,
             notes: payload.notes || null,
             lead_creation_date: now,
             last_engagement: now,
+            score: scored.score,
+            temperature: scored.temperature,
             dealership_id: currentUser.dealership_id,
         };
 

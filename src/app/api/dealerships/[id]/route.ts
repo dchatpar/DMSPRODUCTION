@@ -1,6 +1,14 @@
 // app/api/dealerships/[id]/route.ts
 import { createTokenClient } from "@/src/lib/server-token";
 import { NextRequest, NextResponse } from "next/server";
+import { assertOwnershipOrDeny, pickAllowed, requireDealershipAccess } from "@/src/lib/auth-helpers";
+
+const DEALERSHIP_ALLOWED_FIELDS = [
+    "name", "address", "phone", "email", "logo_url", "settings",
+    // Schema-actual columns used by the dealerships table
+    "slug", "subdomain", "business_name", "business_address", "business_phone",
+    "business_email", "status",
+] as const;
 
 // GET single dealership (platform admin only)
 export async function GET(
@@ -8,10 +16,22 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const { id } = await params;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
+
+        if (!auth.profile.is_platform_admin) {
+            return NextResponse.json(
+                { error: "Unauthorized - Platform admin access required" },
+                { status: 403 }
+            );
+        }
 
         let supabase;
-
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -24,28 +44,7 @@ export async function GET(
             throw error;
         }
 
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
-        }
-
-        // Check if user is platform admin
-        const { data: currentUser } = await supabase
-            .from("users")
-            .select("is_platform_admin")
-            .eq("id", user.id)
-            .single();
-
-        if (!currentUser?.is_platform_admin) {
-            return NextResponse.json(
-                { error: "Unauthorized - Platform admin access required" },
-                { status: 403 }
-            );
-        }
+        const { id } = await params;
 
         const { data: dealership, error: dbError } = await supabase
             .from("dealerships")
@@ -105,8 +104,22 @@ export async function PATCH(
     try {
         const { id } = await params;
 
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        if (!auth.profile.is_platform_admin) {
+            return NextResponse.json(
+                { error: "Unauthorized - Platform admin access required" },
+                { status: 403 }
+            );
+        }
+
+        let supabase;
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -119,35 +132,29 @@ export async function PATCH(
             throw error;
         }
 
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
-        }
-
-        // Check if user is platform admin
-        const { data: currentUser } = await supabase
-            .from("users")
-            .select("is_platform_admin")
-            .eq("id", user.id)
-            .single();
-
-        if (!currentUser?.is_platform_admin) {
-            return NextResponse.json(
-                { error: "Unauthorized - Platform admin access required" },
-                { status: 403 }
-            );
-        }
-
         const url = new URL(req.url);
         const action = url.searchParams.get("action");
 
         // Handle suspend/activate actions
         if (action === "suspend" || action === "activate") {
             const newStatus = action === "suspend" ? "Suspended" : "Active";
+
+            // Verify the row exists; platform admin always passes ownership
+            const { data: existing, error: existingError } = await supabase
+                .from("dealerships")
+                .select("id")
+                .eq("id", id)
+                .single();
+
+            if (existingError) {
+                if (existingError.code === "PGRST116") {
+                    return NextResponse.json({ error: "Dealership not found" }, { status: 404 });
+                }
+                throw existingError;
+            }
+
+            const deny = assertOwnershipOrDeny(existing as any, auth.profile);
+            if (deny) return deny;
 
             const { data: dealership, error: dbError } = await supabase
                 .from("dealerships")
@@ -175,7 +182,7 @@ export async function PATCH(
                 p_action: `dealership.${action}`,
                 p_entity_type: "dealership",
                 p_entity_id: id,
-                p_actor_id: user.id,
+                p_actor_id: auth.user?.id,
                 p_metadata: JSON.stringify({ status: newStatus }),
             });
 
@@ -189,34 +196,40 @@ export async function PATCH(
 
         // Normal update logic
         const payload = await req.json();
-        const {
-            name,
-            slug,
-            subdomain,
-            business_name,
-            business_address,
-            business_phone,
-            business_email,
-            logo_url,
-            status,
-            settings
-        } = payload;
 
-        const updateData: any = {};
-        if (name !== undefined) updateData.name = name;
-        if (slug !== undefined) updateData.slug = slug;
-        if (subdomain !== undefined) updateData.subdomain = subdomain;
-        if (business_name !== undefined) updateData.business_name = business_name;
-        if (business_address !== undefined) updateData.business_address = business_address;
-        if (business_phone !== undefined) updateData.business_phone = business_phone;
-        if (business_email !== undefined) updateData.business_email = business_email;
-        if (logo_url !== undefined) updateData.logo_url = logo_url;
-        if (status !== undefined) updateData.status = status;
-        if (settings !== undefined) updateData.settings = settings;
+        // Whitelist the update payload
+        const safePayload = pickAllowed(payload, DEALERSHIP_ALLOWED_FIELDS);
+
+        if (Object.keys(safePayload).length === 0) {
+            return NextResponse.json(
+                { error: "No valid fields to update" },
+                { status: 400 }
+            );
+        }
+
+        // Verify the row exists; platform admin always passes ownership
+        const { data: existing, error: existingError } = await supabase
+            .from("dealerships")
+            .select("id")
+            .eq("id", id)
+            .single();
+
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json(
+                    { error: "Dealership not found" },
+                    { status: 404 }
+                );
+            }
+            throw existingError;
+        }
+
+        const deny = assertOwnershipOrDeny(existing as any, auth.profile);
+        if (deny) return deny;
 
         const { data: dealership, error: dbError } = await supabase
             .from("dealerships")
-            .update(updateData)
+            .update(safePayload)
             .eq("id", id)
             .select()
             .single();
@@ -248,7 +261,10 @@ export async function PATCH(
     }
 }
 
-// DELETE dealership (platform admin only)
+// Soft-delete dealership (platform admin only).
+// Never hard-delete tenants that have vehicles / deals / invoices (protects Nova floors).
+const NOVA_DEALERSHIP_ID = "dd404bb6-3e64-43ae-9eb7-98095033c6cb";
+
 export async function DELETE(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -256,8 +272,22 @@ export async function DELETE(
     try {
         const { id } = await params;
 
-        let supabase;
+        const auth = await requireDealershipAccess(req);
+        if (auth.error || !auth.profile) {
+            return NextResponse.json(
+                { error: auth.error || "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
+        if (!auth.profile.is_platform_admin) {
+            return NextResponse.json(
+                { error: "Unauthorized - Platform admin access required" },
+                { status: 403 }
+            );
+        }
+
+        let supabase;
         try {
             supabase = createTokenClient(req);
         } catch (error: any) {
@@ -270,50 +300,110 @@ export async function DELETE(
             throw error;
         }
 
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: "Invalid or expired token" },
-                { status: 401 }
-            );
-        }
-
-        // Check if user is platform admin
-        const { data: currentUser } = await supabase
-            .from("users")
-            .select("is_platform_admin")
-            .eq("id", user.id)
+        const { data: existing, error: existingError } = await supabase
+            .from("dealerships")
+            .select("id, name, status")
+            .eq("id", id)
             .single();
 
-        if (!currentUser?.is_platform_admin) {
-            return NextResponse.json(
-                { error: "Unauthorized - Platform admin access required" },
-                { status: 403 }
-            );
+        if (existingError) {
+            if (existingError.code === "PGRST116") {
+                return NextResponse.json({ error: "Dealership not found" }, { status: 404 });
+            }
+            throw existingError;
         }
 
-        // Check if dealership has active subscriptions
+        const deny = assertOwnershipOrDeny(existing as any, auth.profile);
+        if (deny) return deny;
+
+        // Count tenant data — any operational data forces soft-delete only
+        const [
+            { count: vehicleCount },
+            { count: dealCount },
+            { count: invoiceCount },
+            { count: userCount },
+        ] = await Promise.all([
+            supabase.from("vehicles").select("*", { count: "exact", head: true }).eq("dealership_id", id),
+            supabase.from("deals").select("*", { count: "exact", head: true }).eq("dealership_id", id),
+            supabase.from("invoices").select("*", { count: "exact", head: true }).eq("dealership_id", id),
+            supabase.from("users").select("*", { count: "exact", head: true }).eq("dealership_id", id),
+        ]);
+
+        const hasTenantData =
+            (vehicleCount || 0) > 0 ||
+            (dealCount || 0) > 0 ||
+            (invoiceCount || 0) > 0 ||
+            id === NOVA_DEALERSHIP_ID;
+
+        if (hasTenantData) {
+            // Soft-delete: Cancelled + deactivate users. Never wipe inventory/deals/invoices.
+            const { data: dealership, error: softError } = await supabase
+                .from("dealerships")
+                .update({ status: "Cancelled" })
+                .eq("id", id)
+                .select()
+                .single();
+
+            if (softError) throw softError;
+
+            await supabase
+                .from("users")
+                .update({ is_active: false })
+                .eq("dealership_id", id)
+                .eq("is_platform_admin", false);
+
+            try {
+                await supabase.rpc("log_audit_action", {
+                    p_action: "dealership.soft_delete",
+                    p_entity_type: "dealership",
+                    p_entity_id: id,
+                    p_actor_id: auth.user?.id,
+                    p_metadata: JSON.stringify({
+                        reason: "tenant_has_data",
+                        vehicles: vehicleCount || 0,
+                        deals: dealCount || 0,
+                        invoices: invoiceCount || 0,
+                        users: userCount || 0,
+                    }),
+                });
+            } catch {
+                /* audit is best-effort */
+            }
+
+            return NextResponse.json({
+                success: true,
+                soft_deleted: true,
+                data: dealership,
+                message:
+                    "Dealership soft-deleted (Cancelled). Tenant data retained — vehicles/deals/invoices were not removed.",
+                retained: {
+                    vehicles: vehicleCount || 0,
+                    deals: dealCount || 0,
+                    invoices: invoiceCount || 0,
+                    users: userCount || 0,
+                },
+            });
+        }
+
+        // Empty tenant only: allow hard delete of shell records
         const { data: subscription } = await supabase
             .from("subscriptions")
             .select("status")
             .eq("dealership_id", id)
-            .single();
+            .maybeSingle();
 
-        if (subscription && subscription.status === 'Active') {
+        if (subscription && subscription.status === "Active") {
             return NextResponse.json(
                 { error: "Cannot delete dealership with active subscription. Cancel the subscription first." },
                 { status: 400 }
             );
         }
 
-        // Delete related records first (cascade should handle this, but being explicit)
         await supabase.from("users").delete().eq("dealership_id", id);
         await supabase.from("roles").delete().eq("dealership_id", id);
         await supabase.from("subscriptions").delete().eq("dealership_id", id);
         await supabase.from("billing_information").delete().eq("dealership_id", id);
 
-        // Delete the dealership
         const { error: dbError } = await supabase
             .from("dealerships")
             .delete()
@@ -321,7 +411,11 @@ export async function DELETE(
 
         if (dbError) throw dbError;
 
-        return NextResponse.json({ success: true });
+        return NextResponse.json({
+            success: true,
+            soft_deleted: false,
+            message: "Empty dealership hard-deleted.",
+        });
     } catch (error: any) {
         console.error("Error deleting dealership:", error);
         return NextResponse.json(

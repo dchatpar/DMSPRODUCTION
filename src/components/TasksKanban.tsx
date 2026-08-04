@@ -17,8 +17,7 @@ import {
     MessageSquare,
     Tag,
     XCircle,
-    MoreVertical,
-    CheckSquare,
+    CheckSquare
 } from 'lucide-react';
 
 interface UserData {
@@ -83,7 +82,7 @@ const TasksKanban: React.FC<TasksKanbanProps> = ({
     onTaskClick,
     onTaskEdit,
     onTaskDelete,
-    onStatusChange,
+    onStatusChange
 }) => {
     const [draggedTask, setDraggedTask] = useState<Task | null>(null);
     const [updating, setUpdating] = useState(false);
@@ -102,7 +101,7 @@ const TasksKanban: React.FC<TasksKanbanProps> = ({
             bgColor: 'bg-yellow-50',
             borderColor: 'border-yellow-200',
             iconColor: 'text-yellow-500',
-            status: 'Pending',
+            status: 'Pending'
         },
         {
             id: 'in_progress',
@@ -112,7 +111,7 @@ const TasksKanban: React.FC<TasksKanbanProps> = ({
             bgColor: 'bg-blue-50',
             borderColor: 'border-blue-200',
             iconColor: 'text-blue-500',
-            status: 'In Progress',
+            status: 'In Progress'
         },
         {
             id: 'completed',
@@ -122,17 +121,17 @@ const TasksKanban: React.FC<TasksKanbanProps> = ({
             bgColor: 'bg-green-50',
             borderColor: 'border-green-200',
             iconColor: 'text-green-500',
-            status: 'Completed',
+            status: 'Completed'
         },
         {
             id: 'cancelled',
             title: 'Cancelled',
             icon: XCircle,
-            color: 'text-gray-600',
-            bgColor: 'bg-gray-50',
+            color: 'text-muted-foreground',
+            bgColor: 'bg-muted/40',
             borderColor: 'border-gray-200',
-            iconColor: 'text-gray-500',
-            status: 'Cancelled',
+            iconColor: 'text-muted-foreground',
+            status: 'Cancelled'
         },
         {
             id: 'on_hold',
@@ -142,15 +141,15 @@ const TasksKanban: React.FC<TasksKanbanProps> = ({
             bgColor: 'bg-purple-50',
             borderColor: 'border-purple-200',
             iconColor: 'text-purple-500',
-            status: 'On Hold',
+            status: 'On Hold'
         },
     ];
 
     const priorityColors: Record<string, string> = {
-        Low: 'bg-gray-100 text-gray-700',
+        Low: 'bg-muted text-foreground/80',
         Medium: 'bg-blue-100 text-blue-700',
         High: 'bg-orange-100 text-orange-700',
-        Urgent: 'bg-red-100 text-red-700',
+        Urgent: 'bg-red-100 text-red-700'
     };
 
     const getTasksByStatus = (status: string) => {
@@ -205,7 +204,7 @@ const TasksKanban: React.FC<TasksKanbanProps> = ({
         return new Date(date).toLocaleDateString('en-US', {
             year: 'numeric',
             month: 'short',
-            day: 'numeric',
+            day: 'numeric'
         });
     };
 
@@ -214,7 +213,7 @@ const TasksKanban: React.FC<TasksKanbanProps> = ({
             <div className="flex items-center justify-center min-h-[400px] bg-white rounded-xl border border-gray-200">
                 <div className="flex flex-col items-center gap-4">
                     <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-                    <p className="text-sm text-gray-500">Loading tasks...</p>
+                    <p className="text-sm text-muted-foreground">Loading tasks...</p>
                 </div>
             </div>
         );
@@ -257,7 +256,7 @@ const TasksKanban: React.FC<TasksKanbanProps> = ({
                             <div className="flex items-center justify-between p-2 rounded-t-lg">
                                 <div className="flex items-center gap-2">
                                     <ColumnIcon size={18} className={column.iconColor} />
-                                    <h3 className="font-semibold text-gray-700 text-sm">{column.title}</h3>
+                                    <h3 className="font-semibold text-foreground/80 text-sm">{column.title}</h3>
                                     <span className={`text-xs px-2 py-0.5 rounded-full ${column.color} bg-white`}>
                                         {columnTasks.length}
                                     </span>
@@ -283,23 +282,23 @@ const TasksKanban: React.FC<TasksKanbanProps> = ({
                                         <div className="p-3">
                                             {/* Drag Handle & Actions */}
                                             <div className="flex items-center justify-between mb-2">
-                                                <div className="flex items-center gap-2 text-gray-400">
+                                                <div className="flex items-center gap-2 text-muted-foreground/70">
                                                     <GripVertical size={14} />
-                                                    <span className="text-xs font-mono truncate max-w-[80px] text-gray-500">
+                                                    <span className="text-xs font-mono truncate max-w-[80px] text-muted-foreground">
                                                         #{task.id.slice(0, 8)}
                                                     </span>
                                                 </div>
                                                 <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                                                     <button
                                                         onClick={() => onTaskEdit(task)}
-                                                        className="p-1 text-gray-400 hover:text-amber-600 transition-colors"
+                                                        className="p-1 text-muted-foreground/70 hover:text-amber-600 transition-colors"
                                                         title="Edit"
                                                     >
                                                         <Edit size={14} />
                                                     </button>
                                                     <button
                                                         onClick={() => onTaskDelete(task)}
-                                                        className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                                                        className="p-1 text-muted-foreground/70 hover:text-red-600 transition-colors"
                                                         title="Delete"
                                                     >
                                                         <Trash2 size={14} />
@@ -308,24 +307,24 @@ const TasksKanban: React.FC<TasksKanbanProps> = ({
                                             </div>
 
                                             {/* Task Title */}
-                                            <h4 className="font-semibold text-gray-900 text-sm mb-2 line-clamp-2">
+                                            <h4 className="font-semibold text-foreground text-sm mb-2 line-clamp-2">
                                                 {task.title}
                                             </h4>
 
                                             {/* Description */}
                                             {task.description && (
-                                                <p className="text-xs text-gray-500 line-clamp-2 mb-2">
+                                                <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
                                                     {task.description}
                                                 </p>
                                             )}
 
                                             {/* Priority & Due Date */}
                                             <div className="flex items-center justify-between mb-2">
-                                                <span className={`px-2 py-0.5 text-xs font-medium rounded ${priorityColors[task.priority] || 'bg-gray-100 text-gray-700'}`}>
+                                                <span className={`px-2 py-0.5 text-xs font-medium rounded ${priorityColors[task.priority] || 'bg-muted text-foreground/80'}`}>
                                                     {task.priority}
                                                 </span>
                                                 {task.due_date && (
-                                                    <div className={`flex items-center gap-1 text-xs ${isOverdue(task) ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
+                                                    <div className={`flex items-center gap-1 text-xs ${isOverdue(task) ? 'text-red-600 font-medium' : 'text-muted-foreground'}`}>
                                                         <Calendar size={12} />
                                                         {formatDate(task.due_date)}
                                                     </div>
@@ -341,7 +340,7 @@ const TasksKanban: React.FC<TasksKanbanProps> = ({
                                                         </span>
                                                     ))}
                                                     {task.tags.length > 3 && (
-                                                        <span className="px-1.5 py-0.5 text-[10px] bg-gray-100 text-gray-600 rounded">
+                                                        <span className="px-1.5 py-0.5 text-[10px] bg-muted text-muted-foreground rounded">
                                                             +{task.tags.length - 3}
                                                         </span>
                                                     )}
@@ -362,11 +361,11 @@ const TasksKanban: React.FC<TasksKanbanProps> = ({
                                                             {task.assigned_user?.full_name?.[0] || '?'}
                                                         </div>
                                                     )}
-                                                    <span className="text-xs text-gray-500 truncate max-w-[80px]">
+                                                    <span className="text-xs text-muted-foreground truncate max-w-[80px]">
                                                         {task.assigned_user?.full_name?.split(' ')[0] || 'Unassigned'}
                                                     </span>
                                                 </div>
-                                                <div className="flex items-center gap-1 text-gray-400">
+                                                <div className="flex items-center gap-1 text-muted-foreground/70">
                                                     {task.task_notes && task.task_notes.length > 0 && (
                                                         <div className="flex items-center gap-1">
                                                             <MessageSquare size={12} />
@@ -381,10 +380,10 @@ const TasksKanban: React.FC<TasksKanbanProps> = ({
 
                                 {/* Empty State */}
                                 {columnTasks.length === 0 && (
-                                    <div className="bg-gray-50 rounded-lg border border-dashed border-gray-300 p-6 text-center">
+                                    <div className="bg-muted/40 rounded-lg border border-dashed border-border p-6 text-center">
                                         <ColumnIcon size={24} className={`mx-auto mb-2 ${column.iconColor} opacity-50`} />
-                                        <p className="text-xs text-gray-400">No tasks</p>
-                                        <p className="text-xs text-gray-400">Drop here to move</p>
+                                        <p className="text-xs text-muted-foreground/70">No tasks</p>
+                                        <p className="text-xs text-muted-foreground/70">Drop here to move</p>
                                     </div>
                                 )}
                             </div>
@@ -400,7 +399,7 @@ const TasksKanban: React.FC<TasksKanbanProps> = ({
                     <div className="flex items-center justify-center min-h-[300px] bg-white rounded-xl border border-gray-200">
                         <div className="flex flex-col items-center gap-4">
                             <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-                            <p className="text-sm text-gray-500">Loading tasks...</p>
+                            <p className="text-sm text-muted-foreground">Loading tasks...</p>
                         </div>
                     </div>
                 ) : error ? (
@@ -419,8 +418,8 @@ const TasksKanban: React.FC<TasksKanbanProps> = ({
                 ) : tasks.length === 0 ? (
                     <div className="flex items-center justify-center min-h-[300px] bg-white rounded-xl border border-gray-200">
                         <div className="text-center">
-                            <CheckSquare className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                            <p className="text-sm text-gray-500">No tasks found</p>
+                            <CheckSquare className="w-12 h-12 text-muted-foreground/40 mx-auto mb-3" />
+                            <p className="text-sm text-muted-foreground">No tasks found</p>
                         </div>
                     </div>
                 ) : (
@@ -436,43 +435,43 @@ const TasksKanban: React.FC<TasksKanbanProps> = ({
                                 {/* Header Row */}
                                 <div className="flex items-start justify-between mb-3">
                                     <div className="flex items-center gap-2">
-                                        <ColumnIcon size={16} className={taskColumn?.iconColor || 'text-gray-400'} />
-                                        <span className={`text-xs px-2 py-0.5 rounded-full ${taskColumn?.bgColor || 'bg-gray-100'} ${taskColumn?.color || 'text-gray-600'}`}>
+                                        <ColumnIcon size={16} className={taskColumn?.iconColor || 'text-muted-foreground/70'} />
+                                        <span className={`text-xs px-2 py-0.5 rounded-full ${taskColumn?.bgColor || 'bg-muted'} ${taskColumn?.color || 'text-muted-foreground'}`}>
                                             {task.status}
                                         </span>
                                     </div>
                                     <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                                         <button
                                             onClick={() => onTaskEdit(task)}
-                                            className="p-1 text-gray-400 hover:text-amber-600 transition-colors"
+                                            className="p-1 text-muted-foreground/70 hover:text-amber-600 transition-colors"
                                         >
                                             <Edit size={14} />
                                         </button>
                                         <button
                                             onClick={() => onTaskDelete(task)}
-                                            className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                                            className="p-1 text-muted-foreground/70 hover:text-red-600 transition-colors"
                                         >
                                             <Trash2 size={14} />
                                         </button>
                                     </div>
                                 </div>
                                 {/* Task Title */}
-                                <h4 className="font-semibold text-gray-900 text-sm mb-2">
+                                <h4 className="font-semibold text-foreground text-sm mb-2">
                                     {task.title}
                                 </h4>
                                 {/* Description */}
                                 {task.description && (
-                                    <p className="text-xs text-gray-500 line-clamp-2 mb-2">
+                                    <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
                                         {task.description}
                                     </p>
                                 )}
                                 {/* Info Row - Badges */}
                                 <div className="flex flex-wrap items-center gap-2 mb-2">
-                                    <span className={`px-2 py-0.5 text-xs font-medium rounded ${priorityColors[task.priority] || 'bg-gray-100 text-gray-700'}`}>
+                                    <span className={`px-2 py-0.5 text-xs font-medium rounded ${priorityColors[task.priority] || 'bg-muted text-foreground/80'}`}>
                                         {task.priority}
                                     </span>
                                     {task.due_date && (
-                                        <div className={`flex items-center gap-1 text-xs ${isOverdue(task) ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
+                                        <div className={`flex items-center gap-1 text-xs ${isOverdue(task) ? 'text-red-600 font-medium' : 'text-muted-foreground'}`}>
                                             <Calendar size={12} />
                                             {formatDate(task.due_date)}
                                         </div>
@@ -487,7 +486,7 @@ const TasksKanban: React.FC<TasksKanbanProps> = ({
                                             </span>
                                         ))}
                                         {task.tags.length > 3 && (
-                                            <span className="px-1.5 py-0.5 text-[10px] bg-gray-100 text-gray-600 rounded">
+                                            <span className="px-1.5 py-0.5 text-[10px] bg-muted text-muted-foreground rounded">
                                                 +{task.tags.length - 3}
                                             </span>
                                         )}
@@ -502,7 +501,7 @@ const TasksKanban: React.FC<TasksKanbanProps> = ({
                                             {task.assigned_user?.full_name?.[0] || '?'}
                                         </div>
                                     )}
-                                    <span className="text-xs text-gray-500 truncate">
+                                    <span className="text-xs text-muted-foreground truncate">
                                         {task.assigned_user?.full_name || 'Unassigned'}
                                     </span>
                                 </div>
