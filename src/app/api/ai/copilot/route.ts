@@ -3,9 +3,10 @@ import {
     chatCompletion,
     streamChatCompletion,
     parseSseContentStream,
-    type MiniMaxMessage,
-    MiniMaxNotConfiguredError,
-} from "@/src/lib/ai/minimax";
+    stripThinkingArtifacts,
+    type LlmMessage,
+    FlashAiNotConfiguredError,
+} from "@/src/lib/ai/llm";
 import { DESK_SYSTEM, requireAiCaller, aiNotConfiguredResponse } from "@/src/lib/ai/guard";
 import { COPILOT_TOOL_DEFS, runCopilotTool } from "@/src/lib/ai/tools";
 
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest) {
         const incoming = Array.isArray(body.messages) ? body.messages : [];
         const wantStream = body.stream !== false;
 
-        const userMessages: MiniMaxMessage[] = incoming
+        const userMessages: LlmMessage[] = incoming
             .filter(
                 (m: { role?: string; content?: unknown }) =>
                     m &&
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        const messages: MiniMaxMessage[] = [
+        const messages: LlmMessage[] = [
             { role: "system", content: DESK_SYSTEM },
             ...userMessages,
         ];
@@ -60,18 +61,19 @@ export async function POST(req: NextRequest) {
             });
 
             if (!result.tool_calls.length) {
+                const content = stripThinkingArtifacts(result.content);
                 if (!wantStream) {
                     return NextResponse.json({
-                        data: { content: result.content, model: "MiniMax-M2.7" },
+                        data: { content, model: "flash-ai" },
                     });
                 }
 
                 // Stream a short final pass for UX (or echo content if empty tools path)
-                if (result.content) {
+                if (content) {
                     const encoder = new TextEncoder();
                     const stream = new ReadableStream({
                         start(controller) {
-                            controller.enqueue(encoder.encode(result.content));
+                            controller.enqueue(encoder.encode(content));
                             controller.close();
                         },
                     });
@@ -90,7 +92,7 @@ export async function POST(req: NextRequest) {
                 });
                 if (!upstream.body) {
                     return NextResponse.json(
-                        { error: "Empty stream from MiniMax" },
+                        { error: "Empty stream from Flash AI" },
                         { status: 502 }
                     );
                 }
@@ -129,7 +131,7 @@ export async function POST(req: NextRequest) {
             { status: 504 }
         );
     } catch (err) {
-        if (err instanceof MiniMaxNotConfiguredError) {
+        if (err instanceof FlashAiNotConfiguredError) {
             return aiNotConfiguredResponse();
         }
         console.error("[ai/copilot]", err);

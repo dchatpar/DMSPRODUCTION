@@ -3,7 +3,7 @@
 import { Sparkles } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 
-/** Amber honesty banner when MiniMax key is missing. */
+/** Amber honesty banner when Flash AI Worker secret is missing. */
 export function AiNotConfiguredBanner({
     className,
     compact,
@@ -23,9 +23,8 @@ export function AiNotConfiguredBanner({
             <p className="flex items-start gap-2 font-medium">
                 <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700" />
                 <span>
-                    Flash AI not configured — add{" "}
-                    <code className="rounded bg-amber-100/80 px-1">MINIMAX_API_KEY</code>{" "}
-                    via wrangler. No fake success.
+                    Flash AI not configured — add via wrangler when ready. No fake
+                    success.
                 </span>
             </p>
         </div>

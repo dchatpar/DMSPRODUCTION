@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chatCompletion, MiniMaxNotConfiguredError } from "@/src/lib/ai/minimax";
+import {
+    chatCompletion,
+    extractJsonObject,
+    FlashAiNotConfiguredError,
+    stripThinkingArtifacts,
+} from "@/src/lib/ai/llm";
 import {
     DESK_SYSTEM,
     requireAiCaller,
@@ -43,7 +48,7 @@ export async function POST(req: NextRequest) {
                         DESK_SYSTEM +
                         "\nConvert a natural-language inventory search into JSON filters only. " +
                         'Schema: {"q","make","model","status","min_price","max_price","min_year","max_year","max_odometer","aging_only","min_days_in_stock","explanation"}. ' +
-                        "Omit unknown fields. status usually Active/Pending/Sold/Coming Soon. Prices CAD numbers. Return JSON only.",
+                        "Omit unknown fields. status usually Active/Pending/Sold/Coming Soon. Prices CAD numbers. Return JSON only. Never include think tags.",
                 },
                 { role: "user", content: query.slice(0, 500) },
             ],
@@ -53,16 +58,12 @@ export async function POST(req: NextRequest) {
 
         let filters: InventorySearchFilters & { explanation?: string } = {};
         try {
-            const raw = result.content
-                .replace(/^```json\s*/i, "")
-                .replace(/```$/i, "")
-                .trim();
-            filters = JSON.parse(raw) as typeof filters;
+            filters = extractJsonObject(result.content) as typeof filters;
         } catch {
             return NextResponse.json(
                 {
                     error: "Could not parse search filters from model",
-                    raw: result.content.slice(0, 500),
+                    raw: stripThinkingArtifacts(result.content).slice(0, 500),
                 },
                 { status: 502 }
             );
@@ -93,13 +94,13 @@ export async function POST(req: NextRequest) {
                 filters: clean,
                 explanation:
                     typeof filters.explanation === "string"
-                        ? filters.explanation
+                        ? stripThinkingArtifacts(filters.explanation)
                         : null,
                 query,
             },
         });
     } catch (err) {
-        if (err instanceof MiniMaxNotConfiguredError) {
+        if (err instanceof FlashAiNotConfiguredError) {
             return aiNotConfiguredResponse();
         }
         console.error("[ai/inventory-search]", err);

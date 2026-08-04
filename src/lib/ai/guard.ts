@@ -8,16 +8,16 @@ import {
     requireDealershipAccess,
     type UserProfile,
 } from "@/src/lib/auth-helpers";
-import { isMiniMaxConfigured } from "@/src/lib/ai/minimax";
+import { isFlashAiConfigured } from "@/src/lib/ai/llm";
 
 export const AI_NOT_CONFIGURED_MESSAGE =
-    "Not configured — add MINIMAX_API_KEY via wrangler secret put.";
+    "Flash AI not configured — add via wrangler when ready.";
 
 export function aiNotConfiguredResponse(): NextResponse {
     return NextResponse.json(
         {
             error: AI_NOT_CONFIGURED_MESSAGE,
-            code: "minimax_not_configured",
+            code: "flash_ai_not_configured",
             configured: false,
         },
         { status: 503 }
@@ -59,7 +59,7 @@ export async function requireAiCaller(
         };
     }
 
-    if (!isMiniMaxConfigured()) {
+    if (!isFlashAiConfigured()) {
         return { ok: false, response: aiNotConfiguredResponse() };
     }
 
@@ -73,4 +73,5 @@ Rules:
 - Do not expose purchase_price, floors, or cost basis. Retail/special asking price only.
 - CASL: draft emails/SMS are drafts only — human must review and send. Never claim a message was sent.
 - Ontario MVDA: disclosure helpers are drafts requiring human confirm before save.
-- Currency: CAD. Tone: professional dealership desk.`;
+- Currency: CAD. Tone: professional dealership desk.
+- Never include chain-of-thought, reasoning tags, or <think> blocks in user-visible output. Reply as Flash AI only.`;

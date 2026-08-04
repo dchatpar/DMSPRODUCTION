@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chatCompletion, MiniMaxNotConfiguredError } from "@/src/lib/ai/minimax";
+import {
+    chatCompletion,
+    FlashAiNotConfiguredError,
+    stripThinkingArtifacts,
+} from "@/src/lib/ai/llm";
 import {
     DESK_SYSTEM,
     requireAiCaller,
@@ -42,7 +46,7 @@ export async function POST(req: NextRequest) {
                     role: "system",
                     content:
                         DESK_SYSTEM +
-                        "\nWrite a merchandising vehicle description for the lot/VDP. Honest, no emoji spam, CAD price only if provided. Return description text only — no markdown fences.",
+                        "\nWrite a merchandising vehicle description for the lot/VDP. Honest, no emoji spam, CAD price only if provided. Return description text only — no markdown fences, no think tags.",
                 },
                 {
                     role: "user",
@@ -73,16 +77,17 @@ export async function POST(req: NextRequest) {
             max_completion_tokens: 900,
         });
 
-        if (!result.content) {
+        const content = stripThinkingArtifacts(result.content);
+        if (!content) {
             return NextResponse.json(
-                { error: "Empty description from model" },
+                { error: "Empty description from Flash AI" },
                 { status: 502 }
             );
         }
 
         return NextResponse.json({
             data: {
-                content: result.content,
+                content,
                 vehicle_id: vehicle.id,
                 draft: true,
                 applied: false,
@@ -90,7 +95,7 @@ export async function POST(req: NextRequest) {
             },
         });
     } catch (err) {
-        if (err instanceof MiniMaxNotConfiguredError) {
+        if (err instanceof FlashAiNotConfiguredError) {
             return aiNotConfiguredResponse();
         }
         console.error("[ai/description]", err);

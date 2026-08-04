@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chatCompletion, MiniMaxNotConfiguredError } from "@/src/lib/ai/minimax";
+import {
+    chatCompletion,
+    FlashAiNotConfiguredError,
+    stripThinkingArtifacts,
+} from "@/src/lib/ai/llm";
 import {
     DESK_SYSTEM,
     requireAiCaller,
@@ -53,7 +57,7 @@ export async function POST(req: NextRequest) {
                     content:
                         DESK_SYSTEM +
                         "\nYou are a quote desk coach. Suggest 2-4 talking points to handle objections honestly. " +
-                        "No pressure tactics, no false urgency, no invented discounts or lender approvals. Plain text.",
+                        "No pressure tactics, no false urgency, no invented discounts or lender approvals. Plain text. No think tags.",
                 },
                 {
                     role: "user",
@@ -70,13 +74,13 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({
             data: {
-                content: result.content,
+                content: stripThinkingArtifacts(result.content),
                 quotation_id: quotationId || null,
                 draft: true,
             },
         });
     } catch (err) {
-        if (err instanceof MiniMaxNotConfiguredError) {
+        if (err instanceof FlashAiNotConfiguredError) {
             return aiNotConfiguredResponse();
         }
         console.error("[ai/quote-coach]", err);

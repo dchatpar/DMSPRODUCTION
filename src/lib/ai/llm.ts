@@ -1,29 +1,39 @@
 /**
- * MiniMax OpenAI-compatible client (server-only).
- * Model: MiniMax-M2.7 via https://api.minimax.io/v1
- * Key: MINIMAX_API_KEY (Wrangler secret / process.env) — never ship to browser.
+ * Flash AI LLM client (server-only).
+ * OpenAI-compatible chat API. Env secret name stays server-only — never show in UI.
  */
 
-export const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
-export const MINIMAX_MODEL = "MiniMax-M2.7";
+import {
+    extractJsonObject,
+    stripThinkingArtifacts,
+    ThinkingStreamSanitizer,
+} from "@/src/lib/ai/sanitize";
 
-export type MiniMaxRole = "system" | "user" | "assistant" | "tool";
+/** Upstream API base (server-only). */
+const LLM_BASE_URL = "https://api.minimax.io/v1";
+/** Upstream model id for request body (server-only; never return to clients). */
+const LLM_MODEL_ID = "MiniMax-M2.7";
 
-export type MiniMaxMessage = {
-    role: MiniMaxRole;
+/** Public product model label for status APIs (no vendor string). */
+export const FLASH_AI_MODEL = "flash-ai";
+
+export type LlmRole = "system" | "user" | "assistant" | "tool";
+
+export type LlmMessage = {
+    role: LlmRole;
     content: string | null;
-    tool_calls?: MiniMaxToolCall[];
+    tool_calls?: LlmToolCall[];
     tool_call_id?: string;
     name?: string;
 };
 
-export type MiniMaxToolCall = {
+export type LlmToolCall = {
     id: string;
     type: "function";
     function: { name: string; arguments: string };
 };
 
-export type MiniMaxToolDef = {
+export type LlmToolDef = {
     type: "function";
     function: {
         name: string;
@@ -34,59 +44,67 @@ export type MiniMaxToolDef = {
 
 export type ChatCompletionResult = {
     content: string;
-    tool_calls: MiniMaxToolCall[];
+    tool_calls: LlmToolCall[];
     finish_reason: string | null;
     raw: unknown;
 };
 
-export function isMiniMaxConfigured(): boolean {
+export function isFlashAiConfigured(): boolean {
     return Boolean(process.env.MINIMAX_API_KEY?.trim());
 }
 
-export function getMiniMaxApiKey(): string | null {
+export function getLlmApiKey(): string | null {
     const key = process.env.MINIMAX_API_KEY?.trim();
     return key || null;
 }
 
-export class MiniMaxNotConfiguredError extends Error {
+export class FlashAiNotConfiguredError extends Error {
     constructor() {
-        super("Not configured — add MINIMAX_API_KEY via wrangler secret put.");
-        this.name = "MiniMaxNotConfiguredError";
+        super("Flash AI not configured — add via wrangler when ready.");
+        this.name = "FlashAiNotConfiguredError";
     }
 }
 
 function requireKey(): string {
-    const key = getMiniMaxApiKey();
-    if (!key) throw new MiniMaxNotConfiguredError();
+    const key = getLlmApiKey();
+    if (!key) throw new FlashAiNotConfiguredError();
     return key;
 }
 
+export {
+    stripThinkingArtifacts,
+    extractJsonObject,
+    ThinkingStreamSanitizer,
+};
+export { formatDraftReadable } from "@/src/lib/ai/sanitize";
+
 export async function chatCompletion(opts: {
-    messages: MiniMaxMessage[];
-    tools?: MiniMaxToolDef[];
+    messages: LlmMessage[];
+    tools?: LlmToolDef[];
     temperature?: number;
     max_completion_tokens?: number;
 }): Promise<ChatCompletionResult> {
     const key = requireKey();
-    const res = await fetch(`${MINIMAX_BASE_URL}/chat/completions`, {
+    const res = await fetch(`${LLM_BASE_URL}/chat/completions`, {
         method: "POST",
         headers: {
             Authorization: `Bearer ${key}`,
             "Content-Type": "application/json",
         },
         body: JSON.stringify({
-            model: MINIMAX_MODEL,
+            model: LLM_MODEL_ID,
             messages: opts.messages,
             temperature: opts.temperature ?? 0.4,
             max_completion_tokens: opts.max_completion_tokens ?? 2048,
+            reasoning_split: true,
             ...(opts.tools?.length ? { tools: opts.tools } : {}),
         }),
     });
 
     if (!res.ok) {
         const text = await res.text().catch(() => "");
-        console.error("[minimax] chat error", res.status, text.slice(0, 400));
-        throw new Error(`MiniMax request failed (${res.status})`);
+        console.error("[flash-ai] chat error", res.status, text.slice(0, 400));
+        throw new Error(`Flash AI request failed (${res.status})`);
     }
 
     const json = (await res.json()) as {
@@ -94,15 +112,18 @@ export async function chatCompletion(opts: {
             finish_reason?: string | null;
             message?: {
                 content?: string | null;
-                tool_calls?: MiniMaxToolCall[];
+                reasoning_content?: string | null;
+                tool_calls?: LlmToolCall[];
             };
         }>;
     };
 
     const choice = json.choices?.[0];
     const message = choice?.message;
+    // Prefer content; ignore reasoning_content (split off when reasoning_split works)
+    const rawContent = (message?.content ?? "").trim();
     return {
-        content: (message?.content ?? "").trim(),
+        content: stripThinkingArtifacts(rawContent),
         tool_calls: message?.tool_calls ?? [],
         finish_reason: choice?.finish_reason ?? null,
         raw: json,
@@ -111,47 +132,49 @@ export async function chatCompletion(opts: {
 
 /**
  * Stream chat completions as an SSE-compatible ReadableStream of text deltas.
- * Yields plain UTF-8 chunks of assistant content (not tool payloads).
+ * Yields plain UTF-8 chunks of assistant content (thinking tags stripped).
  */
 export async function streamChatCompletion(opts: {
-    messages: MiniMaxMessage[];
-    tools?: MiniMaxToolDef[];
+    messages: LlmMessage[];
+    tools?: LlmToolDef[];
     temperature?: number;
     max_completion_tokens?: number;
 }): Promise<Response> {
     const key = requireKey();
-    const res = await fetch(`${MINIMAX_BASE_URL}/chat/completions`, {
+    const res = await fetch(`${LLM_BASE_URL}/chat/completions`, {
         method: "POST",
         headers: {
             Authorization: `Bearer ${key}`,
             "Content-Type": "application/json",
         },
         body: JSON.stringify({
-            model: MINIMAX_MODEL,
+            model: LLM_MODEL_ID,
             messages: opts.messages,
             temperature: opts.temperature ?? 0.4,
             max_completion_tokens: opts.max_completion_tokens ?? 2048,
             stream: true,
+            reasoning_split: true,
             ...(opts.tools?.length ? { tools: opts.tools } : {}),
         }),
     });
 
     if (!res.ok) {
         const text = await res.text().catch(() => "");
-        console.error("[minimax] stream error", res.status, text.slice(0, 400));
-        throw new Error(`MiniMax stream failed (${res.status})`);
+        console.error("[flash-ai] stream error", res.status, text.slice(0, 400));
+        throw new Error(`Flash AI stream failed (${res.status})`);
     }
 
     return res;
 }
 
-/** Parse OpenAI-style SSE stream into text content deltas. */
+/** Parse OpenAI-style SSE stream into sanitized text content deltas. */
 export function parseSseContentStream(
     upstream: ReadableStream<Uint8Array>
 ): ReadableStream<Uint8Array> {
     const decoder = new TextDecoder();
     const encoder = new TextEncoder();
-    let buffer = "";
+    let lineBuffer = "";
+    const thinkSanitizer = new ThinkingStreamSanitizer();
 
     return new ReadableStream({
         async start(controller) {
@@ -160,9 +183,9 @@ export function parseSseContentStream(
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split("\n");
-                    buffer = lines.pop() ?? "";
+                    lineBuffer += decoder.decode(value, { stream: true });
+                    const lines = lineBuffer.split("\n");
+                    lineBuffer = lines.pop() ?? "";
                     for (const line of lines) {
                         const trimmed = line.trim();
                         if (!trimmed.startsWith("data:")) continue;
@@ -171,16 +194,25 @@ export function parseSseContentStream(
                         try {
                             const parsed = JSON.parse(data) as {
                                 choices?: Array<{
-                                    delta?: { content?: string | null };
+                                    delta?: {
+                                        content?: string | null;
+                                        reasoning_content?: string | null;
+                                    };
                                 }>;
                             };
+                            // Only forward content; skip reasoning_content deltas
                             const delta = parsed.choices?.[0]?.delta?.content;
-                            if (delta) controller.enqueue(encoder.encode(delta));
+                            if (delta) {
+                                const safe = thinkSanitizer.push(delta);
+                                if (safe) controller.enqueue(encoder.encode(safe));
+                            }
                         } catch {
                             // skip malformed chunks
                         }
                     }
                 }
+                const tail = thinkSanitizer.flush();
+                if (tail) controller.enqueue(encoder.encode(tail));
             } catch (err) {
                 controller.error(err);
                 return;

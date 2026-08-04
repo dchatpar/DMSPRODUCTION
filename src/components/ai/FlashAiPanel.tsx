@@ -5,6 +5,11 @@ import { Drawer } from "vaul";
 import { Loader2, Send, Sparkles, X } from "lucide-react";
 import { AiNotConfiguredBanner } from "@/src/components/ai/AiNotConfiguredBanner";
 import { Button } from "@/src/components/ui/Button";
+import {
+    formatDraftReadable,
+    stripThinkingArtifacts,
+    ThinkingStreamSanitizer,
+} from "@/src/lib/ai/sanitize";
 import { cn } from "@/src/lib/utils";
 
 type ChatMsg = { role: "user" | "assistant"; content: string };
@@ -88,7 +93,9 @@ export function FlashAiPanel({ open, onOpenChange, seed }: FlashAiPanelProps) {
                         ...m,
                         {
                             role: "assistant",
-                            content: json.data?.content || "(empty)",
+                            content:
+                                formatDraftReadable(json.data?.content || "") ||
+                                "(empty)",
                         },
                     ]);
                     return;
@@ -108,12 +115,14 @@ export function FlashAiPanel({ open, onOpenChange, seed }: FlashAiPanelProps) {
                 }
 
                 const decoder = new TextDecoder();
+                const sanitizer = new ThinkingStreamSanitizer();
                 let acc = "";
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
-                    acc += decoder.decode(value, { stream: true });
-                    const snapshot = acc;
+                    const chunk = decoder.decode(value, { stream: true });
+                    acc += sanitizer.push(chunk);
+                    const snapshot = formatDraftReadable(acc) || acc;
                     setMessages((m) => {
                         const copy = [...m];
                         copy[copy.length - 1] = {
@@ -123,6 +132,19 @@ export function FlashAiPanel({ open, onOpenChange, seed }: FlashAiPanelProps) {
                         return copy;
                     });
                 }
+                acc += sanitizer.flush();
+                const finalText =
+                    formatDraftReadable(acc) ||
+                    stripThinkingArtifacts(acc) ||
+                    "(empty)";
+                setMessages((m) => {
+                    const copy = [...m];
+                    copy[copy.length - 1] = {
+                        role: "assistant",
+                        content: finalText,
+                    };
+                    return copy;
+                });
             } catch (err) {
                 setMessages((m) => [
                     ...m,
@@ -160,7 +182,7 @@ export function FlashAiPanel({ open, onOpenChange, seed }: FlashAiPanelProps) {
                                     Ask Flash AI
                                 </Drawer.Title>
                                 <Drawer.Description className="text-xs text-muted-foreground">
-                                    Desk copilot · MiniMax-M2.7 · dealership-scoped
+                                    Desk copilot · Flash AI · dealership-scoped
                                 </Drawer.Description>
                             </div>
                         </div>

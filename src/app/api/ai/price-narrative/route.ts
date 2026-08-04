@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chatCompletion, MiniMaxNotConfiguredError } from "@/src/lib/ai/minimax";
+import {
+    chatCompletion,
+    FlashAiNotConfiguredError,
+    stripThinkingArtifacts,
+} from "@/src/lib/ai/llm";
 import {
     DESK_SYSTEM,
     requireAiCaller,
@@ -54,7 +58,7 @@ export async function POST(req: NextRequest) {
                         DESK_SYSTEM +
                         "\nWrite a short desk narrative on pricing posture vs aging. " +
                         "Use only provided retail/special prices. Never invent floors, cost, or market comps. " +
-                        "Return plain text (2-4 short paragraphs).",
+                        "Return plain text (2-4 short paragraphs). No think tags.",
                 },
                 {
                     role: "user",
@@ -81,14 +85,14 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({
             data: {
-                content: result.content,
+                content: stripThinkingArtifacts(result.content),
                 vehicle_id: vehicle.id,
                 days_in_stock: aging,
                 draft: true,
             },
         });
     } catch (err) {
-        if (err instanceof MiniMaxNotConfiguredError) {
+        if (err instanceof FlashAiNotConfiguredError) {
             return aiNotConfiguredResponse();
         }
         console.error("[ai/price-narrative]", err);

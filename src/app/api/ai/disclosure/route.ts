@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chatCompletion, MiniMaxNotConfiguredError } from "@/src/lib/ai/minimax";
+import {
+    chatCompletion,
+    FlashAiNotConfiguredError,
+    stripThinkingArtifacts,
+} from "@/src/lib/ai/llm";
 import {
     DESK_SYSTEM,
     requireAiCaller,
@@ -51,7 +55,7 @@ export async function POST(req: NextRequest) {
                         DESK_SYSTEM +
                         "\nDraft Ontario MVDA-style known-damage / condition disclosure notes for a used vehicle. " +
                         "Conservative language; do not invent accidents or repairs not provided. " +
-                        "Return plain disclosure text only. Human must confirm before save.",
+                        "Return plain disclosure text only. Human must confirm before save. No think tags.",
                 },
                 {
                     role: "user",
@@ -74,9 +78,17 @@ export async function POST(req: NextRequest) {
             max_completion_tokens: 600,
         });
 
+        const content = stripThinkingArtifacts(result.content);
+        if (!content) {
+            return NextResponse.json(
+                { error: "Empty disclosure from Flash AI — retry" },
+                { status: 502 }
+            );
+        }
+
         return NextResponse.json({
             data: {
-                content: result.content,
+                content,
                 vehicle_id: vehicle.id,
                 draft: true,
                 requires_human_confirm: true,
@@ -85,7 +97,7 @@ export async function POST(req: NextRequest) {
             },
         });
     } catch (err) {
-        if (err instanceof MiniMaxNotConfiguredError) {
+        if (err instanceof FlashAiNotConfiguredError) {
             return aiNotConfiguredResponse();
         }
         console.error("[ai/disclosure]", err);

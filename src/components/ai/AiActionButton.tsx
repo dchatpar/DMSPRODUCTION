@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/src/components/ui/Button";
 import { AiNotConfiguredBanner } from "@/src/components/ai/AiNotConfiguredBanner";
+import { formatDraftReadable } from "@/src/lib/ai/sanitize";
 import { apiFetch, ApiError } from "@/src/lib/fetch";
 import { toast } from "@/src/lib/toast";
 import { cn } from "@/src/lib/utils";
@@ -21,7 +22,7 @@ type AiActionButtonProps = {
 
 /**
  * Page-level Generate/Draft button. Surfaces amber banner on 503 not-configured.
- * Never toasts fake success.
+ * Never toasts fake success. Strips leftover think tags before onResult.
  */
 export function AiActionButton({
     label,
@@ -50,8 +51,9 @@ export function AiActionButton({
                           body: body ?? {},
                           silent: true,
                       });
-            const content = res?.data?.content;
-            if (!content?.trim()) {
+            const raw = res?.data?.content;
+            const content = formatDraftReadable(raw ?? "");
+            if (!content) {
                 toast.error("Flash AI returned an empty draft");
                 return;
             }

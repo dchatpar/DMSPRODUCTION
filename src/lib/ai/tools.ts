@@ -4,10 +4,10 @@
  */
 
 import type { UserProfile } from "@/src/lib/auth-helpers";
-import type { MiniMaxToolDef } from "@/src/lib/ai/minimax";
+import type { LlmToolDef } from "@/src/lib/ai/llm";
 import { supabaseAdmin } from "@/src/lib/supabase-admin";
 
-export const COPILOT_TOOL_DEFS: MiniMaxToolDef[] = [
+export const COPILOT_TOOL_DEFS: LlmToolDef[] = [
     {
         type: "function",
         function: {

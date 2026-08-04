@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chatCompletion, MiniMaxNotConfiguredError } from "@/src/lib/ai/minimax";
+import {
+    chatCompletion,
+    FlashAiNotConfiguredError,
+    stripThinkingArtifacts,
+} from "@/src/lib/ai/llm";
 import {
     DESK_SYSTEM,
     requireAiCaller,
@@ -15,6 +19,15 @@ function daysInStock(createdAt: string | null | undefined): number {
     );
 }
 
+function errMessage(err: unknown): string {
+    if (err instanceof Error) return err.message;
+    if (err && typeof err === "object" && "message" in err) {
+        const m = (err as { message?: unknown }).message;
+        if (typeof m === "string" && m.trim()) return m;
+    }
+    return "Desk brief failed";
+}
+
 /** GET /api/ai/desk-brief — daily desk brief widget (dealership-scoped). */
 export async function GET(req: NextRequest) {
     try {
@@ -23,14 +36,40 @@ export async function GET(req: NextRequest) {
 
         const dealershipId = gate.dealershipId;
 
-        const [leadsRes, agingRes, dealsRes, followUpsRes] = await Promise.all([
-            supabaseAdmin
+        let leads: Array<{
+            status?: string | null;
+            temperature?: string | null;
+            source?: string | null;
+        }> = [];
+        let vehicles: Array<{
+            year?: number | null;
+            make?: string | null;
+            model?: string | null;
+            stock_number?: string | null;
+            retail_price?: number | null;
+            created_at?: string | null;
+        }> = [];
+        let deals: Array<{
+            deal_status?: string | null;
+            status?: string | null;
+            sale_price?: number | null;
+        }> = [];
+        let followUps: Array<Record<string, unknown>> = [];
+
+        try {
+            const leadsRes = await supabaseAdmin
                 .from("leads")
                 .select("id, status, temperature, created_at, source")
                 .eq("dealership_id", dealershipId)
                 .order("created_at", { ascending: false })
-                .limit(25),
-            supabaseAdmin
+                .limit(25);
+            if (!leadsRes.error) leads = leadsRes.data ?? [];
+        } catch {
+            /* soft-fail */
+        }
+
+        try {
+            const agingRes = await supabaseAdmin
                 .from("vehicles")
                 .select(
                     "id, year, make, model, stock_number, retail_price, status, created_at"
@@ -38,28 +77,41 @@ export async function GET(req: NextRequest) {
                 .eq("dealership_id", dealershipId)
                 .ilike("status", "Active")
                 .order("created_at", { ascending: true })
-                .limit(40),
-            supabaseAdmin
+                .limit(40);
+            if (!agingRes.error) vehicles = agingRes.data ?? [];
+        } catch {
+            /* soft-fail */
+        }
+
+        try {
+            const dealsRes = await supabaseAdmin
                 .from("sales_deals")
                 .select("id, deal_status, status, sale_price, created_at")
                 .eq("dealership_id", dealershipId)
                 .order("created_at", { ascending: false })
-                .limit(15),
-            supabaseAdmin
+                .limit(15);
+            if (!dealsRes.error) deals = dealsRes.data ?? [];
+        } catch {
+            /* soft-fail */
+        }
+
+        try {
+            const followUpsRes = await supabaseAdmin
                 .from("follow_ups")
                 .select("id, status, follow_up_date, notes, priority")
                 .eq("dealership_id", dealershipId)
                 .order("follow_up_date", { ascending: true })
-                .limit(15),
-        ]);
+                .limit(15);
+            if (!followUpsRes.error) {
+                followUps = (followUpsRes.data ?? []) as Array<
+                    Record<string, unknown>
+                >;
+            }
+        } catch {
+            /* soft-fail */
+        }
 
-        if (leadsRes.error) throw leadsRes.error;
-        if (agingRes.error) throw agingRes.error;
-        if (dealsRes.error) throw dealsRes.error;
-        // follow_ups table may be named differently — soft-fail
-        const followUps = followUpsRes.error ? [] : followUpsRes.data ?? [];
-
-        const aging = (agingRes.data ?? [])
+        const aging = vehicles
             .map((v) => ({
                 year: v.year,
                 make: v.make,
@@ -72,21 +124,21 @@ export async function GET(req: NextRequest) {
             .slice(0, 10);
 
         const snapshot = {
-            open_leads: (leadsRes.data ?? []).filter(
+            open_leads: leads.filter(
                 (l) =>
                     String(l.status || "").toLowerCase() !== "closed" &&
                     String(l.status || "").toLowerCase() !== "converted"
             ).length,
-            hot_leads: (leadsRes.data ?? []).filter(
+            hot_leads: leads.filter(
                 (l) => String(l.temperature || "").toLowerCase() === "hot"
             ).length,
-            recent_leads: (leadsRes.data ?? []).slice(0, 8).map((l) => ({
+            recent_leads: leads.slice(0, 8).map((l) => ({
                 status: l.status,
                 temperature: l.temperature,
                 source: l.source,
             })),
             aging_units: aging,
-            recent_deals: (dealsRes.data ?? []).slice(0, 8).map((d) => ({
+            recent_deals: deals.slice(0, 8).map((d) => ({
                 deal_status: d.deal_status || d.status,
                 sale_price: d.sale_price,
             })),
@@ -100,7 +152,7 @@ export async function GET(req: NextRequest) {
                     content:
                         DESK_SYSTEM +
                         "\nWrite a crisp daily desk brief (bullet points) for the sales manager. " +
-                        "Prioritize hot leads, aging inventory, and follow-ups. No invented numbers.",
+                        "Prioritize hot leads, aging inventory, and follow-ups. No invented numbers. No think tags.",
                 },
                 { role: "user", content: JSON.stringify(snapshot) },
             ],
@@ -108,9 +160,17 @@ export async function GET(req: NextRequest) {
             max_completion_tokens: 900,
         });
 
+        const content = stripThinkingArtifacts(result.content);
+        if (!content) {
+            return NextResponse.json(
+                { error: "Empty desk brief from Flash AI" },
+                { status: 502 }
+            );
+        }
+
         return NextResponse.json({
             data: {
-                content: result.content,
+                content,
                 snapshot: {
                     open_leads: snapshot.open_leads,
                     hot_leads: snapshot.hot_leads,
@@ -120,14 +180,12 @@ export async function GET(req: NextRequest) {
             },
         });
     } catch (err) {
-        if (err instanceof MiniMaxNotConfiguredError) {
+        if (err instanceof FlashAiNotConfiguredError) {
             return aiNotConfiguredResponse();
         }
         console.error("[ai/desk-brief]", err);
         return NextResponse.json(
-            {
-                error: err instanceof Error ? err.message : "Desk brief failed",
-            },
+            { error: errMessage(err) },
             { status: 500 }
         );
     }

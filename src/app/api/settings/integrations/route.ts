@@ -4,7 +4,7 @@ import { requireDealershipAccess } from "@/src/lib/auth-helpers";
 import { isResendConfigured } from "@/src/lib/resend";
 import { getFacebookEnv } from "@/src/lib/social/facebook";
 import { getCarfaxEnv } from "@/src/lib/carfax";
-import { isMiniMaxConfigured, MINIMAX_MODEL } from "@/src/lib/ai/minimax";
+import { isFlashAiConfigured } from "@/src/lib/ai/llm";
 import { AI_NOT_CONFIGURED_MESSAGE } from "@/src/lib/ai/guard";
 import { supabaseAdmin } from "@/src/lib/supabase-admin";
 
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
         const facebook = getFacebookEnv();
         const resendOk = isResendConfigured();
         const carfax = getCarfaxEnv();
-        const minimaxOk = isMiniMaxConfigured();
+        const flashAiOk = isFlashAiConfigured();
 
         let facebookConnected = false;
         let facebookPageName: string | null = null;
@@ -88,15 +88,15 @@ export async function GET(req: NextRequest) {
 
         const integrations: IntegrationStatus[] = [
             {
-                id: "minimax",
-                name: "Flash AI (MiniMax)",
+                id: "flash_ai",
+                name: "Flash AI",
                 description:
                     "Desk Copilot, listing drafts, follow-ups, NL inventory search, Ontario disclosure helper.",
-                configured: minimaxOk,
-                status: minimaxOk ? "live" : "missing_env",
-                missing: minimaxOk ? [] : ["MINIMAX_API_KEY"],
-                notes: minimaxOk
-                    ? `MiniMax ${MINIMAX_MODEL} ready (server-only). Drafts never auto-send.`
+                configured: flashAiOk,
+                status: flashAiOk ? "live" : "missing_env",
+                missing: flashAiOk ? [] : [],
+                notes: flashAiOk
+                    ? "Flash AI · configured. Drafts never auto-send."
                     : AI_NOT_CONFIGURED_MESSAGE,
             },
             {
@@ -199,7 +199,7 @@ export async function GET(req: NextRequest) {
                     CARFAX_PARTNER_ID: Boolean(process.env.CARFAX_PARTNER_ID),
                     CARFAX_API_KEY: Boolean(process.env.CARFAX_API_KEY),
                     CARFAX_API_URL: Boolean(process.env.CARFAX_API_URL),
-                    MINIMAX_API_KEY: Boolean(process.env.MINIMAX_API_KEY),
+                    FLASH_AI_SECRET: Boolean(process.env.MINIMAX_API_KEY),
                 },
             },
         });

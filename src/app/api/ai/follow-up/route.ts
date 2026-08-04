@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chatCompletion, MiniMaxNotConfiguredError } from "@/src/lib/ai/minimax";
+import {
+    chatCompletion,
+    extractJsonObject,
+    FlashAiNotConfiguredError,
+    stripThinkingArtifacts,
+} from "@/src/lib/ai/llm";
 import {
     DESK_SYSTEM,
     requireAiCaller,
     aiNotConfiguredResponse,
 } from "@/src/lib/ai/guard";
+import { errMessage } from "@/src/lib/ai/errors";
 import { supabaseAdmin } from "@/src/lib/supabase-admin";
 
 /**
@@ -31,9 +37,7 @@ export async function POST(req: NextRequest) {
         const { data: lead, error } = await supabaseAdmin
             .from("leads")
             .select(
-                `id, status, source, notes, temperature, dealership_id,
-                 customer:customers(id, name, first_name, last_name, email, phone, marketing_consent, sms_consent),
-                 interest_vehicle:vehicles(id, year, make, model, stock_number, retail_price)`
+                "id, status, source, notes, temperature, dealership_id, customer_id, interest_vehicle_id"
             )
             .eq("id", leadId)
             .eq("dealership_id", gate.dealershipId)
@@ -44,18 +48,43 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "Lead not found" }, { status: 404 });
         }
 
-        const customer = Array.isArray(lead.customer)
-            ? lead.customer[0]
-            : lead.customer;
+        let customer: {
+            first_name?: string | null;
+            name?: string | null;
+            marketing_consent?: boolean | null;
+            sms_consent?: boolean | null;
+        } | null = null;
+        if (lead.customer_id) {
+            const { data: c } = await supabaseAdmin
+                .from("customers")
+                .select(
+                    "id, name, first_name, last_name, email, phone, marketing_consent, sms_consent"
+                )
+                .eq("id", lead.customer_id)
+                .maybeSingle();
+            customer = c;
+        }
+
+        let vehicle: {
+            year?: number | null;
+            make?: string | null;
+            model?: string | null;
+            stock_number?: string | null;
+            retail_price?: number | null;
+        } | null = null;
+        if (lead.interest_vehicle_id) {
+            const { data: v } = await supabaseAdmin
+                .from("vehicles")
+                .select("id, year, make, model, stock_number, retail_price")
+                .eq("id", lead.interest_vehicle_id)
+                .maybeSingle();
+            vehicle = v;
+        }
+
         const consentOk =
             channel === "sms"
-                ? Boolean(
-                      (customer as { sms_consent?: boolean } | null)?.sms_consent
-                  )
-                : Boolean(
-                      (customer as { marketing_consent?: boolean } | null)
-                          ?.marketing_consent !== false
-                  );
+                ? Boolean(customer?.sms_consent)
+                : Boolean(customer?.marketing_consent !== false);
 
         const result = await chatCompletion({
             messages: [
@@ -64,8 +93,8 @@ export async function POST(req: NextRequest) {
                     content:
                         DESK_SYSTEM +
                         `\nDraft a ${channel} follow-up for a lead. CASL-aware: include unsubscribe/opt-out language for email; keep SMS short. ` +
-                        "Return JSON only: {\"subject\": string|null, \"body\": string, \"casl_note\": string}. " +
-                        "Do NOT claim the message was sent.",
+                        'Return JSON only: {"subject": string|null, "body": string, "casl_note": string}. ' +
+                        "Do NOT claim the message was sent. Never include think tags or chain-of-thought.",
                 },
                 {
                     role: "user",
@@ -76,11 +105,8 @@ export async function POST(req: NextRequest) {
                         notes: lead.notes,
                         temperature: lead.temperature,
                         customer_first_name:
-                            (customer as { first_name?: string } | null)
-                                ?.first_name ||
-                            (customer as { name?: string } | null)?.name ||
-                            "there",
-                        vehicle: lead.interest_vehicle,
+                            customer?.first_name || customer?.name || "there",
+                        vehicle,
                         consent_flag_present: consentOk,
                         intent: body.intent || "check_in",
                     }),
@@ -96,28 +122,36 @@ export async function POST(req: NextRequest) {
             casl_note?: string;
         } = {};
         try {
-            const raw = result.content
-                .replace(/^```json\s*/i, "")
-                .replace(/```$/i, "")
-                .trim();
-            parsed = JSON.parse(raw) as typeof parsed;
+            parsed = extractJsonObject(result.content) as typeof parsed;
         } catch {
+            const cleaned = stripThinkingArtifacts(result.content);
             parsed = {
                 subject: channel === "email" ? "Following up" : null,
-                body: result.content,
+                body: cleaned,
                 casl_note: "Review for CASL before send.",
             };
+        }
+
+        const draftBody = stripThinkingArtifacts(
+            (parsed.body || "").trim() || stripThinkingArtifacts(result.content)
+        );
+        if (!draftBody) {
+            return NextResponse.json(
+                { error: "Flash AI returned an empty follow-up draft" },
+                { status: 502 }
+            );
         }
 
         return NextResponse.json({
             data: {
                 channel,
                 subject: parsed.subject ?? null,
-                body: parsed.body || result.content,
-                content: parsed.body || result.content,
+                body: draftBody,
+                content: draftBody,
                 casl_note:
-                    parsed.casl_note ||
-                    "Draft only — human must review and send. Not marked Sent.",
+                    typeof parsed.casl_note === "string" && parsed.casl_note.trim()
+                        ? stripThinkingArtifacts(parsed.casl_note)
+                        : "Draft only — human must review and send. Not marked Sent.",
                 sent: false,
                 draft: true,
                 consent_warning: consentOk
@@ -127,15 +161,12 @@ export async function POST(req: NextRequest) {
             },
         });
     } catch (err) {
-        if (err instanceof MiniMaxNotConfiguredError) {
+        if (err instanceof FlashAiNotConfiguredError) {
             return aiNotConfiguredResponse();
         }
         console.error("[ai/follow-up]", err);
         return NextResponse.json(
-            {
-                error:
-                    err instanceof Error ? err.message : "Follow-up draft failed",
-            },
+            { error: errMessage(err, "Follow-up draft failed") },
             { status: 500 }
         );
     }
