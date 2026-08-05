@@ -63,3 +63,8 @@ deploy.log
 # Local sync probes / inventory dumps (PII)
 /_sync_audit/
 
+
+# Continuity secrets (never commit)
+FLASHFENDER_CONTINUITY.SECRETS.md
+*.SECRETS.md
+handoff/**/*.SECRETS.md
