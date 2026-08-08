@@ -22,6 +22,12 @@ function shapeRow(row: Record<string, unknown>) {
         ...row,
         customer: row.customer ?? null,
         deal: row.deal ?? null,
+    } as Record<string, unknown> & {
+        id: string;
+        status: string;
+        consent_ok: boolean;
+        customer: Record<string, unknown> | null;
+        deal: Record<string, unknown> | null;
     };
 }
 

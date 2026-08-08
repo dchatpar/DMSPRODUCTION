@@ -8,7 +8,6 @@ import {
   showroomVehicleJsonLd,
 } from "@/src/lib/showroom";
 import { vehicleJsonLdHtml } from "@/src/lib/vehicle-jsonld";
-import { supabaseAdmin } from "@/src/lib/supabase-admin";
 import ShowroomLeadForm from "./lead-form";
 import ShowroomVehicleCard from "./vehicle-card";
 
@@ -76,12 +75,6 @@ export default async function ShowroomPage({ params }: PageProps) {
     })
   );
 
-  const { data: dealershipLogo } = await supabaseAdmin
-    .from("dealerships")
-    .select("logo_url")
-    .eq("id", dealership.id)
-    .maybeSingle();
-
   return (
     <main className="relative min-h-dvh overflow-hidden bg-[#0a0e1a] text-white antialiased">
       {/* Dark-glass ambient background */}
@@ -95,23 +88,25 @@ export default async function ShowroomPage({ params }: PageProps) {
       />
       <div aria-hidden className="pointer-events-none absolute inset-0 backdrop-blur-[2px]" />
 
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: vehicleJsonLdHtml(
-            jsonLdNodes.length === 1 ? jsonLdNodes[0] : jsonLdNodes
-          ),
-        }}
-      />
+      {jsonLdNodes.length > 0 && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: vehicleJsonLdHtml(
+              jsonLdNodes.length === 1 ? jsonLdNodes[0] : jsonLdNodes
+            ),
+          }}
+        />
+      )}
 
       <div className="relative z-10 mx-auto max-w-6xl px-4 sm:px-6">
         {/* Header */}
         <header className="flex flex-wrap items-center justify-between gap-4 py-6">
           <div className="flex items-center gap-3">
-            {dealershipLogo?.logo_url ? (
+            {dealership.logo_url ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={dealershipLogo.logo_url}
+                src={dealership.logo_url}
                 alt={`${name} logo`}
                 className="h-10 w-10 rounded-lg bg-white/10 object-contain p-1"
               />

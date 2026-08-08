@@ -34,6 +34,9 @@ const PUBLIC_PATHS = [
     "/reset-password",
     "/unsubscribe", // CASL preference centre — must stay public
     "/api/unsubscribe", // CASL preference write (token-gated)
+    "/showroom", // hosted dealer microsite (public by design)
+    "/review", // review-link landing page (public by design)
+    "/api/showroom", // public showroom lead capture
     "/api/auth", // all auth routes (login, register, otp, forgot/reset)
     "/api/health",
     "/api/webhooks",
@@ -62,6 +65,7 @@ function isMutatingApi(pathname: string, method: string): boolean {
     if (pathname.startsWith("/api/webhooks")) return false;
     if (pathname.startsWith("/api/health")) return false;
     if (pathname.startsWith("/api/vehicles/public")) return false;
+    if (pathname.startsWith("/api/showroom")) return false;
     // Allow Exit even when the impersonated dealership is trial soft-locked
     if (pathname === "/api/platform/impersonate/exit") return false;
     return true;

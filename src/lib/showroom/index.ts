@@ -143,5 +143,3 @@ export function showroomVehicleJsonLd(
 ): Record<string, unknown> {
   return vehicleJsonLd(v as VehicleJsonLdInput, opts);
 }
-
-export const showroomApiBase = "/api/showroom";

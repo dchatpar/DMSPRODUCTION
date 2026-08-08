@@ -44,6 +44,7 @@ import {
     FileSpreadsheet,
     ScrollText,
     Archive,
+    Star,
     type LucideIcon,
 } from "lucide-react";
 import { apiFetch } from "@/src/lib/fetch";
@@ -186,6 +187,7 @@ const dealershipSections: PermNavSection[] = [
         items: [
             { name: "Tasks", href: "/tasks", icon: ListTodo },
             { name: "Tickets", href: "/tickets", icon: FlaskConical },
+            { name: "Service", href: "/service", icon: Wrench, anyOf: ["service:read", "service:write", "customers:read", "vehicles:read"] },
             {
                 name: "Users",
                 href: "/users",
@@ -260,6 +262,18 @@ const dealershipSections: PermNavSection[] = [
                 href: "/settings/retention",
                 icon: Archive,
                 anyOf: ["settings:read", "settings:write"],
+            },
+            {
+                name: "Locations",
+                href: "/settings/locations",
+                icon: Building2,
+                anyOf: ["settings:read", "settings:write", "settings:company"],
+            },
+            {
+                name: "Reviews",
+                href: "/settings/reviews",
+                icon: Star,
+                anyOf: ["settings:read", "settings:write", "settings:company"],
             },
         ],
     },
