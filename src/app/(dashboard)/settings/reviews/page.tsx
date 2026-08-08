@@ -94,13 +94,17 @@ export default function ReviewsSettingsPage() {
     async function save() {
         try {
             setSaving(true);
-            const res = await apiFetch<{ data: SettingsData }>("/api/reviews/settings", {
-                method: "POST",
-                body: config,
-            });
+            const res = await apiFetch<{ data: SettingsData & { message?: string } }>(
+                "/api/reviews/settings",
+                {
+                    method: "POST",
+                    body: config,
+                }
+            );
             setData(res.data);
             setConfig(res.data.config);
-            toast.success("Settings saved", res.data.message || "Review settings updated.");
+            const savedMessage = (res.data as SettingsData & { message?: string }).message;
+            toast.success("Settings saved", savedMessage || "Review settings updated.");
         } catch (err) {
             toast.error("Save failed", err instanceof Error ? err.message : "Try again");
         } finally {
