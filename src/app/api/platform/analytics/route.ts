@@ -9,8 +9,8 @@ export async function GET(req: NextRequest) {
 
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json({ error: "Authorization token required" }, { status: 401 });
             }
             throw error;
@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
 
         // Calculate date range
         const now = new Date();
-        let startDate = new Date();
+        const startDate = new Date();
         if (period === "30d") startDate.setDate(startDate.getDate() - 30);
         else if (period === "90d") startDate.setDate(startDate.getDate() - 90);
         else if (period === "1y") startDate.setFullYear(startDate.getFullYear() - 1);
@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
 
         // Aggregate new users by date
         const usersByDate: Record<string, number> = {};
-        newUsersTrend?.forEach((u: any) => {
+        newUsersTrend?.forEach((u: { created_at: string }) => {
             const date = new Date(u.created_at).toISOString().split("T")[0];
             usersByDate[date] = (usersByDate[date] || 0) + 1;
         });
@@ -107,7 +107,7 @@ export async function GET(req: NextRequest) {
 
         const revenueByPlan: Record<string, number> = {};
         let totalMonthlyRevenue = 0;
-        subscriptions?.forEach((sub: any) => {
+        subscriptions?.forEach((sub: { status: string; plan_name: string; plan_price?: number }) => {
             if (sub.status === "Active") {
                 revenueByPlan[sub.plan_name] = (revenueByPlan[sub.plan_name] || 0) + (sub.plan_price || 0);
                 totalMonthlyRevenue += sub.plan_price || 0;
@@ -121,27 +121,35 @@ export async function GET(req: NextRequest) {
             .order("created_at", { ascending: false })
             .limit(10);
 
-        const topDealerships = await Promise.all(
-            (dealershipsWithUsers || []).map(async (d: any) => {
-                const { count: userCount } = await supabase
-                    .from("users")
-                    .select("*", { count: "exact", head: true })
-                    .eq("dealership_id", d.id);
+        // Rank by users then closed deals (created_at fetch is only a candidate pool)
+        const topDealerships = (
+            await Promise.all(
+                (dealershipsWithUsers || []).map(async (d: { id: string; name: string; status: string }) => {
+                    const { count: userCount } = await supabase
+                        .from("users")
+                        .select("*", { count: "exact", head: true })
+                        .eq("dealership_id", d.id);
 
-                const { count: dealsCount } = await supabase
-                    .from("sales_deals")
-                    .select("*", { count: "exact", head: true })
-                    .eq("dealership_id", d.id)
-                    .eq("deal_status", "Paid Off");
+                    const { count: dealsCount } = await supabase
+                        .from("sales_deals")
+                        .select("*", { count: "exact", head: true })
+                        .eq("dealership_id", d.id)
+                        .eq("deal_status", "Paid Off");
 
-                return {
-                    id: d.id,
-                    name: d.name,
-                    status: d.status,
-                    user_count: userCount || 0,
-                    deals_closed: dealsCount || 0,
-                };
-            })
+                    return {
+                        id: d.id,
+                        name: d.name,
+                        status: d.status,
+                        user_count: userCount || 0,
+                        deals_closed: dealsCount || 0,
+                    };
+                })
+            )
+        ).sort(
+            (a, b) =>
+                b.user_count - a.user_count ||
+                b.deals_closed - a.deals_closed ||
+                a.name.localeCompare(b.name)
         );
 
         // Recent audit log count by action type
@@ -152,7 +160,7 @@ export async function GET(req: NextRequest) {
             .limit(1000);
 
         const actionsByType: Record<string, number> = {};
-        recentAuditLogs?.forEach((log: any) => {
+        recentAuditLogs?.forEach((log: { action: string }) => {
             const action = log.action.split(".")[0] || log.action;
             actionsByType[action] = (actionsByType[action] || 0) + 1;
         });
@@ -183,10 +191,10 @@ export async function GET(req: NextRequest) {
             },
             actions_by_type: actionsByType,
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error fetching platform analytics:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }

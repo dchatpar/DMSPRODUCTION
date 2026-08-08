@@ -68,7 +68,7 @@ function LoginForm() {
         return null;
     };
 
-    const handleLogin = async (e: React.FormEvent) => {
+    async function handleLogin(e: React.FormEvent) {
         e.preventDefault();
         setError(null);
 
@@ -124,7 +124,7 @@ function LoginForm() {
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     return (
         <div className="min-h-dvh w-full bg-background text-foreground lg:grid lg:grid-cols-2">

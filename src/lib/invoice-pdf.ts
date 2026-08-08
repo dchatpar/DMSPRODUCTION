@@ -1,14 +1,39 @@
 ﻿/**
- * Browser print-to-PDF helper for invoices (same pattern as BOS — no heavy PDF lib on CF Workers).
+ * Shared invoice document engine — HTML print + pdf-lib bytes + email body.
+ * Edge-safe (OpenNext CF Workers). No Puppeteer.
  */
 
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import { invoiceEmail } from "@/src/lib/email";
+
+export type InvoiceLineItem = {
+    description: string;
+    qty: number;
+    unitPrice: number;
+    amount: number;
+};
+
+export type InvoicePaymentRow = {
+    date: string;
+    amount: number;
+    method?: string;
+    note?: string;
+};
+
+export type InvoiceStatusStamp = "PAID" | "PARTIAL" | "OVERDUE" | "PENDING" | "CANCELLED";
+
+/** Canonical document payload used by print HTML, pdf-lib, and email. */
 export type InvoicePdfPayload = {
     invoiceNumber: string;
     invoiceDate?: string | null;
     dueDate?: string | null;
     status?: string | null;
+    /** Resolved stamp for header (computed if omitted). */
+    statusStamp?: InvoiceStatusStamp | null;
     packageName?: string | null;
     notes?: string | null;
+    /** Payment instructions / footer copy (falls back to notes when unset). */
+    paymentInstructions?: string | null;
     subtotal: number;
     taxRate: number;
     taxAmount: number;
@@ -22,8 +47,15 @@ export type InvoicePdfPayload = {
     dealerAddress?: string | null;
     dealerPhone?: string | null;
     dealerEmail?: string | null;
-    payments?: Array<{ date: string; amount: number; method?: string; note?: string }>;
+    dealerHst?: string | null;
+    dealerLicence?: string | null;
+    dealerLogoUrl?: string | null;
+    lineItems?: InvoiceLineItem[];
+    payments?: InvoicePaymentRow[];
 };
+
+/** Alias kept for call sites that prefer the richer name. */
+export type InvoiceDocumentPayload = InvoicePdfPayload;
 
 function money(n: number | undefined): string {
     return new Intl.NumberFormat("en-CA", {
@@ -53,21 +85,134 @@ function fmtDate(d: string | null | undefined): string {
     }
 }
 
-export function buildInvoicePrintHtml(data: InvoicePdfPayload): string {
-    const balance = Math.max(0, (Number(data.total) || 0) - (Number(data.amountPaid) || 0));
-    const dealerLines = [
+export function resolveInvoiceLineItems(data: {
+    lineItems?: InvoiceLineItem[] | null;
+    packageName?: string | null;
+    subtotal: number;
+}): InvoiceLineItem[] {
+    const raw = data.lineItems;
+    if (Array.isArray(raw) && raw.length > 0) {
+        return raw.map((li) => {
+            const qty = Number(li.qty) || 1;
+            const unitPrice = Number(li.unitPrice) || 0;
+            const amount =
+                Number.isFinite(Number(li.amount)) && Number(li.amount) !== 0
+                    ? Number(li.amount)
+                    : qty * unitPrice;
+            return {
+                description: String(li.description || "").trim() || "Line item",
+                qty,
+                unitPrice,
+                amount,
+            };
+        });
+    }
+    return [
+        {
+            description: data.packageName?.trim() || "Services / package",
+            qty: 1,
+            unitPrice: Number(data.subtotal) || 0,
+            amount: Number(data.subtotal) || 0,
+        },
+    ];
+}
+
+export function resolveInvoiceStatusStamp(data: {
+    status?: string | null;
+    dueDate?: string | null;
+    total: number;
+    amountPaid?: number;
+    nowMs?: number;
+}): InvoiceStatusStamp {
+    const status = (data.status || "").toLowerCase();
+    if (status === "cancelled" || status === "canceled") return "CANCELLED";
+    if (status === "paid") return "PAID";
+
+    const total = Number(data.total) || 0;
+    const paid = Number(data.amountPaid) || 0;
+    if (total > 0 && paid >= total) return "PAID";
+    if (paid > 0 && paid < total) return "PARTIAL";
+
+    const now = data.nowMs ?? Date.now();
+    if (
+        data.dueDate &&
+        status !== "paid" &&
+        status !== "cancelled" &&
+        new Date(data.dueDate).getTime() < now
+    ) {
+        return "OVERDUE";
+    }
+    if (status === "overdue") return "OVERDUE";
+    if (status === "partial") return "PARTIAL";
+    return "PENDING";
+}
+
+/** Normalize / fill derived fields so print, PDF, and email stay in sync. */
+export function normalizeInvoiceDocument(
+    data: InvoicePdfPayload,
+    opts?: { nowMs?: number }
+): InvoicePdfPayload {
+    const lineItems = resolveInvoiceLineItems(data);
+    const amountPaid = Number(data.amountPaid) || 0;
+    const statusStamp =
+        data.statusStamp ||
+        resolveInvoiceStatusStamp({
+            status: data.status,
+            dueDate: data.dueDate,
+            total: data.total,
+            amountPaid,
+            nowMs: opts?.nowMs,
+        });
+    return {
+        ...data,
+        lineItems,
+        amountPaid,
+        statusStamp,
+        paymentInstructions:
+            data.paymentInstructions?.trim() || data.notes?.trim() || null,
+    };
+}
+
+function dealerHtmlBlock(data: InvoicePdfPayload): string {
+    const logo =
+        data.dealerLogoUrl?.trim()
+            ? `<img src="${esc(data.dealerLogoUrl.trim())}" alt="" style="max-height:48px;max-width:160px;margin-bottom:8px;object-fit:contain"/>`
+            : "";
+    const lines = [
+        logo,
         data.dealerName ? `<strong>${esc(data.dealerName)}</strong>` : "",
         data.dealerAddress ? `<p>${esc(data.dealerAddress)}</p>` : "",
         [data.dealerPhone, data.dealerEmail]
             .filter(Boolean)
             .map((x) => esc(String(x)))
             .join(" · "),
-    ]
-        .filter(Boolean)
-        .join("\n    ");
+    ];
+    const taxBits: string[] = [];
+    if (data.dealerLicence?.trim()) {
+        taxBits.push(`Dealer licence: ${esc(data.dealerLicence.trim())}`);
+    }
+    if (data.dealerHst?.trim()) {
+        taxBits.push(`HST #: ${esc(data.dealerHst.trim())}`);
+    }
+    if (taxBits.length) {
+        lines.push(`<p>${taxBits.join(" · ")}</p>`);
+    }
+    const body = lines.filter(Boolean).join("\n    ");
+    return body || "<p class='muted'>Dealership</p>";
+}
+
+export function buildInvoicePrintHtml(raw: InvoicePdfPayload): string {
+    const data = normalizeInvoiceDocument(raw);
+    const balance = Math.max(
+        0,
+        (Number(data.total) || 0) - (Number(data.amountPaid) || 0)
+    );
+    const lineItems = data.lineItems || [];
 
     const customerLines = [
-        data.customerName ? `<strong>${esc(data.customerName)}</strong>` : "<strong>Customer</strong>",
+        data.customerName
+            ? `<strong>${esc(data.customerName)}</strong>`
+            : "<strong>Customer</strong>",
         data.customerAddress ? `<p>${esc(data.customerAddress)}</p>` : "",
         [data.customerPhone, data.customerEmail]
             .filter(Boolean)
@@ -76,6 +221,18 @@ export function buildInvoicePrintHtml(data: InvoicePdfPayload): string {
     ]
         .filter(Boolean)
         .join("\n    ");
+
+    const chargeRows = lineItems
+        .map(
+            (li) =>
+                `<tr>
+          <td>${esc(li.description)}</td>
+          <td class="amt">${esc(String(li.qty))}</td>
+          <td class="amt">${money(li.unitPrice)}</td>
+          <td class="amt">${money(li.amount)}</td>
+        </tr>`
+        )
+        .join("\n");
 
     const paymentRows =
         data.payments && data.payments.length > 0
@@ -87,13 +244,18 @@ export function buildInvoicePrintHtml(data: InvoicePdfPayload): string {
                   .join("\n")
             : `<tr><td colspan="4" class="muted">No payments recorded</td></tr>`;
 
+    const stamp = data.statusStamp || "PENDING";
+    const footerCopy =
+        data.paymentInstructions?.trim() ||
+        "Thank you for your business. Contact the dealership with payment questions.";
+
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
 <title>Invoice ${esc(data.invoiceNumber)}</title>
 <style>
-  body { font-family: Georgia, serif; color: #111; margin: 32px; font-size: 13px; }
+  body { font-family: Georgia, "Times New Roman", serif; color: #111; margin: 32px; font-size: 13px; }
   h1 { font-size: 22px; margin: 0 0 4px; }
   h2 { font-size: 14px; margin: 24px 0 8px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
   .meta { color: #444; margin-bottom: 12px; }
@@ -106,27 +268,44 @@ export function buildInvoicePrintHtml(data: InvoicePdfPayload): string {
   .totals td { border: none; padding: 4px 8px; }
   .totals .strong { font-weight: 700; font-size: 15px; }
   .muted { color: #888; }
-  .status { display: inline-block; padding: 2px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 11px; }
+  .status { display: inline-block; padding: 2px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; }
+  .status-PAID { border-color: #16a34a; color: #15803d; background: #f0fdf4; }
+  .status-PARTIAL { border-color: #ca8a04; color: #a16207; background: #fefce8; }
+  .status-OVERDUE { border-color: #dc2626; color: #b91c1c; background: #fef2f2; }
+  .status-PENDING { border-color: #64748b; color: #475569; background: #f8fafc; }
+  .status-CANCELLED { border-color: #94a3b8; color: #64748b; background: #f1f5f9; }
+  .footer { margin-top: 28px; padding-top: 12px; border-top: 1px solid #ddd; color: #555; font-size: 12px; white-space: pre-wrap; }
+  @media print {
+    body { margin: 12mm; }
+    .status { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .box { background: #fafafa; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
 </style>
 </head>
 <body>
   <h1>Invoice ${esc(data.invoiceNumber)}</h1>
   <p class="meta">
     Date: ${fmtDate(data.invoiceDate)} · Due: ${fmtDate(data.dueDate)}
-    ${data.status ? ` · <span class="status">${esc(data.status)}</span>` : ""}
+    · <span class="status status-${esc(stamp)}">${esc(stamp)}</span>
   </p>
 
   <div class="grid">
-    <div class="box">${dealerLines || "<p class='muted'>Dealership</p>"}</div>
+    <div class="box">${dealerHtmlBlock(data)}</div>
     <div class="box">${customerLines}</div>
   </div>
 
   <h2>Charges</h2>
   <table>
-    <tr><td>${esc(data.packageName?.trim() || "Services / package")}</td><td class="amt">${money(data.subtotal)}</td></tr>
-    <tr><td>Tax (${Number(data.taxRate) || 0}%)</td><td class="amt">${money(data.taxAmount)}</td></tr>
+    <thead>
+      <tr><th>Description</th><th class="amt">Qty</th><th class="amt">Unit</th><th class="amt">Amount</th></tr>
+    </thead>
+    <tbody>
+      ${chargeRows}
+      <tr><td colspan="3">Tax (${Number(data.taxRate) || 0}%)</td><td class="amt">${money(data.taxAmount)}</td></tr>
+    </tbody>
   </table>
   <table class="totals">
+    <tr><td>Subtotal</td><td class="amt">${money(data.subtotal)}</td></tr>
     <tr><td>Total</td><td class="amt strong">${money(data.total)}</td></tr>
     <tr><td>Amount paid</td><td class="amt">${money(data.amountPaid)}</td></tr>
     <tr><td>Balance due</td><td class="amt strong">${money(balance)}</td></tr>
@@ -138,7 +317,9 @@ export function buildInvoicePrintHtml(data: InvoicePdfPayload): string {
     <tbody>${paymentRows}</tbody>
   </table>
 
-  ${data.notes?.trim() ? `<h2>Notes</h2><p>${esc(data.notes.trim())}</p>` : ""}
+  ${data.notes?.trim() && data.notes.trim() !== footerCopy.trim() ? `<h2>Notes</h2><p>${esc(data.notes.trim())}</p>` : ""}
+
+  <div class="footer">${esc(footerCopy)}</div>
 
   <script>window.onload = function(){ window.print(); }</script>
 </body>
@@ -157,27 +338,292 @@ export function openInvoicePrintWindow(data: InvoicePdfPayload): void {
     w.opener = null;
 }
 
-export function invoiceEmailHtml(data: InvoicePdfPayload): { subject: string; html: string; text: string } {
-    const balance = Math.max(0, (Number(data.total) || 0) - (Number(data.amountPaid) || 0));
-    const subject = `Invoice ${data.invoiceNumber} — ${money(data.total)}`;
-    const text = [
-        `Invoice ${data.invoiceNumber}`,
-        `Customer: ${data.customerName || "—"}`,
-        `Total: ${money(data.total)}`,
-        `Balance due: ${money(balance)}`,
-        `Due: ${data.dueDate || "—"}`,
-    ].join("\n");
-    const html = `
-    <div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#111">
-      <h1 style="font-size:20px;margin:0 0 8px">Invoice ${esc(data.invoiceNumber)}</h1>
-      <p style="margin:0 0 16px;color:#555">From ${esc(data.dealerName || "your dealership")}</p>
-      <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
-        <tr><td style="padding:6px 0;color:#555">Subtotal</td><td style="text-align:right">${money(data.subtotal)}</td></tr>
-        <tr><td style="padding:6px 0;color:#555">Tax (${Number(data.taxRate) || 0}%)</td><td style="text-align:right">${money(data.taxAmount)}</td></tr>
-        <tr><td style="padding:6px 0;font-weight:700">Total</td><td style="text-align:right;font-weight:700">${money(data.total)}</td></tr>
-        <tr><td style="padding:6px 0;color:#555">Balance due</td><td style="text-align:right">${money(balance)}</td></tr>
-      </table>
-      <p style="margin:0;color:#888;font-size:13px">Due date: ${esc(fmtDate(data.dueDate))}. Contact the dealership with questions.</p>
-    </div>`;
-    return { subject, html, text };
+function drawText(
+    page: PDFPage,
+    text: string,
+    x: number,
+    y: number,
+    font: PDFFont,
+    size: number,
+    color = rgb(0.07, 0.07, 0.07)
+): void {
+    page.drawText(text, { x, y, size, font, color });
+}
+
+function truncateToWidth(
+    text: string,
+    font: PDFFont,
+    size: number,
+    maxWidth: number
+): string {
+    if (font.widthOfTextAtSize(text, size) <= maxWidth) return text;
+    let t = text;
+    while (t.length > 1 && font.widthOfTextAtSize(`${t}…`, size) > maxWidth) {
+        t = t.slice(0, -1);
+    }
+    return `${t}…`;
+}
+
+/** True downloadable PDF bytes (letter, CAD layout). Safe on CF Workers. */
+export async function buildInvoicePdfBytes(
+    raw: InvoicePdfPayload
+): Promise<Uint8Array> {
+    const data = normalizeInvoiceDocument(raw);
+    const balance = Math.max(
+        0,
+        (Number(data.total) || 0) - (Number(data.amountPaid) || 0)
+    );
+    const lineItems = data.lineItems || [];
+
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.TimesRoman);
+    const fontBold = await doc.embedFont(StandardFonts.TimesRomanBold);
+    const page = doc.addPage([612, 792]); // US Letter
+    const { width, height } = page.getSize();
+    const margin = 48;
+    let y = height - margin;
+
+    const stamp = data.statusStamp || "PENDING";
+    drawText(page, `Invoice ${data.invoiceNumber}`, margin, y, fontBold, 20);
+    const stampWidth = fontBold.widthOfTextAtSize(stamp, 10);
+    drawText(page, stamp, width - margin - stampWidth, y + 4, fontBold, 10, rgb(0.3, 0.3, 0.3));
+    y -= 22;
+
+    drawText(
+        page,
+        `Date: ${fmtDate(data.invoiceDate)}  ·  Due: ${fmtDate(data.dueDate)}`,
+        margin,
+        y,
+        font,
+        10,
+        rgb(0.35, 0.35, 0.35)
+    );
+    y -= 28;
+
+    // Dealer / customer columns
+    const col2 = width / 2 + 8;
+    const dealerLines: string[] = [];
+    if (data.dealerName?.trim()) dealerLines.push(data.dealerName.trim());
+    if (data.dealerAddress?.trim()) dealerLines.push(data.dealerAddress.trim());
+    const dealerContact = [data.dealerPhone, data.dealerEmail]
+        .filter((x) => Boolean(x && String(x).trim()))
+        .join(" · ");
+    if (dealerContact) dealerLines.push(dealerContact);
+    const taxBits: string[] = [];
+    if (data.dealerLicence?.trim()) taxBits.push(`Licence: ${data.dealerLicence.trim()}`);
+    if (data.dealerHst?.trim()) taxBits.push(`HST #: ${data.dealerHst.trim()}`);
+    if (taxBits.length) dealerLines.push(taxBits.join(" · "));
+    if (dealerLines.length === 0) dealerLines.push("Dealership");
+
+    const custLines: string[] = [];
+    custLines.push(data.customerName?.trim() || "Customer");
+    if (data.customerAddress?.trim()) custLines.push(data.customerAddress.trim());
+    const custContact = [data.customerPhone, data.customerEmail]
+        .filter((x) => Boolean(x && String(x).trim()))
+        .join(" · ");
+    if (custContact) custLines.push(custContact);
+
+    drawText(page, "From", margin, y, fontBold, 9, rgb(0.4, 0.4, 0.4));
+    drawText(page, "Bill to", col2, y, fontBold, 9, rgb(0.4, 0.4, 0.4));
+    y -= 14;
+
+    const maxRows = Math.max(dealerLines.length, custLines.length);
+    for (let i = 0; i < maxRows; i++) {
+        const left = dealerLines[i];
+        const right = custLines[i];
+        if (left) {
+            drawText(
+                page,
+                truncateToWidth(left, i === 0 ? fontBold : font, 10, width / 2 - margin - 16),
+                margin,
+                y,
+                i === 0 ? fontBold : font,
+                10
+            );
+        }
+        if (right) {
+            drawText(
+                page,
+                truncateToWidth(right, i === 0 ? fontBold : font, 10, width / 2 - margin - 16),
+                col2,
+                y,
+                i === 0 ? fontBold : font,
+                10
+            );
+        }
+        y -= 13;
+    }
+    y -= 16;
+
+    // Line items table header
+    drawText(page, "Charges", margin, y, fontBold, 12);
+    y -= 8;
+    page.drawLine({
+        start: { x: margin, y },
+        end: { x: width - margin, y },
+        thickness: 0.5,
+        color: rgb(0.7, 0.7, 0.7),
+    });
+    y -= 16;
+
+    const descX = margin;
+    const qtyX = 360;
+    const unitX = 420;
+    const amtX = width - margin;
+
+    drawText(page, "Description", descX, y, fontBold, 9, rgb(0.4, 0.4, 0.4));
+    drawText(page, "Qty", qtyX, y, fontBold, 9, rgb(0.4, 0.4, 0.4));
+    drawText(page, "Unit", unitX, y, fontBold, 9, rgb(0.4, 0.4, 0.4));
+    const amtHdr = "Amount";
+    drawText(
+        page,
+        amtHdr,
+        amtX - fontBold.widthOfTextAtSize(amtHdr, 9),
+        y,
+        fontBold,
+        9,
+        rgb(0.4, 0.4, 0.4)
+    );
+    y -= 14;
+
+    for (const li of lineItems) {
+        if (y < 120) break;
+        const desc = truncateToWidth(li.description, font, 10, qtyX - descX - 12);
+        drawText(page, desc, descX, y, font, 10);
+        const qtyStr = String(li.qty);
+        drawText(page, qtyStr, qtyX, y, font, 10);
+        const unitStr = money(li.unitPrice);
+        drawText(page, unitStr, unitX, y, font, 10);
+        const amtStr = money(li.amount);
+        drawText(page, amtStr, amtX - font.widthOfTextAtSize(amtStr, 10), y, font, 10);
+        y -= 14;
+    }
+
+    y -= 6;
+    const taxLabel = `Tax (${Number(data.taxRate) || 0}%)`;
+    drawText(page, taxLabel, descX, y, font, 10);
+    const taxStr = money(data.taxAmount);
+    drawText(page, taxStr, amtX - font.widthOfTextAtSize(taxStr, 10), y, font, 10);
+    y -= 20;
+
+    const totals: Array<{ label: string; value: string; bold?: boolean }> = [
+        { label: "Subtotal", value: money(data.subtotal) },
+        { label: "Total", value: money(data.total), bold: true },
+        { label: "Amount paid", value: money(data.amountPaid) },
+        { label: "Balance due", value: money(balance), bold: true },
+    ];
+    for (const row of totals) {
+        const f = row.bold ? fontBold : font;
+        drawText(page, row.label, unitX - 40, y, f, 11);
+        drawText(
+            page,
+            row.value,
+            amtX - f.widthOfTextAtSize(row.value, 11),
+            y,
+            f,
+            11
+        );
+        y -= 15;
+    }
+
+    // Payments
+    if (data.payments && data.payments.length > 0 && y > 160) {
+        y -= 10;
+        drawText(page, "Payment ledger", margin, y, fontBold, 12);
+        y -= 8;
+        page.drawLine({
+            start: { x: margin, y },
+            end: { x: width - margin, y },
+            thickness: 0.5,
+            color: rgb(0.7, 0.7, 0.7),
+        });
+        y -= 14;
+        for (const p of data.payments.slice(0, 8)) {
+            if (y < 100) break;
+            const line = `${fmtDate(p.date)}  ${p.method || "—"}  ${money(p.amount)}${p.note ? `  — ${p.note}` : ""}`;
+            drawText(
+                page,
+                truncateToWidth(line, font, 9, width - margin * 2),
+                margin,
+                y,
+                font,
+                9
+            );
+            y -= 12;
+        }
+    }
+
+    // Footer
+    const footer =
+        data.paymentInstructions?.trim() ||
+        "Thank you for your business. Contact the dealership with payment questions.";
+    y = Math.min(y - 20, 72);
+    page.drawLine({
+        start: { x: margin, y: y + 12 },
+        end: { x: width - margin, y: y + 12 },
+        thickness: 0.5,
+        color: rgb(0.75, 0.75, 0.75),
+    });
+    drawText(
+        page,
+        truncateToWidth(footer, font, 9, width - margin * 2),
+        margin,
+        y,
+        font,
+        9,
+        rgb(0.35, 0.35, 0.35)
+    );
+
+    return doc.save();
+}
+
+/** Browser helper: download Invoice-{number}.pdf via blob. */
+export async function downloadInvoicePdf(data: InvoicePdfPayload): Promise<void> {
+    const bytes = await buildInvoicePdfBytes(data);
+    const copy = new Uint8Array(bytes.byteLength);
+    copy.set(bytes);
+    const blob = new Blob([copy], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Invoice-${data.invoiceNumber || "document"}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+}
+
+/** Branded FlashFender invoice email — delegates to src/lib/email. */
+export function invoiceEmailHtml(raw: InvoicePdfPayload): {
+    subject: string;
+    html: string;
+    text: string;
+} {
+    const data = normalizeInvoiceDocument(raw);
+    return invoiceEmail(data);
+}
+
+/** Parse line_items JSONB from API into InvoiceLineItem[]. */
+export function parseInvoiceLineItems(raw: unknown): InvoiceLineItem[] {
+    if (!Array.isArray(raw)) return [];
+    return raw
+        .map((row) => {
+            if (!row || typeof row !== "object") return null;
+            const r = row as Record<string, unknown>;
+            const description = String(
+                r.description ?? r.name ?? r.package_name ?? ""
+            ).trim();
+            const qty = Number(r.qty ?? r.quantity ?? 1) || 1;
+            const unitPrice = Number(r.unitPrice ?? r.unit_price ?? r.price ?? 0) || 0;
+            const amount =
+                Number(r.amount ?? r.total ?? qty * unitPrice) || qty * unitPrice;
+            if (!description && amount === 0) return null;
+            return {
+                description: description || "Line item",
+                qty,
+                unitPrice,
+                amount,
+            } satisfies InvoiceLineItem;
+        })
+        .filter((x): x is InvoiceLineItem => x !== null);
 }

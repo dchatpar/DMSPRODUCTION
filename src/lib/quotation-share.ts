@@ -2,6 +2,8 @@
  * Shareable quotation summary (clipboard / email) — estimate only, no fake lender approval.
  */
 
+import { quotationEmail } from "@/src/lib/email";
+
 export type QuotationShareInput = {
     quoteNumber?: string | null;
     status?: string | null;
@@ -26,14 +28,6 @@ function money(n: number | null | undefined): string {
         style: "currency",
         currency: "CAD",
     }).format(Number(n) || 0);
-}
-
-function esc(s: string): string {
-    return s
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;");
 }
 
 export function buildQuotationShareText(q: QuotationShareInput): string {
@@ -64,46 +58,11 @@ export function buildQuotationShareText(q: QuotationShareInput): string {
     return lines.filter((l) => l !== null).join("\n");
 }
 
+/** Branded FlashFender quotation email — delegates to src/lib/email. */
 export function quotationEmailHtml(q: QuotationShareInput): {
     subject: string;
     html: string;
     text: string;
 } {
-    const text = buildQuotationShareText(q);
-    const subject = q.quoteNumber
-        ? `Your quotation ${q.quoteNumber}`
-        : "Your vehicle quotation";
-    const rows: Array<[string, string]> = [
-        ["Sale price", money(q.salePrice)],
-        ["Tax rate", `${q.taxRate ?? 13}%`],
-        ["Admin fee", money(q.adminFee)],
-        ["Trade-in", money(q.tradeInValue)],
-        ["Down payment", money(q.downPayment)],
-    ];
-    if (q.interestRate != null) rows.push(["Rate", `${q.interestRate}%`]);
-    if (q.financeTerm != null) rows.push(["Term", `${q.financeTerm} months`]);
-    if (q.monthlyPayment != null) {
-        rows.push(["Est. monthly", money(q.monthlyPayment)]);
-    }
-
-    const tableRows = rows
-        .map(
-            ([k, v]) =>
-                `<tr><td style="padding:6px 12px 6px 0;color:#64748b">${esc(k)}</td><td style="padding:6px 0;font-weight:600">${esc(v)}</td></tr>`
-        )
-        .join("");
-
-    const html = `<!DOCTYPE html><html><body style="font-family:system-ui,sans-serif;color:#0f172a;line-height:1.5">
-  ${q.dealerName ? `<p style="margin:0 0 8px;color:#2563EB;font-weight:600">${esc(q.dealerName)}</p>` : ""}
-  <h1 style="font-size:18px;margin:0 0 12px">Vehicle quotation${q.quoteNumber ? ` — ${esc(q.quoteNumber)}` : ""}</h1>
-  ${q.customerName ? `<p>Hi ${esc(q.customerName)},</p>` : "<p>Hello,</p>"}
-  <p>Here is your quotation summary:</p>
-  ${q.vehicleLabel ? `<p><strong>Vehicle:</strong> ${esc(q.vehicleLabel)}</p>` : ""}
-  <table style="border-collapse:collapse;margin:12px 0">${tableRows}</table>
-  ${q.notes ? `<p><strong>Notes:</strong> ${esc(q.notes)}</p>` : ""}
-  ${q.validUntil ? `<p><strong>Valid until:</strong> ${esc(q.validUntil)}</p>` : ""}
-  <p style="font-size:12px;color:#64748b;margin-top:24px">Estimate only — not a binding offer. Subject to lender approval and Ontario disclosure.</p>
-</body></html>`;
-
-    return { subject, html, text };
+    return quotationEmail(q);
 }

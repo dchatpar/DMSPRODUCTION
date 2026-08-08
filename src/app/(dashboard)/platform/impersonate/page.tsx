@@ -2,313 +2,321 @@
 
 import { useState, useEffect } from "react";
 import {
-    UserCheck,
-    Search,
-    RefreshCw,
-    Loader2,
-    AlertCircle,
-    CheckCircle,
-    Shield,
-    LogOut
+  UserCheck,
+  Search,
+  RefreshCw,
+  Loader2,
+  Shield,
 } from "lucide-react";
-import { apiFetch } from "@/src/lib/fetch";
+import { toast } from "@/src/lib/toast";
+import { ListPageShell } from "@/src/components/ListPageShell";
+import { ConfirmDialog } from "@/src/components/ui/ConfirmDialog";
+import { Button } from "@/src/components/ui/Button";
+import { Input } from "@/src/components/ui/Input";
+import { StatusBadge } from "@/src/components/ui/StatusBadge";
+import { Avatar } from "@/src/components/ui/Avatar";
+import { EmptyState } from "@/src/components/ui/EmptyState";
+import { SkeletonTable } from "@/src/components/ui/Skeleton";
+import {
+  DataTableShell,
+  DataTableScroll,
+  DataTable,
+  DataTableHead,
+  DataTableHeaderRow,
+  DataTableTh,
+  DataTableBody,
+  DataTableRow,
+  DataTableTd,
+} from "@/src/components/ui/DataTable";
 
-interface User {
-    id: string;
-    full_name: string;
-    email: string;
-    role: string;
-    dealership_id: string;
-    is_active: boolean;
+interface ImpersonateUser {
+  id: string;
+  full_name: string;
+  email: string;
+  role: string;
+  dealership_id: string;
+  is_active: boolean;
 }
 
 export default function ImpersonatePage() {
-    const [users, setUsers] = useState<User[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [success, setSuccess] = useState<string | null>(null);
-    const [search, setSearch] = useState("");
-    const [searchResults, setSearchResults] = useState<User[]>([]);
-    const [searching, setSearching] = useState(false);
-    const [impersonating, setImpersonating] = useState<string | null>(null);
-    const [impersonationResult, setImpersonationResult] = useState<any>(null);
+  const [users, setUsers] = useState<ImpersonateUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<ImpersonateUser[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [impersonating, setImpersonating] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingUser, setPendingUser] = useState<ImpersonateUser | null>(null);
+  const [forbidden, setForbidden] = useState(false);
 
-    useEffect(() => {
-        fetchUsers();
-    }, []);
+  useEffect(() => {
+    void fetchUsers();
+  }, []);
 
-    const fetchUsers = async () => {
-        try {
-            setLoading(true);
-            setError(null);
+  async function fetchUsers() {
+    try {
+      setLoading(true);
+      setForbidden(false);
 
-            // Check if user is platform admin
-            const meResponse = await fetch("/api/me", {
-            });
+      const meResponse = await fetch("/api/me");
+      if (!meResponse.ok) throw new Error("Failed to get user info");
+      const meData = await meResponse.json();
+      if (!meData.data?.is_platform_admin) {
+        setForbidden(true);
+        return;
+      }
 
-            if (!meResponse.ok) throw new Error("Failed to get user info");
-            const meData = await meResponse.json();
-            if (!meData.data?.is_platform_admin) {
-                setError("You do not have permission to access this feature");
-                return;
-            }
+      const response = await fetch("/api/users?limit=50");
+      if (!response.ok) throw new Error("Failed to fetch users");
 
-            const response = await fetch("/api/users?limit=50", {
-            });
+      const data = await response.json();
+      setUsers(data.data || []);
+    } catch (err: unknown) {
+      console.error("Error fetching users:", err);
+      toast.error(
+        err instanceof Error ? err.message : "Failed to load users"
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
 
-            if (!response.ok) throw new Error("Failed to fetch users");
+  async function handleSearch(e: React.FormEvent) {
+    e.preventDefault();
+    if (!search.trim()) {
+      setSearchResults([]);
+      return;
+    }
 
-            const data = await response.json();
-            setUsers(data.data || []);
-        } catch (err: any) {
-            console.error("Error fetching users:", err);
-            setError(err.message || "Failed to load users");
-        } finally {
-            setLoading(false);
-        }
-    };
+    setSearching(true);
+    try {
+      const response = await fetch(
+        `/api/users?q=${encodeURIComponent(search)}&limit=20`
+      );
+      if (!response.ok) throw new Error("Failed to search users");
+      const data = await response.json();
+      setSearchResults(data.data || []);
+    } catch (err: unknown) {
+      console.error("Error searching users:", err);
+      toast.error(
+        err instanceof Error ? err.message : "Failed to search users"
+      );
+    } finally {
+      setSearching(false);
+    }
+  }
 
-    const handleSearch = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!search.trim()) {
-            setSearchResults([]);
-            return;
-        }
+  const requestImpersonate = (user: ImpersonateUser) => {
+    if (!user.is_active) return;
+    setPendingUser(user);
+    setConfirmOpen(true);
+  };
 
-        setSearching(true);
-        try {
-            const response = await fetch(`/api/users?q=${encodeURIComponent(search)}&limit=20`, {
-            });
+  async function confirmImpersonate() {
+    if (!pendingUser) return;
+    setImpersonating(true);
+    try {
+      const response = await fetch("/api/platform/impersonate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ targetUserId: pendingUser.id }),
+      });
 
-            if (!response.ok) throw new Error("Failed to search users");
+      const data = await response.json().catch(() => ({}));
 
-            const data = await response.json();
-            setSearchResults(data.data || []);
-        } catch (err: any) {
-            console.error("Error searching users:", err);
-        } finally {
-            setSearching(false);
-        }
-    };
+      if (!response.ok || data.success === false) {
+        throw new Error(
+          typeof data.error === "string"
+            ? data.error
+            : "Failed to impersonate user"
+        );
+      }
 
-    const handleImpersonate = async (userId: string) => {
-        setImpersonating(userId);
-        setError(null);
-        setSuccess(null);
-        setImpersonationResult(null);
+      toast.success(
+        `Viewing as ${data.target_user?.full_name || data.target_user?.email || "user"}`
+      );
+      window.location.assign("/dashboard");
+    } catch (err: unknown) {
+      console.error("Error impersonating user:", err);
+      toast.error(
+        err instanceof Error ? err.message : "Failed to impersonate user"
+      );
+      setImpersonating(false);
+      setConfirmOpen(false);
+      setPendingUser(null);
+    }
+  }
 
-        try {
-            const response = await fetch("/api/platform/impersonate", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json" },
-                body: JSON.stringify({ targetUserId: userId })
-            });
-
-            if (!response.ok) {
-                const data = await response.json();
-                throw new Error(data.error || "Failed to impersonate user");
-            }
-
-            const data = await response.json();
-            setImpersonationResult(data);
-
-            if (data.success && !data.temporary_password) {
-                setSuccess(`Impersonation session created for ${data.target_user?.email}`);
-            }
-        } catch (err: any) {
-            console.error("Error impersonating user:", err);
-            setError(err.message || "Failed to impersonate user");
-        } finally {
-            setImpersonating(null);
-        }
-    };
-
+  if (forbidden) {
     return (
-        <div className="min-h-screen bg-gray-50">
-            {/* Page Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Impersonate User</h1>
-                    <p className="text-sm text-gray-500 mt-1">
-                        Access user accounts to troubleshoot or provide support
-                    </p>
-                </div>
-            </div>
-
-            {/* Warning Banner */}
-            <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
-                <Shield className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                <div className="text-sm">
-                    <p className="font-medium text-amber-800">Important Notice</p>
-                    <p className="text-amber-700 mt-1">
-                        All impersonation sessions are logged for security and compliance purposes.
-                        Use this feature responsibly and only when necessary for support purposes.
-                    </p>
-                </div>
-            </div>
-
-            {/* Content */}
-            <div className="p-6">
-                {error && (
-                    <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
-                        <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
-                        <p className="text-sm text-red-600">{error}</p>
-                    </div>
-                )}
-
-                {success && (
-                    <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3">
-                        <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
-                        <p className="text-sm text-green-600">{success}</p>
-                    </div>
-                )}
-
-                {impersonationResult?.temporary_password && (
-                    <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                        <p className="text-sm font-medium text-blue-800">Temporary Password Generated</p>
-                        <p className="text-sm text-blue-700 mt-1">
-                            Share this password with the user: <code className="font-mono bg-blue-100 px-2 py-1 rounded">{impersonationResult.temporary_password}</code>
-                        </p>
-                        <p className="text-xs text-blue-600 mt-2">
-                            For full impersonation, the user needs to accept a session link sent to their email.
-                        </p>
-                    </div>
-                )}
-
-                {/* Search */}
-                <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
-                    <h2 className="text-lg font-semibold text-gray-900 mb-4">Search for User</h2>
-                    <form onSubmit={handleSearch} className="flex gap-4">
-                        <div className="flex-1 relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                            <input
-                                type="text"
-                                placeholder="Search by name, email, or phone..."
-                                value={search}
-                                onChange={(e) => setSearch(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                        </div>
-                        <button
-                            type="submit"
-                            disabled={searching}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
-                        >
-                            {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : "Search"}
-                        </button>
-                    </form>
-
-                    {/* Search Results */}
-                    {searchResults.length > 0 && (
-                        <div className="mt-4 space-y-2">
-                            {searchResults.map((user) => (
-                                <div
-                                    key={user.id}
-                                    className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
-                                >
-                                    <div>
-                                        <p className="font-medium text-gray-900">{user.full_name || "Unnamed"}</p>
-                                        <p className="text-sm text-gray-500">{user.email}</p>
-                                    </div>
-                                    <button
-                                        onClick={() => handleImpersonate(user.id)}
-                                        disabled={impersonating === user.id || !user.is_active}
-                                        className="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                                    >
-                                        {impersonating === user.id ? (
-                                            <>
-                                                <Loader2 className="w-4 h-4 animate-spin" />
-                                                Creating...
-                                            </>
-                                        ) : !user.is_active ? (
-                                            "Inactive"
-                                        ) : (
-                                            <>
-                                                <UserCheck className="w-4 h-4" />
-                                                Impersonate
-                                            </>
-                                        )}
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-
-                {/* Recent Users */}
-                <div className="bg-white rounded-xl border border-gray-200 p-6">
-                    <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-lg font-semibold text-gray-900">Recent Users</h2>
-                        <button
-                            onClick={fetchUsers}
-                            className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1"
-                        >
-                            <RefreshCw className="w-4 h-4" />
-                            Refresh
-                        </button>
-                    </div>
-
-                    {loading ? (
-                        <div className="flex items-center justify-center py-8">
-                            <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
-                        </div>
-                    ) : users.length === 0 ? (
-                        <p className="text-sm text-gray-500">No users found.</p>
-                    ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full">
-                                <thead className="bg-gray-50 border-b border-gray-200">
-                                    <tr>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                    {users.slice(0, 20).map((user) => (
-                                        <tr key={user.id} className="hover:bg-gray-50">
-                                            <td className="px-4 py-3">
-                                                <p className="text-sm font-medium text-gray-900">{user.full_name || "Unnamed"}</p>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <p className="text-sm text-gray-500">{user.email}</p>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <span className="inline-flex items-center px-2 py-1 text-xs font-medium text-gray-700 bg-gray-100 rounded">
-                                                    {user.role}
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full ${
-                                                    user.is_active ? "text-green-700 bg-green-50" : "text-red-700 bg-red-50"
-                                                }`}>
-                                                    {user.is_active ? "Active" : "Inactive"}
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <button
-                                                    onClick={() => handleImpersonate(user.id)}
-                                                    disabled={impersonating === user.id || !user.is_active}
-                                                    className="px-3 py-1.5 bg-amber-600 text-white rounded text-sm font-medium hover:bg-amber-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                                >
-                                                    {impersonating === user.id ? (
-                                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                                    ) : (
-                                                        "Impersonate"
-                                                    )}
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
+      <ListPageShell
+        title="Impersonate User"
+        description="Access user accounts to troubleshoot or provide support"
+        icon={UserCheck}
+        breadcrumbs={[
+          { label: "Platform", href: "/platform" },
+          { label: "Impersonate" },
+        ]}
+      >
+        <EmptyState
+          kind="permission"
+          title="Platform admin required"
+          description="You do not have permission to access this feature."
+        />
+      </ListPageShell>
     );
+  }
+
+  const displayList =
+    searchResults.length > 0 ? searchResults : users.slice(0, 20);
+
+  return (
+    <>
+      <ListPageShell
+        title="Impersonate User"
+        description="Access user accounts to troubleshoot or provide support"
+        icon={UserCheck}
+        breadcrumbs={[
+          { label: "Platform", href: "/platform" },
+          { label: "Impersonate" },
+        ]}
+        actions={
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void fetchUsers()}
+            disabled={loading}
+          >
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
+        }
+        toolbar={
+          <form
+            onSubmit={(e) => void handleSearch(e)}
+            className="flex flex-col gap-3 sm:flex-row sm:items-center"
+          >
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Search by name, email, or phone…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <Button type="submit" disabled={searching} size="md">
+              {searching ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "Search"
+              )}
+            </Button>
+          </form>
+        }
+      >
+        <div className="mb-5 flex items-start gap-3 rounded-lg border border-warning/30 bg-warning-50 px-4 py-3 text-sm text-warning">
+          <Shield className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <div>
+            <p className="font-medium">Important notice</p>
+            <p className="mt-0.5 opacity-90">
+              Impersonation swaps your session to the target user. All sessions
+              are audited. Use only for support.
+            </p>
+          </div>
+        </div>
+
+        {loading ? (
+          <SkeletonTable rows={8} cols={5} />
+        ) : displayList.length === 0 ? (
+          <EmptyState
+            kind="no-results"
+            title="No users found"
+            description="Try a different search, or refresh the recent list."
+          />
+        ) : (
+          <DataTableShell>
+            <DataTableScroll>
+              <DataTable>
+                <DataTableHead>
+                  <DataTableHeaderRow>
+                    <DataTableTh>User</DataTableTh>
+                    <DataTableTh>Email</DataTableTh>
+                    <DataTableTh>Role</DataTableTh>
+                    <DataTableTh>Status</DataTableTh>
+                    <DataTableTh className="text-right">Action</DataTableTh>
+                  </DataTableHeaderRow>
+                </DataTableHead>
+                <DataTableBody>
+                  {displayList.map((user) => (
+                    <DataTableRow key={user.id}>
+                      <DataTableTd>
+                        <div className="flex items-center gap-3">
+                          <Avatar
+                            name={user.full_name || user.email}
+                            size="sm"
+                          />
+                          <span className="font-medium text-foreground">
+                            {user.full_name || "Unnamed"}
+                          </span>
+                        </div>
+                      </DataTableTd>
+                      <DataTableTd className="text-muted-foreground">
+                        {user.email}
+                      </DataTableTd>
+                      <DataTableTd>
+                        <span className="text-sm text-foreground">
+                          {user.role}
+                        </span>
+                      </DataTableTd>
+                      <DataTableTd>
+                        <StatusBadge
+                          status={user.is_active ? "Active" : "Inactive"}
+                        />
+                      </DataTableTd>
+                      <DataTableTd className="text-right">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          disabled={!user.is_active || impersonating}
+                          onClick={() => requestImpersonate(user)}
+                        >
+                          <UserCheck className="h-3.5 w-3.5" />
+                          {user.is_active ? "Impersonate" : "Inactive"}
+                        </Button>
+                      </DataTableTd>
+                    </DataTableRow>
+                  ))}
+                </DataTableBody>
+              </DataTable>
+            </DataTableScroll>
+          </DataTableShell>
+        )}
+      </ListPageShell>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={(open) => {
+          if (impersonating) return;
+          setConfirmOpen(open);
+          if (!open) setPendingUser(null);
+        }}
+        severity="warning"
+        title="Impersonate this user?"
+        message="Your session will switch to theirs. Use Exit on the viewing banner to restore your admin session."
+        detail={
+          pendingUser
+            ? `${pendingUser.full_name || "Unnamed"} · ${pendingUser.email}`
+            : undefined
+        }
+        confirmLabel="Impersonate"
+        loading={impersonating}
+        onConfirm={() => void confirmImpersonate()}
+      />
+    </>
+  );
 }

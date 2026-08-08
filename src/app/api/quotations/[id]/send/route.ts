@@ -1,12 +1,25 @@
-// POST /api/quotations/[id]/send — email quotation via Resend (honest 503 if not configured)
+// POST /api/quotations/[id]/send — email quotation via Resend (HTML + PDF attachment)
 import { NextRequest, NextResponse } from "next/server";
 import {
     assertOwnershipOrDeny,
     pickSupabaseClient,
     requireDealershipAccess,
 } from "@/src/lib/auth-helpers";
+import {
+    buildQuotationPdfBytes,
+    type QuotationPdfPayload,
+} from "@/src/lib/quotation-pdf";
 import { quotationEmailHtml } from "@/src/lib/quotation-share";
 import { isResendConfigured, sendEmail } from "@/src/lib/resend";
+
+function uint8ToBase64(bytes: Uint8Array): string {
+    let binary = "";
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+}
 
 export async function POST(
     req: NextRequest,
@@ -44,10 +57,11 @@ export async function POST(
             .from("quotations")
             .select(
                 `
-                id, dealership_id, salesperson_id, quote_number, status,
+                id, dealership_id, salesperson_id, quote_number, status, created_at,
                 sale_price, down_payment, trade_in_value, finance_term,
                 interest_rate, tax_rate, admin_fee, monthly_payment, notes, valid_until,
-                vehicle:vehicles(id, year, make, model),
+                finance_company,
+                vehicle:vehicles(id, year, make, model, vin, stock_number),
                 customer:customers(id, name, email, phone)
             `
             )
@@ -97,10 +111,13 @@ export async function POST(
         }
 
         let dealerName: string | null = null;
+        let dealerForPdf: QuotationPdfPayload["dealer"] = null;
         if (existing.dealership_id) {
             const { data: dealer } = await supabase
                 .from("dealerships")
-                .select("name, business_name")
+                .select(
+                    "name, business_name, business_address, business_phone, business_email, settings"
+                )
                 .eq("id", existing.dealership_id)
                 .maybeSingle();
             if (dealer) {
@@ -108,6 +125,28 @@ export async function POST(
                     (dealer.business_name as string) ||
                     (dealer.name as string) ||
                     null;
+                const settings =
+                    dealer.settings && typeof dealer.settings === "object"
+                        ? (dealer.settings as Record<string, unknown>)
+                        : {};
+                dealerForPdf = {
+                    name: (dealer.name as string) || null,
+                    business_name: (dealer.business_name as string) || null,
+                    business_address: (dealer.business_address as string) || null,
+                    business_phone: (dealer.business_phone as string) || null,
+                    business_email: (dealer.business_email as string) || null,
+                    dealer_license:
+                        (typeof settings.dealer_license === "string"
+                            ? settings.dealer_license
+                            : null) ||
+                        (typeof settings.license_number === "string"
+                            ? settings.license_number
+                            : null),
+                    hst_number:
+                        typeof settings.hst_number === "string"
+                            ? settings.hst_number
+                            : null,
+                };
             }
         }
 
@@ -115,7 +154,7 @@ export async function POST(
             ? `${vehicle.year} ${vehicle.make} ${vehicle.model}`
             : null;
 
-        const { subject, html, text } = quotationEmailHtml({
+        const sharePayload = {
             quoteNumber: existing.quote_number,
             status: existing.status,
             customerName: (customer?.name as string) || null,
@@ -132,9 +171,52 @@ export async function POST(
             notes: existing.notes,
             validUntil: existing.valid_until,
             dealerName,
-        });
+        };
 
-        const sent = await sendEmail({ to, subject, html, text });
+        const { subject, html, text } = quotationEmailHtml(sharePayload);
+
+        const pdfPayload: QuotationPdfPayload = {
+            quoteNumber: existing.quote_number,
+            status: existing.status,
+            createdAt: existing.created_at,
+            validUntil: existing.valid_until,
+            notes: existing.notes,
+            customerName: (customer?.name as string) || null,
+            customerEmail: (customer?.email as string) || null,
+            customerPhone: (customer?.phone as string) || null,
+            vehicleLabel,
+            vin: (vehicle?.vin as string) || null,
+            stockNumber: (vehicle?.stock_number as string) || null,
+            salePrice: Number(existing.sale_price) || 0,
+            downPayment: Number(existing.down_payment) || 0,
+            tradeInValue: Number(existing.trade_in_value) || 0,
+            taxRate: existing.tax_rate,
+            taxAmount: null,
+            adminFee: Number(existing.admin_fee) || 0,
+            financedAmount: null,
+            financeTerm: existing.finance_term,
+            interestRate: existing.interest_rate,
+            monthlyPayment: existing.monthly_payment,
+            financeCompany: existing.finance_company,
+            dealer: dealerForPdf,
+        };
+
+        const pdfBytes = await buildQuotationPdfBytes(pdfPayload);
+        const filename = `Quotation-${existing.quote_number || id}.pdf`;
+
+        const sent = await sendEmail({
+            to,
+            subject,
+            html,
+            text,
+            attachments: [
+                {
+                    filename,
+                    content: uint8ToBase64(pdfBytes),
+                    contentType: "application/pdf",
+                },
+            ],
+        });
 
         if (!sent.ok) {
             return NextResponse.json(
@@ -160,6 +242,7 @@ export async function POST(
             success: true,
             resend_id: sent.id,
             to,
+            attached: filename,
             quotation,
         });
     } catch (error: unknown) {

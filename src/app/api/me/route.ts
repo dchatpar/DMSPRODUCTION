@@ -11,7 +11,7 @@
 // the request's auth mode (bearer vs cookie) and use the matching
 // client for all secondary fetches.
 
-import { getCurrentUser, pickSupabaseClient } from "@/src/lib/auth-helpers";
+import { getCurrentUser, pickSupabaseClient, type UserProfile } from "@/src/lib/auth-helpers";
 import { createClient } from "@/src/lib/server";
 import { createTokenClient } from "@/src/lib/server-token";
 import { getDealershipTrialState } from "@/src/lib/trial";
@@ -26,9 +26,9 @@ import { NextRequest, NextResponse } from "next/server";
  * Returns a Promise so the caller can `await` uniformly (cookie client
  * is async, the others are sync but `await` is a no-op on them).
  */
-async function pickSecondaryClient(req: NextRequest, profile: { is_platform_admin: boolean } | null) {
+async function pickSecondaryClient(req: NextRequest, profile: UserProfile | null) {
     if (profile?.is_platform_admin) {
-        return pickSupabaseClient(req, profile as any).supabase;
+        return pickSupabaseClient(req, profile).supabase;
     }
     const hasBearer = /^Bearer\s+.+/i.test(req.headers.get("authorization") || "");
     if (hasBearer) {
@@ -121,7 +121,7 @@ export async function GET(req: NextRequest) {
       const { data: dealerRow } = await secondaryClient
         .from("dealerships")
         .select(
-          "id, name, business_name, business_address, business_phone, business_email, settings"
+          "id, name, business_name, business_address, business_phone, business_email, logo_url, settings"
         )
         .eq("id", finalProfile.dealership_id)
         .maybeSingle();
@@ -182,10 +182,10 @@ export async function GET(req: NextRequest) {
       },
       { status: 200 }
     );
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Error fetching user:", err);
     return NextResponse.json(
-      { error: err?.message || "Internal server error" },
+      { error: err instanceof Error ? err.message : "Internal server error" },
       { status: 500 }
     );
   }

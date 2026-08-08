@@ -40,7 +40,7 @@ export default function SubscriptionsPage() {
         fetchSubscriptions();
     }, [statusFilter, planFilter]);
 
-    const fetchSubscriptions = async () => {
+    async function fetchSubscriptions() {
         try {
             setLoading(true);
             setError(null);
@@ -69,13 +69,13 @@ export default function SubscriptionsPage() {
             const data = await response.json();
             setSubscriptions(data.data || []);
             setCount(data.count || 0);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Error fetching subscriptions:", err);
-            setError(err.message || "Failed to load subscriptions");
+            setError(err instanceof Error ? err.message : "Failed to load subscriptions");
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat("en-US", {

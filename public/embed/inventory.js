@@ -82,7 +82,10 @@
     var existing = document.getElementById("adaptus-inv-jsonld");
     if (existing) existing.remove();
     var graph = vehicles.map(function (v) {
-      return {
+      var price =
+        v.special_price != null ? v.special_price : v.retail_price;
+      var photos = v.photos && v.photos.length ? v.photos : v.photo ? [v.photo] : [];
+      var node = {
         "@context": "https://schema.org",
         "@type": "Car",
         name: [v.year, v.make, v.model, v.trim].filter(Boolean).join(" "),
@@ -90,23 +93,47 @@
         model: v.model,
         vehicleModelDate: v.year,
         color: v.exterior_color || undefined,
-        image: v.photos || (v.photo ? [v.photo] : []),
-        offers: {
+        image: photos.length ? photos : undefined,
+      };
+      if (v.vin_masked) node.vehicleIdentificationNumber = v.vin_masked;
+      if (v.body_style) node.bodyType = v.body_style;
+      if (v.fuel_type) node.fuelType = v.fuel_type;
+      if (v.transmission) node.vehicleTransmission = v.transmission;
+      if (v.drivetrain) node.driveWheelConfiguration = v.drivetrain;
+      if (v.description) node.description = v.description;
+      if (v.odometer != null) {
+        node.mileageFromOdometer = {
+          "@type": "QuantitativeValue",
+          value: v.odometer,
+          unitCode: "KMT",
+        };
+      }
+      node.itemCondition = v.condition
+        ? String(v.condition).toLowerCase().indexOf("new") === 0
+          ? "https://schema.org/NewCondition"
+          : "https://schema.org/UsedCondition"
+        : undefined;
+      if (price != null) {
+        node.offers = {
           "@type": "Offer",
           priceCurrency: "CAD",
-          price: v.special_price != null ? v.special_price : v.retail_price,
+          price: price,
           availability: "https://schema.org/InStock",
-        },
-      };
+        };
+      }
+      return node;
     });
     var script = document.createElement("script");
     script.type = "application/ld+json";
     script.id = "adaptus-inv-jsonld";
-    script.textContent = JSON.stringify(graph.length === 1 ? graph[0] : graph);
+    script.textContent = JSON.stringify(graph.length === 1 ? graph[0] : graph)
+      .replace(/</g, "\\u003c")
+      .replace(/>/g, "\\u003e")
+      .replace(/&/g, "\\u0026");
     document.head.appendChild(script);
   }
 
-  function render(el, payload) {
+  function render(el, payload, origin) {
     var vehicles = payload.data || [];
     var dealer = payload.dealership || {};
     var vdpBase = el.getAttribute("data-vdp-base") || "";
@@ -142,11 +169,12 @@
         if (v.stock_number) metaParts.push("Stock #" + v.stock_number);
         if (v.odometer != null) metaParts.push(formatMiles(v.odometer));
         if (v.exterior_color) metaParts.push(v.exterior_color);
+        var defaultVdpBase = (origin || "").replace(/\/$/, "");
         var href = vdpBase
           ? vdpBase.replace(/\/$/, "") +
             (vdpBase.indexOf("?") >= 0 ? "&" : "/") +
             encodeURIComponent(v.id)
-          : "#";
+          : defaultVdpBase + "/embed/vehicles/" + encodeURIComponent(v.id);
         var tag = vdpBase ? "a" : "div";
         var hrefAttr = vdpBase ? ' href="' + esc(href) + '" target="_blank" rel="noopener"' : "";
         return (
@@ -223,7 +251,7 @@
         });
       })
       .then(function (payload) {
-        render(el, payload);
+        render(el, payload, origin);
       })
       .catch(function (err) {
         el.innerHTML =

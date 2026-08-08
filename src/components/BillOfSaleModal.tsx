@@ -61,7 +61,7 @@ interface Payment {
     payment_date: string;
 }
 
-interface BillOfSale {
+export interface BillOfSale {
     id?: string;
     deal_id?: string;
     vehicle_id?: string;
@@ -148,7 +148,14 @@ interface BillOfSale {
 
 interface BillOfSaleModalProps {
     mode: "add" | "edit" | "view";
-    deal?: any;
+    deal?: {
+        id?: string;
+    vehicle_id?: string | null;
+    customer_id?: string | null;
+    vehicle?: Vehicle | null;
+    customer?: Customer | null;
+    deal_date?: string;
+};
     billOfSale?: BillOfSale | null;
     onClose: () => void;
     onSuccess: () => void;
@@ -233,49 +240,7 @@ export default function BillOfSaleModal({
         gst_enabled: true
     });
 
-    useEffect(() => {
-        // If editing or viewing existing bill of sale
-        if (initialBillOfSale) {
-            setFormData(initialBillOfSale);
-            setPayments(initialBillOfSale.payments || []);
-            setSaleType((initialBillOfSale.sale_type as any) || "Cash");
-            setGstEnabled(initialBillOfSale.gst_enabled ?? true);
-
-            if (initialBillOfSale.vehicle_id) {
-                fetchVehicle(initialBillOfSale.vehicle_id);
-            }
-            if (initialBillOfSale.customer_id) {
-                fetchCustomer(initialBillOfSale.customer_id);
-            }
-        }
-        // If creating from a deal
-        else if (deal) {
-            if (deal.vehicle) {
-                setVehicle(deal.vehicle);
-                setFormData((prev) => ({
-                    ...prev,
-                    vehicle_id: deal.vehicle_id,
-                    vehicle_description: `${deal.vehicle.year} ${deal.vehicle.make} ${deal.vehicle.model}`,
-                    price_vehicle: deal.vehicle.retail_price || 0
-                }));
-            }
-            if (deal.customer) {
-                setCustomer(deal.customer);
-                setFormData((prev) => ({
-                    ...prev,
-                    customer_id: deal.customer_id
-                }));
-            }
-            if (deal.id) {
-                setFormData((prev) => ({
-                    ...prev,
-                    deal_id: deal.id
-                }));
-            }
-        }
-    }, [deal, initialBillOfSale]);
-
-    const fetchVehicle = async (vehicleId: string) => {
+    async function fetchVehicle(vehicleId: string) {
         try {
             const response = await fetch(`/api/vehicles/${vehicleId}`, {
             });
@@ -290,9 +255,9 @@ export default function BillOfSaleModal({
         } catch (err) {
             console.error("Error fetching vehicle:", err);
         }
-    };
+    }
 
-    const fetchCustomer = async (customerId: string) => {
+    async function fetchCustomer(customerId: string) {
         try {
             const response = await fetch(`/api/customers/${customerId}`, {
             });
@@ -303,7 +268,56 @@ export default function BillOfSaleModal({
         } catch (err) {
             console.error("Error fetching customer:", err);
         }
-    };
+    }
+
+    useEffect(() => {
+        // Defer form initialization one tick so the synchronous setState
+        // calls don't run while React is committing the effect.
+        const t = setTimeout(() => {
+            // If editing or viewing existing bill of sale
+            if (initialBillOfSale) {
+                setFormData(initialBillOfSale);
+                setPayments(initialBillOfSale.payments || []);
+                setSaleType((initialBillOfSale.sale_type as "Cash" | "Finance" | "BHPH") || "Cash");
+                setGstEnabled(initialBillOfSale.gst_enabled ?? true);
+
+                if (initialBillOfSale.vehicle_id) {
+                    void fetchVehicle(initialBillOfSale.vehicle_id);
+                }
+                if (initialBillOfSale.customer_id) {
+                    void fetchCustomer(initialBillOfSale.customer_id);
+                }
+            }
+            // If creating from a deal
+            else if (deal) {
+                const dealVehicle = deal.vehicle;
+                if (dealVehicle) {
+                    setVehicle(dealVehicle);
+                    setFormData((prev) => ({
+                        ...prev,
+                        vehicle_id: deal.vehicle_id ?? undefined,
+                        vehicle_description: `${dealVehicle.year} ${dealVehicle.make} ${dealVehicle.model}`,
+                        price_vehicle: dealVehicle.retail_price || 0
+                    }));
+                }
+                const dealCustomer = deal.customer;
+                if (dealCustomer) {
+                    setCustomer(dealCustomer);
+                    setFormData((prev) => ({
+                        ...prev,
+                        customer_id: deal.customer_id ?? undefined
+                    }));
+                }
+                if (deal.id) {
+                    setFormData((prev) => ({
+                        ...prev,
+                        deal_id: deal.id
+                    }));
+                }
+            }
+        }, 0);
+        return () => clearTimeout(t);
+    }, [deal, initialBillOfSale]);
 
     const calculateTotals = () => {
         const priceVehicle = formData.price_vehicle || 0;
@@ -368,17 +382,14 @@ export default function BillOfSaleModal({
         };
     };
 
-    const handleChange = (field: keyof BillOfSale, value: any) => {
-        setFormData((prev) => ({
-            ...prev,
-            [field]: value
-        }));
+    const handleChange = (field: keyof BillOfSale, value: unknown) => {
+        setFormData((prev) => ({ ...prev, [field]: value }) as BillOfSale);
     };
 
-    const handlePaymentChange = (index: number, field: keyof Payment, value: any) => {
+    const handlePaymentChange = (index: number, field: keyof Payment, value: unknown) => {
         setPayments((prev) => {
             const updated = [...prev];
-            updated[index] = { ...updated[index], [field]: value };
+            updated[index] = { ...updated[index], [field]: value } as Payment;
             return updated;
         });
     };
@@ -475,7 +486,7 @@ export default function BillOfSaleModal({
         setPayments([]);
     };
 
-    const handleSave = async (asSold: boolean = false) => {
+    async function handleSave(asSold: boolean = false) {
         setLoading(true);
         setError(null);
         setSavingType(asSold ? "sold" : "draft");
@@ -540,9 +551,9 @@ export default function BillOfSaleModal({
         } finally {
             setLoading(false);
         }
-    };
+    }
 
-    const handleGeneratePdf = async () => {
+    async function handleGeneratePdf() {
         try {
             const totalsNow = calculateTotals();
             let dealer: {
@@ -622,11 +633,23 @@ export default function BillOfSaleModal({
                 tradeInDisclosure: formData.trade_in_disclosure,
                 paymentStatus: totalsNow.paymentStatus,
                 dealDate: deal?.deal_date,
+                financing: {
+                    amountToFinance: totalsNow.amountToFinance ?? formData.amount_to_finance,
+                    paymentType: formData.payment_type,
+                    costOfBorrowing: formData.cost_of_borrowing,
+                    paymentStartDate: formData.payment_start_date,
+                    payments: payments.map((p) => ({
+                        paymentName: p.payment_name,
+                        paymentType: p.payment_type,
+                        amount: p.amount,
+                        paymentDate: p.payment_date,
+                    })),
+                },
             });
         } catch (err) {
             setError(err instanceof Error ? err.message : "Could not generate PDF");
         }
-    };
+    }
 
     const totals = calculateTotals();
     const totalPayments = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
@@ -695,10 +718,10 @@ export default function BillOfSaleModal({
                     <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
                         <div className="flex items-center gap-4">
                             <div className="flex bg-white rounded-lg p-1 border border-gray-200">
-                                {["Cash", "Finance", "BHPH"].map((type) => (
+                                {(["Cash", "Finance", "BHPH"] as const).map((type) => (
                                     <button
                                         key={type}
-                                        onClick={() => !isReadOnly && setSaleType(type as any)}
+                                        onClick={() => !isReadOnly && setSaleType(type)}
                                         disabled={isReadOnly}
                                         className={`px-4 min-h-10 py-2 text-sm rounded-md transition-colors ${saleType === type
                                                 ? "bg-blue-600 text-white"
@@ -733,16 +756,16 @@ export default function BillOfSaleModal({
                     {/* Tabs */}
                     {!isReadOnly && (
                         <div className="px-6 py-2 bg-white border-b border-gray-200 flex gap-4">
-                            {[
+                            {([
                                 { id: "pricing", label: "Pricing" },
                                 { id: "fees", label: "Additional Fees" },
                                 { id: "financing", label: "Financing" },
                                 { id: "tradein", label: "Trade-In" },
                                 { id: "payments", label: `Payments (${payments.length})` },
-                            ].map((tab) => (
+                            ] as const).map((tab) => (
                                 <button
                                     key={tab.id}
-                                    onClick={() => setActiveTab(tab.id as any)}
+                                    onClick={() => setActiveTab(tab.id)}
                                     className={`min-h-10 px-3 py-2 text-sm rounded-lg transition-colors ${activeTab === tab.id
                                             ? "bg-green-100 text-green-700 font-medium"
                                             : "text-gray-600 hover:bg-gray-100"

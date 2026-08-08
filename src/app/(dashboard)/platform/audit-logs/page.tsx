@@ -24,7 +24,7 @@ interface AuditLog {
     actor_role: string;
     target_id: string;
     target_email: string;
-    metadata: any;
+    metadata: Record<string, unknown>;
     ip_address: string;
     user_agent: string;
     created_at: string;
@@ -42,10 +42,10 @@ export default function AuditLogsPage() {
     const [entityFilter, setEntityFilter] = useState("");
 
     useEffect(() => {
-        fetchAuditLogs();
+        void fetchAuditLogs();
     }, [offset, limit]);
 
-    const fetchAuditLogs = async () => {
+    async function fetchAuditLogs() {
         try {
             setLoading(true);
             setError(null);
@@ -78,13 +78,13 @@ export default function AuditLogsPage() {
             const data = await response.json();
             setLogs(data.data || []);
             setCount(data.count || 0);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Error fetching audit logs:", err);
-            setError(err.message || "Failed to load audit logs");
+            setError(err instanceof Error ? err.message : "Failed to load audit logs");
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
@@ -124,7 +124,7 @@ export default function AuditLogsPage() {
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900">Audit Logs</h1>
                     <p className="text-sm text-gray-500 mt-1">
-                        Track all administrative actions across the platform
+                        Read-only log of platform admin actions (no edit or Save)
                     </p>
                 </div>
                 <button

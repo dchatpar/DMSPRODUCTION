@@ -37,7 +37,7 @@ export default function ResetPasswordPage() {
         fetchUsers();
     }, []);
 
-    const fetchUsers = async () => {
+    async function fetchUsers() {
         try {
             setLoading(true);
             setError(null);
@@ -60,15 +60,15 @@ export default function ResetPasswordPage() {
 
             const data = await response.json();
             setUsers(data.data || []);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Error fetching users:", err);
-            setError(err.message || "Failed to load users");
+            setError(err instanceof Error ? err.message : "Failed to load users");
         } finally {
             setLoading(false);
         }
-    };
+    }
 
-    const handleSearch = async (e: React.FormEvent) => {
+    async function handleSearch(e: React.FormEvent) {
         e.preventDefault();
         if (!search.trim()) {
             setSearchResults([]);
@@ -84,14 +84,14 @@ export default function ResetPasswordPage() {
 
             const data = await response.json();
             setSearchResults(data.data || []);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Error searching users:", err);
         } finally {
             setSearching(false);
         }
-    };
+    }
 
-    const handleResetPassword = async (userId: string) => {
+    async function handleResetPassword(userId: string) {
         setResetting(userId);
         setError(null);
         setSuccess(null);
@@ -115,13 +115,13 @@ export default function ResetPasswordPage() {
                 setTempPassword(data.temporary_password);
             }
             setSuccess(`Password reset successfully for ${data.message?.replace("Password reset successfully for ", "")}`);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Error resetting password:", err);
-            setError(err.message || "Failed to reset password");
+            setError(err instanceof Error ? err.message : "Failed to reset password");
         } finally {
             setResetting(null);
         }
-    };
+    }
 
     const copyToClipboard = (text: string) => {
         navigator.clipboard.writeText(text);

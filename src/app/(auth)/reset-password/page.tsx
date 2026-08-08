@@ -32,7 +32,7 @@ function ResetPasswordForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const onSubmit = async (e: React.FormEvent) => {
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
@@ -56,7 +56,7 @@ function ResetPasswordForm() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background px-5 py-12 text-foreground">

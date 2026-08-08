@@ -38,7 +38,7 @@ export default function FeatureFlagsPage() {
         fetchFlags();
     }, []);
 
-    const fetchFlags = async () => {
+    async function fetchFlags() {
         try {
             setLoading(true);
             setError(null);
@@ -61,15 +61,15 @@ export default function FeatureFlagsPage() {
 
             const data = await response.json();
             setFlags(data.data || []);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Error fetching feature flags:", err);
-            setError(err.message || "Failed to load feature flags");
+            setError(err instanceof Error ? err.message : "Failed to load feature flags");
         } finally {
             setLoading(false);
         }
-    };
+    }
 
-    const toggleFlag = async (flag: FeatureFlag) => {
+    async function toggleFlag(flag: FeatureFlag) {
         try {
             setUpdating(flag.key);
             setSuccess(null);
@@ -94,13 +94,13 @@ export default function FeatureFlagsPage() {
 
             setSuccess(`${flag.name} ${!flag.enabled ? 'enabled' : 'disabled'} successfully`);
             setTimeout(() => setSuccess(null), 3000);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Error updating feature flag:", err);
-            setError(err.message || "Failed to update feature flag");
+            setError(err instanceof Error ? err.message : "Failed to update feature flag");
         } finally {
             setUpdating(null);
         }
-    };
+    }
 
     const filteredFlags = flags.filter(flag =>
         flag.name.toLowerCase().includes(search.toLowerCase()) ||

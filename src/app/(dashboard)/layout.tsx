@@ -6,6 +6,7 @@ import { TopHeader } from "@/src/components/TopHeader";
 import { MobileBottomNav } from "@/src/components/MobileBottomNav";
 import { ThemeProvider } from "@/src/components/ThemeProvider";
 import { TrialBanner } from "@/src/components/TrialBanner";
+import { ImpersonationBanner } from "@/src/components/ImpersonationBanner";
 import { TrialExpiredLock } from "@/src/components/TrialExpiredLock";
 import { FlashAiProvider } from "@/src/components/ai/FlashAiProvider";
 import { cn } from "@/src/lib/utils";
@@ -35,6 +36,7 @@ export default function DashboardLayout({
                     <Sidebar />
                     <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
                         {!isIntakeWizard && <TopHeader />}
+                        <ImpersonationBanner />
                         <TrialBanner />
                         <main
                             className={cn(

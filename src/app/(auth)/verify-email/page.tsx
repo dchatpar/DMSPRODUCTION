@@ -36,7 +36,7 @@ function VerifyEmailForm() {
   const [resending, setResending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const verify = async (e: React.FormEvent) => {
+  async function verify(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
@@ -56,9 +56,9 @@ function VerifyEmailForm() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const resend = async () => {
+  async function resend() {
     setResending(true);
     setError(null);
     try {
@@ -84,7 +84,7 @@ function VerifyEmailForm() {
     } finally {
       setResending(false);
     }
-  };
+  }
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background px-5 py-12 text-foreground">

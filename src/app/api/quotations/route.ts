@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
             .from("quotations")
             .select(`
                 *,
-                vehicle:vehicles(id, vin, year, make, model, retail_price, image_gallery, status),
+                vehicle:vehicles(id, vin, year, make, model, stock_number, retail_price, image_gallery, status),
                 customer:customers(id, name, email, phone),
                 salesperson:users!quotations_salesperson_id_fkey(id, full_name, email)
             `, { count: "exact" })
@@ -174,7 +174,7 @@ export async function POST(req: NextRequest) {
             .insert(row)
             .select(`
                 *,
-                vehicle:vehicles(id, vin, year, make, model, retail_price, image_gallery, status),
+                vehicle:vehicles(id, vin, year, make, model, stock_number, retail_price, image_gallery, status),
                 customer:customers(id, name, email, phone),
                 salesperson:users!quotations_salesperson_id_fkey(id, full_name, email)
             `)

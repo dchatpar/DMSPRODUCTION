@@ -35,7 +35,7 @@ export default function RegisterPage() {
   const set = (key: keyof typeof form, value: string | boolean) =>
     setForm((f) => ({ ...f, [key]: value }));
 
-  const onSubmit = async (e: React.FormEvent) => {
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     if (!form.accept_terms) {
@@ -87,7 +87,7 @@ export default function RegisterPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   return (
     <div className="min-h-dvh bg-background px-5 py-10 text-foreground">

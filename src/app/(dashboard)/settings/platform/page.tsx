@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import {
     Settings,
     Building2,
@@ -12,12 +13,11 @@ import {
     Database,
     Loader2,
     AlertCircle,
-    CheckCircle,
     RefreshCw,
-    Save,
-    Key
+    Key,
+    Flag,
+    ExternalLink,
 } from "lucide-react";
-import { apiFetch } from "@/src/lib/fetch";
 
 interface PlatformStats {
     total_dealerships: number;
@@ -28,46 +28,37 @@ interface PlatformStats {
     total_revenue: number;
 }
 
-interface PlatformSettings {
-    platform_name: string;
-    platform_email: string;
-    support_email: string;
-    maintenance_mode: boolean;
-    registration_enabled: boolean;
-    require_email_verification: boolean;
-    default_plan: string;
-    trial_days: number;
-}
+type DbStatus = "not_probed" | "healthy" | "unreachable";
+
+/** Display-only defaults — no persistence API exists for these fields. */
+const DISPLAY_SETTINGS = {
+    platform_name: "AdaptUs DMS",
+    platform_email: "admin@adaptus.com",
+    support_email: "support@adaptus.com",
+    maintenance_mode: false,
+    registration_enabled: true,
+    require_email_verification: true,
+    default_plan: "Basic",
+    trial_days: 14,
+} as const;
 
 export default function PlatformSettingsPage() {
     const [stats, setStats] = useState<PlatformStats | null>(null);
-    const [settings, setSettings] = useState<PlatformSettings>({
-        platform_name: "AdaptUs DMS",
-        platform_email: "admin@adaptus.com",
-        support_email: "support@adaptus.com",
-        maintenance_mode: false,
-        registration_enabled: true,
-        require_email_verification: true,
-        default_plan: "Basic",
-        trial_days: 14
-    });
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [success, setSuccess] = useState<string | null>(null);
-    const [saving, setSaving] = useState(false);
+    const [dbStatus, setDbStatus] = useState<DbStatus>("not_probed");
 
     useEffect(() => {
-        fetchPlatformData();
+        void fetchPlatformData();
     }, []);
 
-    const fetchPlatformData = async () => {
+    async function fetchPlatformData() {
         try {
             setLoading(true);
             setError(null);
+            setDbStatus("not_probed");
 
-            // Check if user is platform admin
-            const meResponse = await fetch("/api/me", {
-            });
+            const meResponse = await fetch("/api/me", {});
 
             if (!meResponse.ok) {
                 throw new Error("Failed to get user info");
@@ -80,59 +71,72 @@ export default function PlatformSettingsPage() {
                 return;
             }
 
-            // Fetch platform stats from dealerships API
-            const dealershipsResponse = await fetch("/api/dealerships", {
-            });
+            // Probe API liveness + authenticated dealerships read as DB health signal
+            const [healthSettled, dealershipsSettled] = await Promise.allSettled([
+                fetch("/api/health", { cache: "no-store" }),
+                fetch("/api/dealerships", {}),
+            ]);
 
-            if (dealershipsResponse.ok) {
+            const healthOk =
+                healthSettled.status === "fulfilled" && healthSettled.value.ok;
+            const dealershipsResponse =
+                dealershipsSettled.status === "fulfilled"
+                    ? dealershipsSettled.value
+                    : null;
+
+            if (dealershipsResponse?.ok) {
+                setDbStatus("healthy");
                 const data = await dealershipsResponse.json();
                 const dealerships = data.data || [];
 
-                // Calculate stats
                 setStats({
                     total_dealerships: dealerships.length,
-                    active_dealerships: dealerships.filter((d: any) => d.status === "Active").length,
-                    trial_dealerships: dealerships.filter((d: any) => d.status === "Trial").length,
-                    suspended_dealerships: dealerships.filter((d: any) => d.status === "Suspended").length,
-                    total_users: dealerships.reduce((sum: number, d: any) => sum + (d.user_count || 0), 0),
-                    total_revenue: dealerships.reduce((sum: number, d: any) => {
-                        const price = d.subscription?.plan_price || 0;
-                        return sum + price;
-                    }, 0)
+                    active_dealerships: dealerships.filter(
+                        (d: { status?: string }) => d.status === "Active"
+                    ).length,
+                    trial_dealerships: dealerships.filter(
+                        (d: { status?: string }) => d.status === "Trial"
+                    ).length,
+                    suspended_dealerships: dealerships.filter(
+                        (d: { status?: string }) => d.status === "Suspended"
+                    ).length,
+                    total_users: dealerships.reduce(
+                        (sum: number, d: { user_count?: number }) =>
+                            sum + (d.user_count || 0),
+                        0
+                    ),
+                    total_revenue: dealerships.reduce(
+                        (
+                            sum: number,
+                            d: { subscription?: { plan_price?: number } }
+                        ) => {
+                            const price = d.subscription?.plan_price || 0;
+                            return sum + price;
+                        },
+                        0
+                    ),
                 });
+            } else if (!healthOk) {
+                setDbStatus("unreachable");
+            } else {
+                // Service up but dealership query failed — treat as unreachable DB path
+                setDbStatus("unreachable");
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Error fetching platform data:", err);
-            setError(err.message || "Failed to load platform data");
+            setDbStatus("unreachable");
+            setError(
+                err instanceof Error ? err.message : "Failed to load platform data"
+            );
         } finally {
             setLoading(false);
         }
-    };
-
-    const handleSettingChange = (key: keyof PlatformSettings, value: any) => {
-        setSettings((prev) => ({ ...prev, [key]: value }));
-    };
-
-    const handleSaveSettings = async () => {
-        setError(null);
-        setSuccess(null);
-        setSaving(true);
-        try {
-            // No platform-settings persistence API yet — do not fake success.
-            await new Promise((resolve) => setTimeout(resolve, 300));
-            setError(
-                "Platform settings are not persisted yet. Contact AdaptUs ops to change maintenance mode, trial days, or branding."
-            );
-            setSuccess(null);
-        } finally {
-            setSaving(false);
-        }
-    };
+    }
 
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat("en-US", {
             style: "currency",
-            currency: "USD"
+            currency: "USD",
         }).format(amount);
     };
 
@@ -156,14 +160,15 @@ export default function PlatformSettingsPage() {
         );
     }
 
+    const s = DISPLAY_SETTINGS;
+
     return (
         <div className="min-h-screen bg-gray-50">
-            {/* Page Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900">Platform Settings</h1>
                     <p className="text-sm text-gray-500 mt-1">
-                        Configure platform-wide settings and preferences
+                        Platform overview and read-only defaults
                     </p>
                 </div>
                 <button
@@ -175,7 +180,6 @@ export default function PlatformSettingsPage() {
                 </button>
             </div>
 
-            {/* Content */}
             <div className="px-6 py-6">
                 {error && (
                     <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
@@ -184,40 +188,48 @@ export default function PlatformSettingsPage() {
                     </div>
                 )}
 
-                {success && (
-                    <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3">
-                        <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
-                        <p className="text-sm text-green-600">{success}</p>
-                    </div>
-                )}
+                <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                    <p className="text-sm text-slate-800 font-medium">Read-only — not persisted</p>
+                    <p className="text-sm text-slate-600 mt-1">
+                        There is no platform-settings save API. Branding, maintenance mode, trial
+                        days, and registration toggles below are display defaults only. Runtime
+                        feature toggles live on{" "}
+                        <Link
+                            href="/platform/feature-flags"
+                            className="text-blue-600 hover:underline font-medium"
+                        >
+                            Feature Flags
+                        </Link>
+                        .
+                    </p>
+                </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Main Settings */}
                     <div className="lg:col-span-2 space-y-6">
-                        {/* General Settings */}
                         <div className="bg-white rounded-xl border border-gray-200">
                             <div className="px-6 py-4 border-b border-gray-200">
                                 <div className="flex items-center gap-3">
                                     <Settings className="w-5 h-5 text-gray-500" />
-                                    <h2 className="text-lg font-semibold text-gray-900">General Settings</h2>
+                                    <h2 className="text-lg font-semibold text-gray-900">
+                                        General (defaults)
+                                    </h2>
                                 </div>
                             </div>
 
                             <div className="p-6 space-y-4">
-                                {/* Platform Name */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
                                         Platform Name
                                     </label>
                                     <input
                                         type="text"
-                                        value={settings.platform_name}
-                                        onChange={(e) => handleSettingChange("platform_name", e.target.value)}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        value={s.platform_name}
+                                        readOnly
+                                        disabled
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-700 cursor-not-allowed"
                                     />
                                 </div>
 
-                                {/* Platform Email */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
                                         Platform Email
@@ -226,14 +238,14 @@ export default function PlatformSettingsPage() {
                                         <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                         <input
                                             type="email"
-                                            value={settings.platform_email}
-                                            onChange={(e) => handleSettingChange("platform_email", e.target.value)}
-                                            className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            value={s.platform_email}
+                                            readOnly
+                                            disabled
+                                            className="w-full pl-10 pr-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-700 cursor-not-allowed"
                                         />
                                     </div>
                                 </div>
 
-                                {/* Support Email */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
                                         Support Email
@@ -242,178 +254,172 @@ export default function PlatformSettingsPage() {
                                         <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                         <input
                                             type="email"
-                                            value={settings.support_email}
-                                            onChange={(e) => handleSettingChange("support_email", e.target.value)}
-                                            className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            value={s.support_email}
+                                            readOnly
+                                            disabled
+                                            className="w-full pl-10 pr-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-700 cursor-not-allowed"
                                         />
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        {/* Registration Settings */}
                         <div className="bg-white rounded-xl border border-gray-200">
                             <div className="px-6 py-4 border-b border-gray-200">
                                 <div className="flex items-center gap-3">
                                     <Users className="w-5 h-5 text-gray-500" />
-                                    <h2 className="text-lg font-semibold text-gray-900">Registration & Access</h2>
+                                    <h2 className="text-lg font-semibold text-gray-900">
+                                        Registration & Access (defaults)
+                                    </h2>
                                 </div>
                             </div>
 
                             <div className="p-6 space-y-4">
-                                {/* Registration Enabled */}
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <p className="font-medium text-gray-900">Allow New Dealerships</p>
-                                        <p className="text-sm text-gray-500">Let new dealerships register on the platform</p>
-                                    </div>
-                                    <button
-                                        onClick={() => handleSettingChange("registration_enabled", !settings.registration_enabled)}
-                                        className={`relative w-12 h-6 rounded-full transition-colors ${
-                                            settings.registration_enabled ? "bg-blue-600" : "bg-gray-300"
-                                        }`}
+                                {(
+                                    [
+                                        {
+                                            label: "Allow New Dealerships",
+                                            hint: "Let new dealerships register on the platform",
+                                            on: s.registration_enabled,
+                                        },
+                                        {
+                                            label: "Require Email Verification",
+                                            hint: "New users must verify their email",
+                                            on: s.require_email_verification,
+                                        },
+                                        {
+                                            label: "Maintenance Mode",
+                                            hint: "Disable platform access for all users",
+                                            on: s.maintenance_mode,
+                                            danger: true,
+                                        },
+                                    ] as const
+                                ).map((row) => (
+                                    <div
+                                        key={row.label}
+                                        className="flex items-center justify-between opacity-80"
                                     >
+                                        <div>
+                                            <p className="font-medium text-gray-900">{row.label}</p>
+                                            <p className="text-sm text-gray-500">{row.hint}</p>
+                                        </div>
                                         <span
-                                            className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                                                settings.registration_enabled ? "translate-x-6" : ""
+                                            className={`relative w-12 h-6 rounded-full ${
+                                                row.on
+                                                    ? "danger" in row && row.danger
+                                                        ? "bg-red-600"
+                                                        : "bg-blue-600"
+                                                    : "bg-gray-300"
                                             }`}
-                                        />
-                                    </button>
-                                </div>
-
-                                {/* Email Verification */}
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <p className="font-medium text-gray-900">Require Email Verification</p>
-                                        <p className="text-sm text-gray-500">New users must verify their email</p>
+                                            aria-hidden
+                                        >
+                                            <span
+                                                className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full ${
+                                                    row.on ? "translate-x-6" : ""
+                                                }`}
+                                            />
+                                        </span>
                                     </div>
-                                    <button
-                                        onClick={() => handleSettingChange("require_email_verification", !settings.require_email_verification)}
-                                        className={`relative w-12 h-6 rounded-full transition-colors ${
-                                            settings.require_email_verification ? "bg-blue-600" : "bg-gray-300"
-                                        }`}
-                                    >
-                                        <span
-                                            className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                                                settings.require_email_verification ? "translate-x-6" : ""
-                                            }`}
-                                        />
-                                    </button>
-                                </div>
-
-                                {/* Maintenance Mode */}
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <p className="font-medium text-gray-900">Maintenance Mode</p>
-                                        <p className="text-sm text-gray-500">Disable platform access for all users</p>
-                                    </div>
-                                    <button
-                                        onClick={() => handleSettingChange("maintenance_mode", !settings.maintenance_mode)}
-                                        className={`relative w-12 h-6 rounded-full transition-colors ${
-                                            settings.maintenance_mode ? "bg-red-600" : "bg-gray-300"
-                                        }`}
-                                    >
-                                        <span
-                                            className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                                                settings.maintenance_mode ? "translate-x-6" : ""
-                                            }`}
-                                        />
-                                    </button>
-                                </div>
+                                ))}
                             </div>
                         </div>
 
-                        {/* Subscription Defaults */}
                         <div className="bg-white rounded-xl border border-gray-200">
                             <div className="px-6 py-4 border-b border-gray-200">
                                 <div className="flex items-center gap-3">
                                     <CreditCard className="w-5 h-5 text-gray-500" />
-                                    <h2 className="text-lg font-semibold text-gray-900">Subscription Defaults</h2>
+                                    <h2 className="text-lg font-semibold text-gray-900">
+                                        Subscription Defaults
+                                    </h2>
                                 </div>
                             </div>
 
                             <div className="p-6 space-y-4">
-                                {/* Default Plan */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
                                         Default Plan for New Dealerships
                                     </label>
-                                    <select
-                                        value={settings.default_plan}
-                                        onChange={(e) => handleSettingChange("default_plan", e.target.value)}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    >
-                                        <option value="Basic">Basic (Free)</option>
-                                        <option value="Standard">Standard ($149/mo)</option>
-                                        <option value="Premium">Premium ($299/mo)</option>
-                                    </select>
+                                    <input
+                                        type="text"
+                                        value={`${s.default_plan} (Free)`}
+                                        readOnly
+                                        disabled
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-700 cursor-not-allowed"
+                                    />
                                 </div>
 
-                                {/* Trial Days */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
                                         Trial Period (Days)
                                     </label>
                                     <input
                                         type="number"
-                                        value={settings.trial_days}
-                                        onChange={(e) => handleSettingChange("trial_days", parseInt(e.target.value) || 0)}
-                                        min="0"
-                                        max="90"
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        value={s.trial_days}
+                                        readOnly
+                                        disabled
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-700 cursor-not-allowed"
                                     />
-                                    <p className="text-xs text-gray-500 mt-1">
-                                        Number of days new dealerships can use the platform for free
-                                    </p>
                                 </div>
                             </div>
                         </div>
 
-                        {/* Save Button */}
-                        <div className="flex items-center justify-end gap-3">
-                            <button
-                                onClick={handleSaveSettings}
-                                disabled={saving}
-                                className="inline-flex items-center gap-2 px-6 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                        <div className="flex flex-wrap items-center gap-3">
+                            <Link
+                                href="/platform/feature-flags"
+                                className="inline-flex items-center gap-2 px-5 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
                             >
-                                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                                Save Settings
-                            </button>
+                                <Flag className="w-4 h-4" />
+                                Open Feature Flags
+                                <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+                            </Link>
+                            <p className="text-xs text-gray-500">
+                                No Save button — nothing on this page writes to the database.
+                            </p>
                         </div>
                     </div>
 
-                    {/* Sidebar */}
                     <div className="space-y-6">
-                        {/* Platform Stats */}
                         <div className="bg-white rounded-xl border border-gray-200">
                             <div className="px-6 py-4 border-b border-gray-200">
                                 <div className="flex items-center gap-3">
                                     <Globe className="w-5 h-5 text-gray-500" />
-                                    <h3 className="text-sm font-semibold text-gray-900">Platform Overview</h3>
+                                    <h3 className="text-sm font-semibold text-gray-900">
+                                        Platform Overview
+                                    </h3>
                                 </div>
                             </div>
 
                             <div className="p-6 space-y-4">
                                 <div className="flex items-center justify-between">
                                     <span className="text-sm text-gray-500">Total Dealerships</span>
-                                    <span className="font-semibold text-gray-900">{stats?.total_dealerships || 0}</span>
+                                    <span className="font-semibold text-gray-900">
+                                        {stats?.total_dealerships || 0}
+                                    </span>
                                 </div>
                                 <div className="flex items-center justify-between">
                                     <span className="text-sm text-gray-500">Active</span>
-                                    <span className="font-semibold text-green-600">{stats?.active_dealerships || 0}</span>
+                                    <span className="font-semibold text-green-600">
+                                        {stats?.active_dealerships || 0}
+                                    </span>
                                 </div>
                                 <div className="flex items-center justify-between">
                                     <span className="text-sm text-gray-500">Trial</span>
-                                    <span className="font-semibold text-blue-600">{stats?.trial_dealerships || 0}</span>
+                                    <span className="font-semibold text-blue-600">
+                                        {stats?.trial_dealerships || 0}
+                                    </span>
                                 </div>
                                 <div className="flex items-center justify-between">
                                     <span className="text-sm text-gray-500">Suspended</span>
-                                    <span className="font-semibold text-red-600">{stats?.suspended_dealerships || 0}</span>
+                                    <span className="font-semibold text-red-600">
+                                        {stats?.suspended_dealerships || 0}
+                                    </span>
                                 </div>
                                 <div className="border-t border-gray-200 pt-4">
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm text-gray-500">Total Users</span>
-                                        <span className="font-semibold text-gray-900">{stats?.total_users || 0}</span>
+                                        <span className="font-semibold text-gray-900">
+                                            {stats?.total_users || 0}
+                                        </span>
                                     </div>
                                 </div>
                                 <div className="border-t border-gray-200 pt-4">
@@ -427,7 +433,6 @@ export default function PlatformSettingsPage() {
                             </div>
                         </div>
 
-                        {/* Quick Links */}
                         <div className="bg-white rounded-xl border border-gray-200 p-6">
                             <h3 className="text-sm font-medium text-gray-500 mb-4">Quick Links</h3>
                             <div className="space-y-2">
@@ -452,10 +457,16 @@ export default function PlatformSettingsPage() {
                                     <Users className="w-4 h-4" />
                                     All Users
                                 </a>
+                                <Link
+                                    href="/platform/feature-flags"
+                                    className="flex items-center gap-3 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
+                                >
+                                    <Flag className="w-4 h-4" />
+                                    Feature Flags
+                                </Link>
                             </div>
                         </div>
 
-                        {/* Security */}
                         <div className="bg-white rounded-xl border border-gray-200 p-6">
                             <h3 className="text-sm font-medium text-gray-500 mb-4">Security</h3>
                             <div className="space-y-3">
@@ -466,28 +477,35 @@ export default function PlatformSettingsPage() {
                                     <span className="text-gray-600">API Keys / Integrations</span>
                                     <Key className="w-4 h-4 text-gray-400" />
                                 </a>
-                                <div
-                                    className="flex items-center justify-between w-full text-sm opacity-60"
-                                    title="Coming soon"
+                                <Link
+                                    href="/platform/audit-logs"
+                                    className="flex items-center justify-between w-full text-sm hover:text-blue-600"
                                 >
-                                    <span className="text-gray-600">Audit Logs (coming soon)</span>
+                                    <span className="text-gray-600">Audit Logs</span>
                                     <Shield className="w-4 h-4 text-gray-400" />
-                                </div>
+                                </Link>
                                 <p className="text-xs text-gray-400 pt-1">
-                                    In-app notification delivery settings are not configurable yet;
-                                    the header bell shows overdue invoices, due follow-ups, and tasks.
+                                    Audit logs are read-only from existing{" "}
+                                    <code className="text-[10px]">audit_logs</code> records.
+                                    Notification delivery settings are not configurable yet; the
+                                    header bell shows overdue invoices, due follow-ups, and tasks.
                                 </p>
                             </div>
                         </div>
 
-                        {/* Database */}
                         <div className="bg-white rounded-xl border border-gray-200 p-6">
                             <h3 className="text-sm font-medium text-gray-500 mb-4">System</h3>
                             <div className="flex items-center gap-3">
                                 <Database className="w-5 h-5 text-gray-400" />
                                 <div>
                                     <p className="text-sm font-medium text-gray-900">Database Status</p>
-                                    <p className="text-xs text-green-600">Connected</p>
+                                    {dbStatus === "healthy" ? (
+                                        <p className="text-xs text-green-600">Healthy (probed)</p>
+                                    ) : dbStatus === "unreachable" ? (
+                                        <p className="text-xs text-red-600">Unreachable</p>
+                                    ) : (
+                                        <p className="text-xs text-amber-600">Not probed</p>
+                                    )}
                                 </div>
                             </div>
                         </div>

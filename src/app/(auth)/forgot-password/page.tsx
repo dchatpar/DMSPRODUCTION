@@ -14,7 +14,7 @@ export default function ForgotPasswordPage() {
   const [done, setDone] = useState(false);
   const [warning, setWarning] = useState<string | null>(null);
 
-  const onSubmit = async (e: React.FormEvent) => {
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setWarning(null);
@@ -44,7 +44,7 @@ export default function ForgotPasswordPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background px-5 py-12 text-foreground">

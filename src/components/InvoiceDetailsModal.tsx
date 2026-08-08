@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Edit, FileDown, Mail, Plus } from "lucide-react";
+import { Edit, FileDown, Mail, Plus, Printer } from "lucide-react";
 import { RecordDrawer } from "@/src/components/ui/RecordDrawer";
 import { RecordHeader } from "@/src/components/ui/RecordHeader";
 import {
@@ -17,7 +17,10 @@ import { RelationChip } from "@/src/components/ui/RelationChip";
 import { apiFetch } from "@/src/lib/fetch";
 import { toast } from "@/src/lib/toast";
 import {
+    downloadInvoicePdf,
     openInvoicePrintWindow,
+    parseInvoiceLineItems,
+    type InvoiceLineItem,
     type InvoicePdfPayload,
 } from "@/src/lib/invoice-pdf";
 
@@ -46,6 +49,7 @@ interface Invoice {
     amount_paid?: number | null;
     status: string;
     notes: string | null;
+    line_items?: unknown;
     created_at: string;
     customer: Customer | null;
 }
@@ -57,6 +61,16 @@ interface PaymentRow {
     category: string | null;
     transaction_date: string;
     created_at: string;
+}
+
+interface DealerFields {
+    dealerName: string | null;
+    dealerAddress: string | null;
+    dealerPhone: string | null;
+    dealerEmail: string | null;
+    dealerHst: string | null;
+    dealerLicence: string | null;
+    dealerLogoUrl: string | null;
 }
 
 interface InvoiceDetailsModalProps {
@@ -83,6 +97,53 @@ function formatCurrency(amount: number) {
     }).format(amount);
 }
 
+async function fetchDealerFields(): Promise<DealerFields> {
+    const empty: DealerFields = {
+        dealerName: null,
+        dealerAddress: null,
+        dealerPhone: null,
+        dealerEmail: null,
+        dealerHst: null,
+        dealerLicence: null,
+        dealerLogoUrl: null,
+    };
+    try {
+        const meRes = await fetch("/api/me", { credentials: "include" });
+        if (!meRes.ok) return empty;
+        const meJson = await meRes.json();
+        const d = meJson?.data?.dealership || meJson?.dealership;
+        if (!d) return empty;
+        const settings =
+            d.settings && typeof d.settings === "object"
+                ? (d.settings as Record<string, unknown>)
+                : {};
+        return {
+            dealerName: d.business_name || d.name || null,
+            dealerAddress: d.business_address || null,
+            dealerPhone: d.business_phone || null,
+            dealerEmail: d.business_email || null,
+            dealerLogoUrl: d.logo_url || null,
+            dealerLicence:
+                (typeof settings.dealer_license === "string"
+                    ? settings.dealer_license
+                    : null) ||
+                (typeof settings.license_number === "string"
+                    ? settings.license_number
+                    : null) ||
+                d.dealer_license ||
+                null,
+            dealerHst:
+                (typeof settings.hst_number === "string"
+                    ? settings.hst_number
+                    : null) ||
+                d.hst_number ||
+                null,
+        };
+    } catch {
+        return empty;
+    }
+}
+
 export default function InvoiceDetailsModal({
     invoice: initialInvoice,
     onClose,
@@ -92,6 +153,13 @@ export default function InvoiceDetailsModal({
     userPermissions = [],
 }: InvoiceDetailsModalProps) {
     const [invoice, setInvoice] = useState(initialInvoice);
+    // Keep local invoice state in sync when the parent passes a new one
+    // (React 19 "adjust state during render" pattern).
+    const [prevInitialInvoice, setPrevInitialInvoice] = useState(initialInvoice);
+    if (initialInvoice !== prevInitialInvoice) {
+        setPrevInitialInvoice(initialInvoice);
+        setInvoice(initialInvoice);
+    }
     const [payments, setPayments] = useState<PaymentRow[]>([]);
     const [loadingPayments, setLoadingPayments] = useState(true);
     const [busy, setBusy] = useState(false);
@@ -99,6 +167,7 @@ export default function InvoiceDetailsModal({
     const [payMethod, setPayMethod] = useState("E-Transfer");
     const [payNote, setPayNote] = useState("");
     const [showPayForm, setShowPayForm] = useState(false);
+    const [dealer, setDealer] = useState<DealerFields | null>(null);
 
     const canEdit =
         userRole === "Admin" ||
@@ -111,6 +180,10 @@ export default function InvoiceDetailsModal({
         invoice.status !== "Paid" &&
         invoice.status !== "Cancelled" &&
         new Date(invoice.due_date) < new Date();
+
+    const lineItems: InvoiceLineItem[] = parseInvoiceLineItems(
+        invoice.line_items
+    );
 
     const loadPayments = useCallback(async () => {
         try {
@@ -137,14 +210,26 @@ export default function InvoiceDetailsModal({
     }, [invoice.id]);
 
     useEffect(() => {
-        setInvoice(initialInvoice);
-    }, [initialInvoice]);
-
-    useEffect(() => {
-        void loadPayments();
+        // Defer so loadPayments' synchronous setState runs after commit.
+        const t = setTimeout(() => void loadPayments(), 0);
+        return () => clearTimeout(t);
     }, [loadPayments]);
 
-    const buildPdfPayload = (): InvoicePdfPayload => {
+    useEffect(() => {
+        let cancelled = false;
+        void (async () => {
+            const fields = await fetchDealerFields();
+            if (!cancelled) setDealer(fields);
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    const buildPdfPayload = async (): Promise<InvoicePdfPayload> => {
+        const dealerFields = dealer ?? (await fetchDealerFields());
+        if (!dealer) setDealer(dealerFields);
+
         const c = invoice.customer;
         const addr = [c?.address, c?.city, c?.province]
             .filter(Boolean)
@@ -156,6 +241,7 @@ export default function InvoiceDetailsModal({
             status: invoice.status,
             packageName: invoice.package_name,
             notes: invoice.notes,
+            paymentInstructions: invoice.notes,
             subtotal: Number(invoice.payment_amount) || 0,
             taxRate: Number(invoice.tax_rate) || 0,
             taxAmount: Number(invoice.tax_amount) || 0,
@@ -165,6 +251,14 @@ export default function InvoiceDetailsModal({
             customerEmail: c?.email,
             customerPhone: c?.phone,
             customerAddress: addr || null,
+            dealerName: dealerFields.dealerName,
+            dealerAddress: dealerFields.dealerAddress,
+            dealerPhone: dealerFields.dealerPhone,
+            dealerEmail: dealerFields.dealerEmail,
+            dealerHst: dealerFields.dealerHst,
+            dealerLicence: dealerFields.dealerLicence,
+            dealerLogoUrl: dealerFields.dealerLogoUrl,
+            lineItems,
             payments: payments.map((p) => ({
                 date: p.transaction_date,
                 amount: Number(p.amount) || 0,
@@ -174,17 +268,36 @@ export default function InvoiceDetailsModal({
         };
     };
 
-    const handlePrint = () => {
+    async function handleDownloadPdf() {
         try {
-            openInvoicePrintWindow(buildPdfPayload());
+            setBusy(true);
+            const payload = await buildPdfPayload();
+            await downloadInvoicePdf(payload);
+            toast.success("PDF downloaded");
         } catch (err) {
             toast.error(
-                err instanceof Error ? err.message : "Could not open PDF"
+                err instanceof Error ? err.message : "Could not download PDF"
             );
+        } finally {
+            setBusy(false);
         }
-    };
+    }
 
-    const handleEmail = async () => {
+    async function handlePrint() {
+        try {
+            setBusy(true);
+            const payload = await buildPdfPayload();
+            openInvoicePrintWindow(payload);
+        } catch (err) {
+            toast.error(
+                err instanceof Error ? err.message : "Could not open print view"
+            );
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    async function handleEmail() {
         try {
             setBusy(true);
             const res = await apiFetch<{
@@ -212,9 +325,9 @@ export default function InvoiceDetailsModal({
         } finally {
             setBusy(false);
         }
-    };
+    }
 
-    const handleRecordPayment = async () => {
+    async function handleRecordPayment() {
         const amount = parseFloat(payAmount);
         if (!Number.isFinite(amount) || amount <= 0) {
             toast.error("Enter a positive payment amount");
@@ -253,7 +366,7 @@ export default function InvoiceDetailsModal({
         } finally {
             setBusy(false);
         }
-    };
+    }
 
     return (
         <RecordDrawer
@@ -285,12 +398,22 @@ export default function InvoiceDetailsModal({
             actions={
                 <div className="flex flex-wrap items-center gap-1.5">
                     <Button
-                        variant="ghost"
+                        variant="primary"
                         size="sm"
                         leftIcon={<FileDown className="h-3.5 w-3.5" />}
-                        onClick={handlePrint}
+                        onClick={() => void handleDownloadPdf()}
+                        disabled={busy}
                     >
-                        PDF
+                        Download PDF
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        leftIcon={<Printer className="h-3.5 w-3.5" />}
+                        onClick={() => void handlePrint()}
+                        disabled={busy}
+                    >
+                        Print
                     </Button>
                     <Button
                         variant="ghost"
@@ -303,7 +426,7 @@ export default function InvoiceDetailsModal({
                     </Button>
                     {canEdit ? (
                         <Button
-                            variant="primary"
+                            variant="ghost"
                             size="sm"
                             leftIcon={<Edit className="h-3.5 w-3.5" />}
                             onClick={onEdit}
@@ -353,6 +476,19 @@ export default function InvoiceDetailsModal({
                             <PropertyEmpty />
                         )}
                     </PropertyRow>
+                    {lineItems.length > 0 ? (
+                        <PropertyRow label="Line items">
+                            <ul className="space-y-1 text-right text-sm">
+                                {lineItems.map((li, idx) => (
+                                    <li key={`${li.description}-${idx}`}>
+                                        {li.description}
+                                        {li.qty !== 1 ? ` × ${li.qty}` : ""}{" "}
+                                        · {formatCurrency(li.amount)}
+                                    </li>
+                                ))}
+                            </ul>
+                        </PropertyRow>
+                    ) : null}
                     <PropertyRow label="Subtotal">
                         {formatCurrency(invoice.payment_amount)}
                     </PropertyRow>

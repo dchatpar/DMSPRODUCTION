@@ -1,6 +1,7 @@
 /**
  * Browser print-to-PDF helper for Bill of Sale (no heavy PDF lib on CF Workers).
  * Phase 2 Lane B: dealer business_* / licence / HST block from settings when set.
+ * Financing schedule from modal fields — not a full UCDA/MVDA legal form.
  */
 
 export type BosPdfDealer = {
@@ -12,6 +13,21 @@ export type BosPdfDealer = {
     dealer_license?: string | null;
     /** HST / GST registration from business settings */
     hst_number?: string | null;
+};
+
+export type BosPdfPaymentRow = {
+    paymentName?: string;
+    paymentType?: string;
+    amount?: number;
+    paymentDate?: string;
+};
+
+export type BosPdfFinancing = {
+    amountToFinance?: number;
+    paymentType?: string;
+    costOfBorrowing?: number;
+    paymentStartDate?: string | null;
+    payments?: BosPdfPaymentRow[];
 };
 
 export type BosPdfPayload = {
@@ -35,6 +51,7 @@ export type BosPdfPayload = {
     dealDate?: string;
     /** Watermark for fixture / sample proofs */
     sampleBanner?: string;
+    financing?: BosPdfFinancing | null;
 };
 
 function money(n: number | undefined): string {
@@ -89,6 +106,73 @@ function dealerBusinessBlock(dealer: BosPdfDealer | null | undefined): string {
   </div>`;
 }
 
+function hasFinancingContent(fin: BosPdfFinancing | null | undefined): boolean {
+    if (!fin) return false;
+    if ((fin.amountToFinance ?? 0) > 0) return true;
+    if (fin.paymentType?.trim()) return true;
+    if ((fin.costOfBorrowing ?? 0) > 0) return true;
+    if (fin.paymentStartDate) return true;
+    if (fin.payments && fin.payments.length > 0) return true;
+    return false;
+}
+
+function financingBlock(fin: BosPdfFinancing | null | undefined): string {
+    if (!hasFinancingContent(fin) || !fin) return "";
+
+    const detailRows: string[] = [];
+    if ((fin.amountToFinance ?? 0) > 0 || fin.paymentType?.trim()) {
+        detailRows.push(
+            `<tr><td>Amount to finance</td><td class="amt">${money(fin.amountToFinance)}</td></tr>`
+        );
+    }
+    if (fin.paymentType?.trim()) {
+        detailRows.push(
+            `<tr><td>Payment frequency</td><td class="amt">${esc(fin.paymentType.trim())}</td></tr>`
+        );
+    }
+    if ((fin.costOfBorrowing ?? 0) > 0) {
+        detailRows.push(
+            `<tr><td>Cost of borrowing</td><td class="amt">${money(fin.costOfBorrowing)}</td></tr>`
+        );
+    }
+    if (fin.paymentStartDate) {
+        detailRows.push(
+            `<tr><td>Payment start date</td><td class="amt">${esc(fin.paymentStartDate)}</td></tr>`
+        );
+    }
+
+    const payments = fin.payments || [];
+    let scheduleHtml = "";
+    if (payments.length > 0) {
+        const rows = payments
+            .map(
+                (p) => `<tr>
+      <td>${esc(p.paymentName || "—")}</td>
+      <td>${esc(p.paymentType || "—")}</td>
+      <td class="amt">${money(p.amount)}</td>
+      <td class="amt">${esc(p.paymentDate || "—")}</td>
+    </tr>`
+            )
+            .join("\n    ");
+        scheduleHtml = `
+  <h3 class="subhead">Payment schedule</h3>
+  <table class="sched">
+    <thead>
+      <tr><th>Name</th><th>Type</th><th class="amt">Amount</th><th class="amt">Date</th></tr>
+    </thead>
+    <tbody>
+    ${rows}
+    </tbody>
+  </table>`;
+    }
+
+    return `
+  <h2>Financing</h2>
+  <p class="honesty">Informational schedule from deal data — not a certified UCDA / MVDA legal form.</p>
+  ${detailRows.length ? `<table>${detailRows.join("\n    ")}</table>` : ""}
+  ${scheduleHtml}`;
+}
+
 export function buildBosPrintHtml(data: BosPdfPayload): string {
     const banner = data.sampleBanner?.trim()
         ? `<div class="sample-banner">${esc(data.sampleBanner.trim())}</div>`
@@ -115,12 +199,17 @@ export function buildBosPrintHtml(data: BosPdfPayload): string {
   body { font-family: Georgia, serif; color: #111; margin: 32px; font-size: 13px; }
   h1 { font-size: 22px; margin: 0 0 4px; }
   h2 { font-size: 14px; margin: 24px 0 8px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+  h3.subhead { font-size: 12px; margin: 16px 0 6px; font-weight: 700; }
   .meta { color: #444; margin-bottom: 12px; }
   .dealer-block { border: 1px solid #ddd; padding: 12px; background: #fafafa; }
   .sample-banner { background: #fff3cd; border: 1px solid #e6c200; padding: 8px 12px; margin-bottom: 16px; font-weight: 700; }
+  .honesty { font-size: 11px; color: #666; font-style: italic; margin: 0 0 10px; }
   table { width: 100%; border-collapse: collapse; }
   td { padding: 6px 0; vertical-align: top; }
   td.amt { text-align: right; font-variant-numeric: tabular-nums; }
+  table.sched th, table.sched td { padding: 4px 6px; border-bottom: 1px solid #eee; text-align: left; }
+  table.sched th.amt, table.sched td.amt { text-align: right; }
+  table.sched th { font-size: 11px; text-transform: uppercase; color: #666; border-bottom: 1px solid #ccc; }
   .total { font-weight: 700; font-size: 15px; }
   .notes { white-space: pre-wrap; border: 1px solid #ddd; padding: 10px; margin-top: 8px; }
   .sig { margin-top: 48px; display: flex; gap: 48px; }
@@ -159,6 +248,8 @@ export function buildBosPrintHtml(data: BosPdfPayload): string {
     <tr class="total"><td>Balance due</td><td class="amt">${money(data.totalBalanceDue)}</td></tr>
     <tr><td>Payment status</td><td class="amt">${esc(data.paymentStatus || "—")}</td></tr>
   </table>
+
+  ${financingBlock(data.financing)}
 
   ${disclosureSections.join("\n  ")}
 

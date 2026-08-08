@@ -4,16 +4,20 @@ import { useEffect, useMemo, useState } from "react";
 import {
     Calculator,
     ClipboardCopy,
+    Download,
+    FileDown,
     FileText,
     Loader2,
     Mail,
     Plus,
+    Printer,
     RefreshCw,
     Search,
     Trash2,
     ArrowRightCircle,
     CheckCircle2,
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import { apiFetch } from "@/src/lib/fetch";
 import { toast } from "@/src/lib/toast";
 import { PageHeader } from "@/src/components/ui/PageHeader";
@@ -25,6 +29,12 @@ import { useRouter } from "next/navigation";
 import { buildQuotationShareText } from "@/src/lib/quotation-share";
 import { computePayment } from "@/src/lib/finance-calc";
 import { AiActionButton } from "@/src/components/ai/AiActionButton";
+import {
+    downloadQuotationPdf,
+    fetchQuotationDealerBranding,
+    openQuotationPrintWindow,
+    type QuotationPdfPayload,
+} from "@/src/lib/quotation-pdf";
 
 interface Vehicle {
     id: string;
@@ -34,6 +44,7 @@ interface Vehicle {
     model: string;
     retail_price: number;
     status: string;
+    stock_number?: string | null;
 }
 
 interface Customer {
@@ -87,6 +98,8 @@ export default function QuotationsPage() {
     const [saving, setSaving] = useState(false);
     const [convertingId, setConvertingId] = useState<string | null>(null);
     const [emailingId, setEmailingId] = useState<string | null>(null);
+    const [pdfBusyId, setPdfBusyId] = useState<string | null>(null);
+    const [exportLoading, setExportLoading] = useState(false);
     const [vehicles, setVehicles] = useState<Vehicle[]>([]);
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [coachObjection, setCoachObjection] = useState("price too high");
@@ -120,7 +133,7 @@ export default function QuotationsPage() {
         }).payment_amount;
     }, [form]);
 
-    const fetchQuotes = async () => {
+    async function fetchQuotes() {
         try {
             setLoading(true);
             let url = "/api/quotations?limit=100";
@@ -133,9 +146,9 @@ export default function QuotationsPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }
 
-    const fetchLookups = async () => {
+    async function fetchLookups() {
         try {
             const [vRes, cRes] = await Promise.all([
                 apiFetch<{ data: Vehicle[] }>("/api/vehicles?limit=200&status=Active"),
@@ -146,14 +159,18 @@ export default function QuotationsPage() {
         } catch {
             // lookups optional for list view
         }
-    };
+    }
 
     useEffect(() => {
-        void fetchQuotes();
+        // Defer to the next tick so the synchronous setState inside fetchQuotes
+        // doesn't run while React is still committing the effect.
+        const t = setTimeout(() => void fetchQuotes(), 0);
+        return () => clearTimeout(t);
     }, [statusFilter, searchTerm]);
 
     useEffect(() => {
-        void fetchLookups();
+        const t = setTimeout(() => void fetchLookups(), 0);
+        return () => clearTimeout(t);
     }, []);
 
     const handleVehicleSelect = (vehicleId: string) => {
@@ -165,7 +182,7 @@ export default function QuotationsPage() {
         }));
     };
 
-    const handleCreate = async (e: React.FormEvent) => {
+    async function handleCreate(e: React.FormEvent) {
         e.preventDefault();
         setSaving(true);
         try {
@@ -207,9 +224,9 @@ export default function QuotationsPage() {
         } finally {
             setSaving(false);
         }
-    };
+    }
 
-    const handleConvert = async (quote: Quotation) => {
+    async function handleConvert(quote: Quotation) {
         if (!quote.customer_id || !quote.vehicle_id) {
             toast.error("Link a customer and vehicle before converting");
             return;
@@ -237,9 +254,9 @@ export default function QuotationsPage() {
         } finally {
             setConvertingId(null);
         }
-    };
+    }
 
-    const handleDelete = async (id: string) => {
+    async function handleDelete(id: string) {
         if (!confirm("Delete this quotation?")) return;
         try {
             await apiFetch(`/api/quotations/${id}`, { method: "DELETE" });
@@ -248,10 +265,10 @@ export default function QuotationsPage() {
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "Delete failed");
         }
-    };
+    }
 
     /** Status-only — does not email. Use Email when Resend is configured. */
-    const handleMarkSent = async (id: string) => {
+    async function handleMarkSent(id: string) {
         try {
             await apiFetch(`/api/quotations/${id}`, {
                 method: "PATCH",
@@ -262,9 +279,9 @@ export default function QuotationsPage() {
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "Update failed");
         }
-    };
+    }
 
-    const handleCopyQuote = async (quote: Quotation) => {
+    async function handleCopyQuote(quote: Quotation) {
         const text = buildQuotationShareText({
             quoteNumber: quote.quote_number,
             status: quote.status,
@@ -288,9 +305,9 @@ export default function QuotationsPage() {
         } catch {
             toast.error("Copy failed");
         }
-    };
+    }
 
-    const handleEmailQuote = async (quote: Quotation) => {
+    async function handleEmailQuote(quote: Quotation) {
         setEmailingId(quote.id);
         try {
             const res = await apiFetch<{
@@ -312,15 +329,173 @@ export default function QuotationsPage() {
         } finally {
             setEmailingId(null);
         }
+    }
+
+    const buildQuotePdfPayload = async (
+        quote: Quotation
+    ): Promise<QuotationPdfPayload> => {
+        const dealer = await fetchQuotationDealerBranding();
+        const taxRate = quote.tax_rate ?? 13;
+        const adminFee = quote.admin_fee ?? 0;
+        const calc = computePayment({
+            sale_price: quote.sale_price || 0,
+            down_payment: quote.down_payment || 0,
+            trade_in_value: quote.trade_in_value || 0,
+            interest_rate: quote.interest_rate || 0,
+            term_months: quote.finance_term || 0,
+            tax_rate: taxRate,
+            admin_fee: adminFee,
+            payment_type: "monthly",
+        });
+        return {
+            quoteNumber: quote.quote_number,
+            status: quote.status,
+            createdAt: quote.created_at,
+            validUntil: quote.valid_until,
+            notes: quote.notes,
+            customerName: quote.customer?.name,
+            customerEmail: quote.customer?.email,
+            customerPhone: quote.customer?.phone,
+            vehicleLabel: quoteVehicleLabel(quote),
+            vin: quote.vehicle?.vin,
+            stockNumber: quote.vehicle?.stock_number,
+            salePrice: quote.sale_price || 0,
+            downPayment: quote.down_payment,
+            tradeInValue: quote.trade_in_value,
+            taxRate,
+            taxAmount: calc.tax_amount,
+            adminFee,
+            financedAmount: calc.financed_amount,
+            financeTerm: quote.finance_term,
+            interestRate: quote.interest_rate,
+            monthlyPayment: quote.monthly_payment ?? calc.payment_amount,
+            financeCompany: quote.finance_company,
+            dealer,
+        };
     };
+
+    async function handleDownloadPdf(quote: Quotation) {
+        setPdfBusyId(quote.id);
+        try {
+            const payload = await buildQuotePdfPayload(quote);
+            await downloadQuotationPdf(payload);
+            toast.success("PDF downloaded");
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "PDF download failed");
+        } finally {
+            setPdfBusyId(null);
+        }
+    }
+
+    async function handlePrintQuote(quote: Quotation) {
+        setPdfBusyId(quote.id);
+        try {
+            const payload = await buildQuotePdfPayload(quote);
+            openQuotationPrintWindow(payload);
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Could not open print window");
+        } finally {
+            setPdfBusyId(null);
+        }
+    }
+
+    async function exportToExcel() {
+        setExportLoading(true);
+        try {
+            let url = "/api/quotations?limit=10000";
+            if (statusFilter) url += `&status=${encodeURIComponent(statusFilter)}`;
+            if (searchTerm) url += `&q=${encodeURIComponent(searchTerm)}`;
+
+            const data = await apiFetch<{ data: Quotation[] }>(url);
+            const exportData = data?.data || [];
+
+            if (exportData.length === 0) {
+                throw new Error("No quotations found to export");
+            }
+
+            const worksheetData = exportData.map((quote) => ({
+                "Quote Number": quote.quote_number || "",
+                Customer: quote.customer?.name || (quote.customer_id ? "Unlinked" : "Unlinked"),
+                "Customer Email": quote.customer?.email || "",
+                Vehicle: quoteVehicleLabel(quote) || "",
+                VIN: quote.vehicle?.vin || "",
+                Status: quote.status || "",
+                "Sale Price": quote.sale_price || 0,
+                "Down Payment": quote.down_payment || 0,
+                "Trade-in": quote.trade_in_value || 0,
+                "Tax Rate": quote.tax_rate ?? "",
+                "Admin Fee": quote.admin_fee ?? "",
+                "Finance Term": quote.finance_term ?? "",
+                "Interest Rate": quote.interest_rate ?? "",
+                "Monthly Payment": quote.monthly_payment ?? "",
+                "Finance Company": quote.finance_company || "",
+                "Valid Until": quote.valid_until
+                    ? new Date(quote.valid_until).toLocaleDateString()
+                    : "",
+                "Converted Deal": quote.converted_deal_id || "",
+                Created: quote.created_at
+                    ? new Date(quote.created_at).toLocaleDateString()
+                    : "",
+                Notes: quote.notes || "",
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(worksheetData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Quotations");
+
+            worksheet["!cols"] = [
+                { wch: 16 },
+                { wch: 22 },
+                { wch: 24 },
+                { wch: 28 },
+                { wch: 18 },
+                { wch: 12 },
+                { wch: 12 },
+                { wch: 12 },
+                { wch: 12 },
+                { wch: 10 },
+                { wch: 10 },
+                { wch: 12 },
+                { wch: 12 },
+                { wch: 14 },
+                { wch: 18 },
+                { wch: 12 },
+                { wch: 36 },
+                { wch: 12 },
+                { wch: 30 },
+            ];
+
+            XLSX.writeFile(
+                workbook,
+                `quotations-export-${new Date().toISOString().split("T")[0]}.xlsx`
+            );
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Failed to export quotations");
+        } finally {
+            setExportLoading(false);
+        }
+    }
 
     return (
         <div className="space-y-4 pb-8">
             <PageHeader
                 title="Quotations"
-                description="Build quotes, copy or email when Resend is configured, then convert to deals"
+                description="Build quotes, download PDF or print, copy or email when Resend is configured, then convert to deals"
                 actions={
                     <div className="flex flex-wrap gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void exportToExcel()}
+                            disabled={exportLoading || loading}
+                        >
+                            {exportLoading ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <Download className="h-4 w-4" />
+                            )}
+                            Export
+                        </Button>
                         <Button variant="outline" size="sm" onClick={() => void fetchQuotes()} disabled={loading}>
                             <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
                             Refresh
@@ -534,6 +709,7 @@ export default function QuotationsPage() {
                         value={statusFilter}
                         onChange={(e) => setStatusFilter(e.target.value)}
                         className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                        aria-label="Filter quotations by status"
                     >
                         <option value="">All status</option>
                         {STATUSES.map((s) => (
@@ -616,6 +792,28 @@ export default function QuotationsPage() {
                                         </td>
                                         <td className="px-3 py-2.5">
                                             <div className="flex justify-end gap-1">
+                                                <button
+                                                    type="button"
+                                                    title="Download PDF"
+                                                    className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                                                    disabled={pdfBusyId === quote.id}
+                                                    onClick={() => void handleDownloadPdf(quote)}
+                                                >
+                                                    {pdfBusyId === quote.id ? (
+                                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                                    ) : (
+                                                        <FileDown className="h-4 w-4" />
+                                                    )}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    title="Print quotation"
+                                                    className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                                                    disabled={pdfBusyId === quote.id}
+                                                    onClick={() => void handlePrintQuote(quote)}
+                                                >
+                                                    <Printer className="h-4 w-4" />
+                                                </button>
                                                 <button
                                                     type="button"
                                                     title="Copy quote summary"

@@ -1,5 +1,6 @@
 // CRM email sequence helpers (Resend-backed). Never invents sends when secrets missing.
 
+import { crmEmail } from "@/src/lib/email";
 import { isResendConfigured, sendEmail } from "@/src/lib/resend";
 import { buildUnsubscribeUrl } from "@/src/lib/casl-unsubscribe";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -320,25 +321,31 @@ export async function sendNextSequenceStep(
   };
 
   const subject = renderTemplate(step.subject, vars);
-  let html = renderTemplate(step.body_html, vars);
-  const text = step.body_text
+  const bodyHtml = renderTemplate(step.body_html, vars);
+  const bodyText = step.body_text
     ? renderTemplate(step.body_text, vars)
     : undefined;
 
   let listUnsubscribeUrl: string | undefined;
   try {
-    const unsubUrl = await buildUnsubscribeUrl(opts.recipient.toEmail);
-    listUnsubscribeUrl = unsubUrl;
-    html += `<hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0 12px"/><p style="font-size:12px;color:#6b7280;line-height:1.5">You received this because you consented to marketing email from ${vars.dealership || "your dealership"}. <a href="${unsubUrl}">Unsubscribe</a>.</p>`;
+    listUnsubscribeUrl = await buildUnsubscribeUrl(opts.recipient.toEmail);
   } catch {
     /* footer best-effort */
   }
 
+  const mail = crmEmail({
+    subject,
+    bodyHtml,
+    bodyText,
+    dealershipName: vars.dealership || opts.recipient.dealershipName || null,
+    unsubscribeUrl: listUnsubscribeUrl,
+  });
+
   const sent = await sendEmail({
     to: opts.recipient.toEmail,
-    subject,
-    html,
-    text,
+    subject: mail.subject,
+    html: mail.html,
+    text: mail.text,
     listUnsubscribeUrl,
   });
 

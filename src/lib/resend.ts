@@ -1,6 +1,21 @@
 // src/lib/resend.ts
 // Thin Resend wrapper. If RESEND_API_KEY is missing, send helpers return
 // a clear error — never fake a successful send.
+// Template HTML lives in src/lib/email — helpers below re-export for call sites.
+
+import {
+  forgotPasswordEmail,
+  otpEmail,
+} from "@/src/lib/email";
+
+export type SendEmailAttachment = {
+  /** File name shown to the recipient, e.g. Invoice-INV-2024.pdf */
+  filename: string;
+  /** Base64-encoded file content (Resend API). */
+  content: string;
+  /** Optional MIME type; defaults to application/octet-stream server-side. */
+  contentType?: string;
+};
 
 export type SendEmailInput = {
   to: string;
@@ -9,6 +24,8 @@ export type SendEmailInput = {
   text?: string;
   /** Absolute unsubscribe URL — adds List-Unsubscribe (+ One-Click) headers when set. */
   listUnsubscribeUrl?: string;
+  /** Optional file attachments (PDF invoices, etc.). */
+  attachments?: SendEmailAttachment[];
 };
 
 export type SendEmailResult =
@@ -68,6 +85,15 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
         html: input.html,
         text: input.text,
         ...(emailHeaders ? { headers: emailHeaders } : {}),
+        ...(input.attachments && input.attachments.length > 0
+          ? {
+              attachments: input.attachments.map((a) => ({
+                filename: a.filename,
+                content: a.content,
+                ...(a.contentType ? { content_type: a.contentType } : {}),
+              })),
+            }
+          : {}),
       }),
     });
 
@@ -93,40 +119,19 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
   }
 }
 
-export function otpEmailHtml(opts: { code: string; purpose: "signup" | "login" }): {
-  subject: string;
-  html: string;
-  text: string;
-} {
-  const label =
-    opts.purpose === "signup" ? "Verify your email" : "Your login code";
-  const subject = `${label}: ${opts.code}`;
-  const text = `${label}\n\nYour code is ${opts.code}. It expires in 15 minutes.\n\nIf you did not request this, ignore this email.`;
-  const html = `
-    <div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#111">
-      <h1 style="font-size:20px;margin:0 0 12px">${label}</h1>
-      <p style="margin:0 0 16px;color:#444">Use this code to continue. It expires in 15 minutes.</p>
-      <p style="font-size:32px;letter-spacing:6px;font-weight:700;margin:0 0 16px">${opts.code}</p>
-      <p style="margin:0;color:#888;font-size:13px">If you did not request this, you can ignore this email.</p>
-    </div>
-  `;
-  return { subject, html, text };
+/** @deprecated Prefer `otpEmail` from `@/src/lib/email` — kept for existing imports. */
+export function otpEmailHtml(opts: {
+  code: string;
+  purpose: "signup" | "login";
+}): { subject: string; html: string; text: string } {
+  return otpEmail(opts);
 }
 
+/** @deprecated Prefer `forgotPasswordEmail` from `@/src/lib/email`. */
 export function resetPasswordEmailHtml(opts: {
   resetUrl: string;
 }): { subject: string; html: string; text: string } {
-  const subject = "Reset your FlashFender password";
-  const text = `Reset your password:\n\n${opts.resetUrl}\n\nThis link expires in 30 minutes. If you did not request a reset, ignore this email.`;
-  const html = `
-    <div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#111">
-      <h1 style="font-size:20px;margin:0 0 12px">Reset your password</h1>
-      <p style="margin:0 0 16px;color:#444">Click the button below to choose a new password. This link expires in 30 minutes.</p>
-      <p style="margin:0 0 16px">
-        <a href="${opts.resetUrl}" style="display:inline-block;background:#111;color:#fff;text-decoration:none;padding:12px 18px;border-radius:8px">Reset password</a>
-      </p>
-      <p style="margin:0;color:#888;font-size:13px">If you did not request this, you can ignore this email.</p>
-    </div>
-  `;
-  return { subject, html, text };
+  return forgotPasswordEmail(opts);
 }
+
+export { otpEmail, forgotPasswordEmail, inviteEmail } from "@/src/lib/email";

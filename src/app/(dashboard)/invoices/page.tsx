@@ -12,13 +12,20 @@ import {
     RefreshCw,
     Loader2,
     AlertCircle,
-    Filter
+    Filter,
+    FileDown,
+    CreditCard,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import InvoiceDetailsModal from "@/src/components/InvoiceDetailsModal";
 import InvoiceFormModal from "@/src/components/InvoiceFormModal";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
 import { toast } from "@/src/lib/toast";
+import {
+    downloadInvoicePdf,
+    parseInvoiceLineItems,
+    type InvoicePdfPayload,
+} from "@/src/lib/invoice-pdf";
 import { ListPageShell } from "@/src/components/ListPageShell";
 import { ListToolbar } from "@/src/components/ListToolbar";
 import { MetricStrip } from "@/src/components/ui/MetricStrip";
@@ -68,6 +75,7 @@ interface Invoice {
     amount_paid?: number | null;
     status: string;
     notes: string | null;
+    line_items?: unknown;
     created_at: string;
     customer: Customer | null;
 }
@@ -94,7 +102,12 @@ export default function InvoicesPage() {
     // Honor dashboard deep link `/invoices?status=Pending` after mount (avoid SSR mismatch).
     useEffect(() => {
         const fromUrl = new URLSearchParams(window.location.search).get("status");
-        if (fromUrl) setStatusFilter(fromUrl);
+        if (fromUrl) {
+            // Deferred so the deep-link filter is applied after the first paint
+            // without a synchronous setState inside the effect.
+            const t = setTimeout(() => setStatusFilter(fromUrl), 0);
+            return () => clearTimeout(t);
+        }
     }, []);
     // More Filters
     const [showMoreFilters, setShowMoreFilters] = useState(false);
@@ -146,7 +159,7 @@ export default function InvoicesPage() {
         fetchUserPermissions();
     }, [currentPage, statusFilter, debouncedSearch, invoiceDateFrom, invoiceDateTo]);
 
-    const fetchUserPermissions = async () => {
+    async function fetchUserPermissions() {
         try {
             const response = await fetch("/api/me", {
             });
@@ -158,7 +171,7 @@ export default function InvoicesPage() {
         } catch (error) {
             console.error("Error fetching user permissions:", error);
         }
-    };
+    }
 
     // Debounce search input
     useEffect(() => {
@@ -169,7 +182,7 @@ export default function InvoicesPage() {
         return () => clearTimeout(timer);
     }, [searchTerm]);
 
-    const exportToExcel = async () => {
+    async function exportToExcel() {
         setExportLoading(true);
         try {
 
@@ -226,9 +239,9 @@ export default function InvoicesPage() {
         } finally {
             setExportLoading(false);
         }
-    };
+    }
 
-    const fetchInvoices = async () => {
+    async function fetchInvoices() {
         try {
             setLoading(true);
             setError(null);
@@ -264,7 +277,7 @@ export default function InvoicesPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     const handleViewDetails = (invoice: Invoice) => {
         setSelectedInvoice(invoice);
@@ -277,11 +290,134 @@ export default function InvoicesPage() {
         setShowFormModal(true);
     };
 
+    async function handleQuickPdf(invoice: Invoice) {
+        try {
+            let dealerName: string | null = null;
+            let dealerAddress: string | null = null;
+            let dealerPhone: string | null = null;
+            let dealerEmail: string | null = null;
+            let dealerHst: string | null = null;
+            let dealerLicence: string | null = null;
+            let dealerLogoUrl: string | null = null;
+            try {
+                const meRes = await fetch("/api/me", { credentials: "include" });
+                if (meRes.ok) {
+                    const meJson = await meRes.json();
+                    const d = meJson?.data?.dealership || meJson?.dealership;
+                    if (d) {
+                        const settings =
+                            d.settings && typeof d.settings === "object"
+                                ? (d.settings as Record<string, unknown>)
+                                : {};
+                        dealerName = d.business_name || d.name || null;
+                        dealerAddress = d.business_address || null;
+                        dealerPhone = d.business_phone || null;
+                        dealerEmail = d.business_email || null;
+                        dealerLogoUrl = d.logo_url || null;
+                        dealerLicence =
+                            (typeof settings.dealer_license === "string"
+                                ? settings.dealer_license
+                                : null) ||
+                            (typeof settings.license_number === "string"
+                                ? settings.license_number
+                                : null) ||
+                            d.dealer_license ||
+                            null;
+                        dealerHst =
+                            (typeof settings.hst_number === "string"
+                                ? settings.hst_number
+                                : null) ||
+                            d.hst_number ||
+                            null;
+                    }
+                }
+            } catch {
+                // PDF still works without dealer block
+            }
+
+            const c = invoice.customer;
+            const addr = [c?.address, c?.city, c?.province]
+                .filter(Boolean)
+                .join(", ");
+            const payload: InvoicePdfPayload = {
+                invoiceNumber: invoice.invoice_number,
+                invoiceDate: invoice.invoice_date,
+                dueDate: invoice.due_date,
+                status: invoice.status,
+                packageName: invoice.package_name,
+                notes: invoice.notes,
+                paymentInstructions: invoice.notes,
+                subtotal: Number(invoice.payment_amount) || 0,
+                taxRate: Number(invoice.tax_rate) || 0,
+                taxAmount: Number(invoice.tax_amount) || 0,
+                total: Number(invoice.total) || 0,
+                amountPaid: Number(invoice.amount_paid) || 0,
+                customerName: c?.name,
+                customerEmail: c?.email,
+                customerPhone: c?.phone,
+                customerAddress: addr || null,
+                dealerName,
+                dealerAddress,
+                dealerPhone,
+                dealerEmail,
+                dealerHst,
+                dealerLicence,
+                dealerLogoUrl,
+                lineItems: parseInvoiceLineItems(invoice.line_items),
+            };
+            await downloadInvoicePdf(payload);
+            toast.success("PDF downloaded");
+        } catch (err) {
+            toast.error(
+                err instanceof Error ? err.message : "Could not download PDF"
+            );
+        }
+    }
+
     const handleAdd = () => {
         setSelectedInvoice(null);
         setFormMode("add");
         setShowFormModal(true);
     };
+
+    /**
+     * Built-in payments: open a hosted Stripe Checkout Session for the invoice
+     * balance. Honest fail-closed — when payments are not configured the API
+     * returns PAYMENTS_NOT_CONFIGURED and nothing is charged.
+     */
+    async function handleOnlinePay(invoice: Invoice) {
+        try {
+            const response = await fetch("/api/payments/checkout", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    reference_type: "invoice",
+                    reference_id: invoice.id,
+                    success_path: "/invoices",
+                    cancel_path: "/invoices",
+                }),
+            });
+            const json = await response.json();
+            if (!response.ok) {
+                if (json?.code === "PAYMENTS_NOT_CONFIGURED") {
+                    toast.error(
+                        "Online payments are not configured yet — no charge was made."
+                    );
+                    return;
+                }
+                throw new Error(json?.error || "Failed to start payment");
+            }
+            if (json?.data?.url) {
+                window.location.href = json.data.url;
+            } else {
+                throw new Error("Checkout returned no URL");
+            }
+        } catch (err) {
+            toast.error(
+                err instanceof Error ? err.message : "Could not start payment"
+            );
+        }
+    }
 
     const handleFormSuccess = () => {
         setShowFormModal(false);
@@ -289,12 +425,12 @@ export default function InvoicesPage() {
         fetchInvoices();
     };
 
-    const handleDelete = async (invoice: Invoice) => {
+    async function handleDelete(invoice: Invoice) {
         setConfirmDialogData({ invoice, loading: false });
         setShowConfirmDialog(true);
-    };
+    }
 
-    const confirmDelete = async () => {
+    async function confirmDelete() {
         if (!confirmDialogData.invoice) return;
 
         const invoiceId = confirmDialogData.invoice.id;
@@ -326,7 +462,7 @@ export default function InvoicesPage() {
             toast.error(err instanceof Error ? err.message : "An error occurred");
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
-    };
+    }
 
     const isOverdue = (invoice: Invoice) => {
         if (invoice.status === "Paid") return false;
@@ -607,6 +743,19 @@ export default function InvoicesPage() {
                                                             </button>
                                                         }
                                                         items={[
+                                                            {
+                                                                label: "Download PDF",
+                                                                icon: <FileDown className="h-3.5 w-3.5" />,
+                                                                onClick: () => void handleQuickPdf(invoice),
+                                                            },
+                                                            ...(invoice.status !== "Paid" &&
+                                                            invoice.status !== "Cancelled"
+                                                                ? [{
+                                                                    label: "Pay online",
+                                                                    icon: <CreditCard className="h-3.5 w-3.5" />,
+                                                                    onClick: () => void handleOnlinePay(invoice),
+                                                                }]
+                                                                : []),
                                                             ...(canWrite("invoices")
                                                                 ? [{
                                                                     label: "Edit",
