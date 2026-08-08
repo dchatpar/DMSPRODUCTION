@@ -83,7 +83,13 @@ export default function CreditApplicationsPage() {
             ]}
             actions={
                 <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        aria-label="Refresh applications"
+                        onClick={() => void load()}
+                        disabled={loading}
+                    >
                         <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
                     </Button>
                     <Link href="/finance/credit/new">

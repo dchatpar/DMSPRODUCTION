@@ -25,7 +25,7 @@ test.describe("Service", () => {
         await page.goto("/service");
         await expect(page.locator("h1").first()).toBeVisible({ timeout: 20_000 });
 
-        await page.getByText(/reactivation candidates/i).click();
+        await page.getByRole("tab", { name: /reactivation candidates/i }).click();
         await expect(page.locator("h1").first()).toContainText(/service/i);
 
         // Honest informational banner — reactivation never auto-sends.

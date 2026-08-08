@@ -2,8 +2,6 @@
 // Resolve the from-address used by Resend for outgoing email.
 // Priority: dealerships.settings.email_from (+ display_name) → EMAIL_FROM env → default.
 
-import { getEmailFrom } from "@/src/lib/resend";
-
 export type EmailFromSource = "dealer" | "env" | "default";
 
 export type ResolvedEmailFrom = {
@@ -16,6 +14,14 @@ export type ResolvedEmailFrom = {
 
 const FORMATTED_FROM_RE = /<[^<>@\s]+@[^<>@\s]+>/;
 const BARE_EMAIL_RE = /^[^\s<>@]+@[^\s<>@]+$/;
+
+/** Worker-level default sender: `EMAIL_FROM` env or the honest fallback. */
+export function getEmailFrom(): string {
+  return (
+    process.env.EMAIL_FROM ||
+    "FlashFender <noreply@flashfender.com>"
+  );
+}
 
 /**
  * Resolve the sender for an email.

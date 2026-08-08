@@ -19,6 +19,8 @@ interface BusinessSettings {
     dealer_license: string;
     autotrader_company_id: string;
     autotrader_category_id: string;
+    email_from: string;
+    display_name: string;
     can_edit: boolean;
 }
 
@@ -37,6 +39,8 @@ export default function BusinessSettingsPage() {
         dealer_license: "",
         autotrader_company_id: "",
         autotrader_category_id: "",
+        email_from: "",
+        display_name: "",
     });
 
     async function load() {
@@ -58,6 +62,8 @@ export default function BusinessSettingsPage() {
                 dealer_license: d.dealer_license || "",
                 autotrader_company_id: d.autotrader_company_id || "",
                 autotrader_category_id: d.autotrader_category_id || "",
+                email_from: d.email_from || "",
+                display_name: d.display_name || "",
             });
         } catch (err) {
             setError(
@@ -126,7 +132,8 @@ export default function BusinessSettingsPage() {
                     {error}
                 </div>
             ) : (
-                <div className="max-w-2xl space-y-4 rounded-lg border border-border bg-card p-5">
+                <div className="space-y-4">
+                    <div className="max-w-2xl space-y-4 rounded-lg border border-border bg-card p-5">
                     {!canEdit && (
                         <p className="text-sm text-muted-foreground">
                             View only — Admin/Manager or settings:write required to edit.
@@ -283,6 +290,70 @@ export default function BusinessSettingsPage() {
                                 placeholder="Optional — from AT.ca"
                             />
                         </label>
+                    </div>
+                    </div>
+                    <div className="max-w-2xl space-y-4 rounded-lg border border-border bg-card p-5">
+                        <div className="space-y-1">
+                            <span className="text-sm font-semibold">Email</span>
+                            <p className="text-xs text-muted-foreground">
+                                Sets the from-address used for emails sent on
+                                behalf of this dealership — quotations, invoices,
+                                CRM sequences, after-hours replies, staff invites.
+                                Overrides the worker EMAIL_FROM for this dealership.
+                            </p>
+                        </div>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                            <label className="block space-y-1.5">
+                                <span className="text-xs font-medium text-muted-foreground">
+                                    Outgoing email address (from)
+                                </span>
+                                <input
+                                    className={fieldClass}
+                                    disabled={!canEdit}
+                                    value={form.email_from}
+                                    onChange={(e) =>
+                                        setForm((f) => ({
+                                            ...f,
+                                            email_from: e.target.value,
+                                        }))
+                                    }
+                                    placeholder="dealer@example.com"
+                                />
+                            </label>
+                            <label className="block space-y-1.5">
+                                <span className="text-xs font-medium text-muted-foreground">
+                                    Sender display name
+                                </span>
+                                <input
+                                    className={fieldClass}
+                                    disabled={!canEdit}
+                                    value={form.display_name}
+                                    onChange={(e) =>
+                                        setForm((f) => ({
+                                            ...f,
+                                            display_name: e.target.value,
+                                        }))
+                                    }
+                                    placeholder="Acme Motors"
+                                />
+                            </label>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                            Accepted formats:{" "}
+                            <code className="rounded bg-muted px-1 py-0.5">
+                                dealer@example.com
+                            </code>{" "}
+                            or{" "}
+                            <code className="rounded bg-muted px-1 py-0.5">
+                                Acme Motors &lt;dealer@example.com&gt;
+                            </code>
+                            . Leave blank to use the worker EMAIL_FROM.
+                        </p>
+                        <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                            Sends still require RESEND_API_KEY in the Worker env
+                            and a domain verified with Resend — until then, email
+                            stays blocked and nothing is sent.
+                        </p>
                     </div>
                 </div>
             )}

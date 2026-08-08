@@ -95,6 +95,8 @@ export interface AfterHoursLeadContext {
     dealershipName: string | null;
     /** Resolved sender for this dealership (settings.email_from → EMAIL_FROM). */
     emailFrom: string | null;
+    /** Raw dealership settings used for config gating (email_from/display_name). */
+    settings: Record<string, unknown> | null;
     config: QuietHoursConfig & { auto_send_enabled: boolean };
 }
 
@@ -180,6 +182,9 @@ export async function loadAfterHoursContext(
             ? resolveEmailFrom(
                   (dealership.settings as Record<string, unknown>) || null
               ).from
+            : null,
+        settings: dealership?.settings
+            ? (dealership.settings as Record<string, unknown>)
             : null,
         config,
     };
@@ -336,11 +341,12 @@ export async function runAfterHoursFirstResponse(opts: {
             detail: "Auto-send is disabled in AI Governance — draft saved for review.",
         };
     }
-    if (!isResendConfigured()) {
+    if (!isResendConfigured(ctx.settings)) {
         return {
             decision: "blocked",
             reason: "not_configured",
-            detail: "Email sending is not configured (RESEND_API_KEY / EMAIL_FROM).",
+            detail:
+                "Email sending is not configured (RESEND_API_KEY / EMAIL_FROM or dealership email_from).",
         };
     }
     if (!consentOk) {

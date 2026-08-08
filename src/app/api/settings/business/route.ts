@@ -5,6 +5,20 @@ import { supabaseAdmin } from "@/src/lib/supabase-admin";
 
 type DealershipSettings = Record<string, unknown>;
 
+const BARE_EMAIL_RE = /^[^\s<>@]+@[^\s<>@]+$/;
+const FORMATTED_EMAIL_RE = /<[^<>@\s]+@[^<>@\s]+>/;
+const MAX_DISPLAY_NAME_LENGTH = 120;
+
+/**
+ * Empty clears the override; otherwise accept a bare address or an RFC 5322
+ * "Name <address>" string.
+ */
+function isValidEmailFrom(value: string): boolean {
+    const v = value.trim();
+    if (!v) return true;
+    return BARE_EMAIL_RE.test(v) || FORMATTED_EMAIL_RE.test(v);
+}
+
 function asSettings(raw: unknown): DealershipSettings {
     if (raw && typeof raw === "object" && !Array.isArray(raw)) {
         return raw as DealershipSettings;
@@ -82,6 +96,10 @@ function shapeBusinessResponse(
             typeof settings.autotrader_category_id === "string"
                 ? settings.autotrader_category_id
                 : "",
+        email_from:
+            typeof settings.email_from === "string" ? settings.email_from : "",
+        display_name:
+            typeof settings.display_name === "string" ? settings.display_name : "",
         settings,
         can_edit: canEdit,
     };
@@ -201,6 +219,42 @@ export async function PATCH(req: NextRequest) {
         if (typeof body.autotrader_category_id === "string") {
             nextSettings.autotrader_category_id =
                 body.autotrader_category_id.trim();
+        }
+
+        // Email from-address override (Settings → Business → Email).
+        // Empty clears the override (falls back to EMAIL_FROM env / default).
+        if (body.email_from !== undefined) {
+            if (
+                typeof body.email_from !== "string" ||
+                !isValidEmailFrom(body.email_from)
+            ) {
+                return NextResponse.json(
+                    {
+                        error:
+                            'email_from must be empty, a valid email, or a "Name <email>" string',
+                    },
+                    { status: 400 }
+                );
+            }
+            nextSettings.email_from = body.email_from.trim();
+        }
+        if (body.display_name !== undefined) {
+            if (typeof body.display_name !== "string") {
+                return NextResponse.json(
+                    { error: "display_name must be a string" },
+                    { status: 400 }
+                );
+            }
+            const displayName = body.display_name.trim();
+            if (displayName.length > MAX_DISPLAY_NAME_LENGTH) {
+                return NextResponse.json(
+                    {
+                        error: `display_name must be ${MAX_DISPLAY_NAME_LENGTH} characters or fewer`,
+                    },
+                    { status: 400 }
+                );
+            }
+            nextSettings.display_name = displayName;
         }
 
         const updatePayload: Record<string, unknown> = {

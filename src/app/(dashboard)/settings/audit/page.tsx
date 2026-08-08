@@ -152,10 +152,14 @@ export default function AuditLogPage() {
 
                 <div className="mb-4 flex flex-wrap items-end gap-3">
                     <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-500">
+                        <label
+                            htmlFor="entity-type"
+                            className="mb-1 block text-xs font-medium text-gray-500"
+                        >
                             Entity type
                         </label>
                         <select
+                            id="entity-type"
                             value={entityType}
                             onChange={(e) => {
                                 setEntityType(e.target.value);

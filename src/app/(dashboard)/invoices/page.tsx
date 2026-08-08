@@ -470,6 +470,24 @@ export default function InvoicesPage() {
         return new Date(invoice.due_date) < new Date();
     };
 
+    /**
+     * Honest payment status derived from money actually applied (amount_paid
+     * vs total) rather than the legacy lifecycle status. Legacy "Overdue" and
+     * "Cancelled" are preserved when nothing has been paid, so the list keeps
+     * surfacing those states alongside the money-based Paid/Partial/Pending.
+     */
+    const invoicePaymentStatus = (invoice: Invoice): string => {
+        const total = Number(invoice.total) || 0;
+        const paid = Number(invoice.amount_paid) || 0;
+        if (invoice.status === "Cancelled") return "Cancelled";
+        if (invoice.status === "Paid" || (total > 0 && paid >= total - 0.009)) {
+            return "Paid";
+        }
+        if (paid > 0) return "Partial";
+        if (invoice.status === "Overdue") return "Overdue";
+        return "Pending";
+    };
+
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat("en-US", {
             style: "currency",
@@ -688,6 +706,7 @@ export default function InvoicesPage() {
                                 ) : (
                                     invoices.map((invoice) => {
                                         const overdue = isOverdue(invoice);
+                                        const paymentStatus = invoicePaymentStatus(invoice);
                                         return (
                                             <ClickableDataTableRow
                                                 key={invoice.id}
@@ -716,7 +735,11 @@ export default function InvoicesPage() {
                                                     />
                                                 </DataTableTd>
                                                 <DataTableTd>
-                                                    <StatusBadge status={invoice.status} resource="invoice" />
+                                                    <StatusBadge
+                                                        status={paymentStatus}
+                                                        resource="invoice"
+                                                        kind={paymentStatus === "Partial" ? "warning" : undefined}
+                                                    />
                                                 </DataTableTd>
                                                 <DataTableTdNum className="font-semibold">
                                                     {formatCurrency(invoice.total)}
@@ -819,6 +842,7 @@ export default function InvoicesPage() {
                     ) : (
                         invoices.map((invoice) => {
                             const overdue = isOverdue(invoice);
+                            const paymentStatus = invoicePaymentStatus(invoice);
                             return (
                                 <button
                                     type="button"
@@ -837,7 +861,11 @@ export default function InvoicesPage() {
                                                 </p>
                                             ) : null}
                                         </div>
-                                        <StatusBadge status={invoice.status} resource="invoice" />
+                                        <StatusBadge
+                                            status={paymentStatus}
+                                            resource="invoice"
+                                            kind={paymentStatus === "Partial" ? "warning" : undefined}
+                                        />
                                     </div>
                                     <div className="mb-2 flex flex-wrap items-center gap-2">
                                         <RelationChip

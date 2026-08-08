@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
 
     const resolved = resolveEmailFrom(settings);
 
-    if (!isResendConfigured()) {
+    if (!isResendConfigured(settings)) {
       return NextResponse.json(
         {
           ok: false,

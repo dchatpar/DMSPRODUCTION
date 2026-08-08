@@ -120,21 +120,36 @@ test.describe("Invoices + payments", () => {
         }
     });
 
-    test("invoice rows show payment status", async ({ page }) => {
+    test("invoice rows show payment status", async ({ page }, testInfo) => {
         await page.goto("/invoices");
         await expect(page.locator("h1").first()).toBeVisible({ timeout: 20_000 });
 
-        const row = page.locator("table tbody tr").first();
-        if ((await row.count()) > 0) {
-            const statusText = await row.textContent();
-            expect(statusText).not.toHaveLength(0);
+        if (testInfo.project.name === "desktop") {
+            const row = page.locator("table tbody tr").first();
+            // Wait out the loading skeleton (an empty <tr> with no text) so the
+            // assertion runs on a real row or the honest empty state.
+            await expect(row).toHaveText(/\S/, { timeout: 15_000 });
+            if (/no invoices found/i.test((await row.textContent()) ?? "")) {
+                test.skip(true, "No invoice rows — payment status not available");
+                return;
+            }
+            // Status is the third column (Invoice, Customer, Status, ...).
+            const statusText = (await row.locator("td").nth(2).textContent()) ?? "";
+            expect(statusText).toMatch(/Paid|Partial|Pending|Overdue|Cancelled/i);
         } else {
             const card = page.locator("div.lg\\:hidden button").first();
             if ((await card.count()) === 0) {
-                test.skip(true, "No invoice rows — status column not available");
+                test.skip(true, "No invoice cards — payment status not available");
             }
-            const statusText = await card.textContent();
-            expect(statusText).not.toHaveLength(0);
+            await expect(card).toHaveText(/\S/, { timeout: 15_000 });
+            const cardText = (await card.textContent()) ?? "";
+            // The mobile empty state can render a "Create Your First Invoice"
+            // button — skip rather than assert a status on it.
+            if (/create your first invoice|no invoices found/i.test(cardText)) {
+                test.skip(true, "No invoice cards — payment status not available");
+                return;
+            }
+            expect(cardText).toMatch(/Paid|Partial|Pending|Overdue|Cancelled/i);
         }
     });
 

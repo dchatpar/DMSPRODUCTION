@@ -222,10 +222,14 @@ export default function AccountingExportPage() {
                             </h3>
                             <div className="space-y-4">
                                 <div>
-                                    <label className="mb-1 block text-xs font-medium text-gray-500">
+                                    <label
+                                        htmlFor="start-date"
+                                        className="mb-1 block text-xs font-medium text-gray-500"
+                                    >
                                         From
                                     </label>
                                     <input
+                                        id="start-date"
                                         type="date"
                                         value={startDate}
                                         onChange={(e) =>
@@ -235,10 +239,14 @@ export default function AccountingExportPage() {
                                     />
                                 </div>
                                 <div>
-                                    <label className="mb-1 block text-xs font-medium text-gray-500">
+                                    <label
+                                        htmlFor="end-date"
+                                        className="mb-1 block text-xs font-medium text-gray-500"
+                                    >
                                         To
                                     </label>
                                     <input
+                                        id="end-date"
                                         type="date"
                                         value={endDate}
                                         onChange={(e) =>

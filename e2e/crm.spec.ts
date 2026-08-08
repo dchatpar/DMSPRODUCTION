@@ -7,18 +7,28 @@ import {
 
 /** Open the first lead's detail drawer on either viewport. */
 async function openFirstLead(page: Page): Promise<boolean> {
-    const row = page.locator("table tbody tr").first();
-    if ((await row.count()) > 0 && (await row.isVisible().catch(() => false))) {
-        await row.click();
-        return true;
+    // Desktop table — real lead rows carry role="button" (the loading skeleton
+    // row does not), so wait for an actual data row instead of clicking the
+    // skeleton, which has no handler and would never open the drawer.
+    if (await page.locator("table").first().isVisible().catch(() => false)) {
+        const row = page.locator("table tbody tr[role='button']").first();
+        try {
+            await row.waitFor({ state: "visible", timeout: 12_000 });
+            await row.click();
+            return true;
+        } catch {
+            // No lead rows on desktop — fall through to mobile cards.
+        }
     }
     // Mobile: cards list with a View action button.
     const viewBtn = page.locator("div.lg\\:hidden button[aria-label^='View ']").first();
-    if ((await viewBtn.count()) > 0) {
+    try {
+        await viewBtn.waitFor({ state: "visible", timeout: 5_000 });
         await viewBtn.click();
         return true;
+    } catch {
+        return false;
     }
-    return false;
 }
 
 test.describe("CRM / leads journeys", () => {

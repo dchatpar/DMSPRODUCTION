@@ -7,6 +7,7 @@ import {
   forgotPasswordEmail,
   otpEmail,
 } from "@/src/lib/email";
+import { resolveEmailFrom } from "@/src/lib/email/from";
 
 export type SendEmailAttachment = {
   /** File name shown to the recipient, e.g. Invoice-INV-2024.pdf */
@@ -37,16 +38,23 @@ export type SendEmailResult =
   | { ok: true; id: string }
   | { ok: false; error: string; missingConfig?: boolean };
 
-export function isResendConfigured(): boolean {
-  return Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
+/**
+ * True when Resend can actually send: RESEND_API_KEY present AND a usable
+ * from-address exists — either the worker `EMAIL_FROM` env or a dealership
+ * `settings.email_from` override (Settings → Business → Email).
+ *
+ * Zero-arg callers keep the historical behavior (RESEND_API_KEY && EMAIL_FROM);
+ * pass dealership `settings` to also honour a dealer override.
+ */
+export function isResendConfigured(
+  settings?: Record<string, unknown> | null
+): boolean {
+  if (!process.env.RESEND_API_KEY) return false;
+  if (process.env.EMAIL_FROM) return true;
+  return resolveEmailFrom(settings).source === "dealer";
 }
 
-export function getEmailFrom(): string {
-  return (
-    process.env.EMAIL_FROM ||
-    "FlashFender <noreply@flashfender.com>"
-  );
-}
+export { getEmailFrom } from "@/src/lib/email/from";
 
 export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult> {
   const apiKey = process.env.RESEND_API_KEY;

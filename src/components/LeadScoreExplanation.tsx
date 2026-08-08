@@ -146,6 +146,21 @@ export function LeadScoreExplanation({
                 </ul>
             )}
 
+            {/* Honest empty/amber state — the panel surfaces even when no AI
+                explanation has been generated or the lead has no computable
+                signals. Never fabricates an explanation. */}
+            {!loading && !missing && !explanation && signals.length > 0 && (
+                <p className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-900">
+                    No AI explanation for this lead yet — generate one for a
+                    plain-language summary of the signals below.
+                </p>
+            )}
+            {!loading && !missing && signals.length === 0 && (
+                <p className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-900">
+                    Not enough data to explain this lead&apos;s score.
+                </p>
+            )}
+
             {explanation ? (
                 <div className="space-y-2">
                     <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-foreground">

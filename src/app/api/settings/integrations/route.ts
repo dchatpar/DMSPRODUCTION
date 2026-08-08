@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
         }
 
         const facebook = getFacebookEnv();
-        const resendOk = isResendConfigured();
+        let resendOk = isResendConfigured();
         const carfax = getCarfaxEnv();
         const flashAiOk = isFlashAiConfigured();
 
@@ -61,6 +61,7 @@ export async function GET(req: NextRequest) {
                 .eq("id", dealershipId)
                 .maybeSingle();
             const settings = (dealer?.settings || {}) as Record<string, unknown>;
+            resendOk = isResendConfigured(settings);
             resolvedEmailFrom = resolveEmailFrom(settings);
             autotraderCompanySet = Boolean(
                 (typeof settings.autotrader_company_id === "string" &&
@@ -120,6 +121,8 @@ export async function GET(req: NextRequest) {
                     : {};
             quietHoursEnabled = qh.enabled === true;
         }
+
+        const resendDealerOverride = resolvedEmailFrom?.source === "dealer";
 
         const integrations: IntegrationStatus[] = [
             {
@@ -194,11 +197,17 @@ export async function GET(req: NextRequest) {
                 status: resendOk ? "live" : "missing_env",
                 missing: [
                     ...(!process.env.RESEND_API_KEY ? ["RESEND_API_KEY"] : []),
-                    ...(!process.env.EMAIL_FROM ? ["EMAIL_FROM"] : []),
+                    ...(!process.env.EMAIL_FROM && !resendDealerOverride
+                        ? [
+                              "EMAIL_FROM (or set a dealership email_from in Settings → Business)",
+                          ]
+                        : []),
                 ],
                 href: "/email-sequences",
                 notes: resendOk
-                    ? "Worker env has RESEND_API_KEY and EMAIL_FROM. CRM sequences can send from Lead Center / Email sequences."
+                    ? resendDealerOverride
+                        ? "Worker env has RESEND_API_KEY. From-address is set per dealership (Settings → Business → Email); the domain must be verified with Resend before sends go out."
+                        : "Worker env has RESEND_API_KEY and EMAIL_FROM. CRM sequences can send from Lead Center / Email sequences."
                     : "Not configured — add via wrangler when ready. Enroll works; sends stay blocked (no fake Sent). Do not invent keys.",
             },
             {

@@ -232,9 +232,13 @@ export default function ServicePage() {
             }
         >
             {/* Tabs */}
-            <div className="flex gap-1 border-b border-border">
+            <div className="flex gap-1 border-b border-border" role="tablist" aria-label="Service views">
                 <button
                     type="button"
+                    role="tab"
+                    id="tab-records"
+                    aria-selected={tab === "records"}
+                    aria-controls="panel-records"
                     onClick={() => setTab("records")}
                     className={`-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
                         tab === "records"
@@ -247,6 +251,10 @@ export default function ServicePage() {
                 </button>
                 <button
                     type="button"
+                    role="tab"
+                    id="tab-reactivation"
+                    aria-selected={tab === "reactivation"}
+                    aria-controls="panel-reactivation"
                     onClick={() => setTab("reactivation")}
                     className={`-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
                         tab === "reactivation"
@@ -260,7 +268,12 @@ export default function ServicePage() {
             </div>
 
             {tab === "records" ? (
-                <>
+                <div
+                    id="panel-records"
+                    role="tabpanel"
+                    aria-labelledby="tab-records"
+                    className="space-y-4"
+                >
                     <div className="relative max-w-sm">
                         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                         <input
@@ -369,9 +382,14 @@ export default function ServicePage() {
                         {recordsCount} record{recordsCount === 1 ? "" : "s"} · Service history is
                         dealership-scoped.
                     </p>
-                </>
+                </div>
             ) : (
-                <div className="space-y-4">
+                <div
+                    id="panel-reactivation"
+                    role="tabpanel"
+                    aria-labelledby="tab-reactivation"
+                    className="space-y-4"
+                >
                     <div className="flex flex-wrap items-center gap-3">
                         <label className="flex items-center gap-2 text-sm text-muted-foreground">
                             Last service older than
