@@ -1,12 +1,12 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * Calm Ops spacing / visual QA harness.
+ * FlashFender Playwright harness — journeys + axe + thin critical screenshots.
  * Desktop 1280 + mobile 390. Auth via E2E_EMAIL / E2E_PASSWORD when set.
  */
 const baseURL =
     process.env.PLAYWRIGHT_BASE_URL?.trim() ||
-    "https://dms.adaptusgroup.ca";
+    "https://app.flashfender.com";
 
 export default defineConfig({
     testDir: "./e2e",

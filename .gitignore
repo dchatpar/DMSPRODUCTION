@@ -68,3 +68,7 @@ deploy.log
 FLASHFENDER_CONTINUITY.SECRETS.md
 *.SECRETS.md
 handoff/**/*.SECRETS.md
+
+# Storybook / critic artifacts
+/storybook-static/
+handoff/ai-ux-critic-latest.md
