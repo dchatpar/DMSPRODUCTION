@@ -32,6 +32,10 @@ const migrations = [
   "t1_esign_payments_retention.sql",
   "t1_sms_webhooks_api.sql",
   "tier2_ai_gov_credit_afterhours.sql",
+  "t3_multi_location.sql",
+  "t3_service_module.sql",
+  "t3_auction_sourcing.sql",
+  "t3_review_automation.sql",
 ];
 
 if (!token) {

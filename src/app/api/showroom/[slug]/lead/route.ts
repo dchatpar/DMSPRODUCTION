@@ -8,8 +8,6 @@ import { applyConsentTimestamps } from "@/src/lib/customer-consent";
 import { scoreLead } from "@/src/lib/business/lead-score";
 import { emitDealershipEvent } from "@/src/lib/api/webhooks";
 
-const VALID_SOURCES = ["Website", "Referral", "Event", "Walk-in", "Facebook", "Craigslist", "Kijiji", "Phone", "Instagram"];
-
 type ShowroomDealershipRow = {
   id: string;
   name: string;

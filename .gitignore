@@ -72,3 +72,6 @@ handoff/**/*.SECRETS.md
 # Storybook / critic artifacts
 /storybook-static/
 handoff/ai-ux-critic-latest.md
+
+# Local Cloudflare / Wrangler dry-run artifacts
+.wrangler-dryrun/
