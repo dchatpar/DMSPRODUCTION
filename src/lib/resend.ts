@@ -26,6 +26,11 @@ export type SendEmailInput = {
   listUnsubscribeUrl?: string;
   /** Optional file attachments (PDF invoices, etc.). */
   attachments?: SendEmailAttachment[];
+  /**
+   * Optional sender override (e.g. `dealerships.settings.email_from`).
+   * Falls back to `process.env.EMAIL_FROM` when omitted.
+   */
+  from?: string;
 };
 
 export type SendEmailResult =
@@ -54,13 +59,13 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
     };
   }
 
-  const from = process.env.EMAIL_FROM;
+  const from = input.from || process.env.EMAIL_FROM;
   if (!from) {
     return {
       ok: false,
       missingConfig: true,
       error:
-        "EMAIL_FROM is not configured. Example: FlashFender <noreply@flashfender.com>",
+        "No from-address configured. Set a dealership email_from (Settings → Integrations) or EMAIL_FROM in the Worker env. Example: FlashFender <noreply@flashfender.com>",
     };
   }
 

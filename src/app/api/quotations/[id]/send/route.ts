@@ -11,6 +11,7 @@ import {
 } from "@/src/lib/quotation-pdf";
 import { quotationEmailHtml } from "@/src/lib/quotation-share";
 import { isResendConfigured, sendEmail } from "@/src/lib/resend";
+import { resolveEmailFrom } from "@/src/lib/email/from";
 
 function uint8ToBase64(bytes: Uint8Array): string {
     let binary = "";
@@ -112,6 +113,7 @@ export async function POST(
 
         let dealerName: string | null = null;
         let dealerForPdf: QuotationPdfPayload["dealer"] = null;
+        let emailFrom: string | undefined;
         if (existing.dealership_id) {
             const { data: dealer } = await supabase
                 .from("dealerships")
@@ -129,6 +131,7 @@ export async function POST(
                     dealer.settings && typeof dealer.settings === "object"
                         ? (dealer.settings as Record<string, unknown>)
                         : {};
+                emailFrom = resolveEmailFrom(settings).from;
                 dealerForPdf = {
                     name: (dealer.name as string) || null,
                     business_name: (dealer.business_name as string) || null,
@@ -206,6 +209,7 @@ export async function POST(
 
         const sent = await sendEmail({
             to,
+            from: emailFrom,
             subject,
             html,
             text,

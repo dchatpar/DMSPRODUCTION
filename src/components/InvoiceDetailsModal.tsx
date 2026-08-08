@@ -419,6 +419,7 @@ export default function InvoiceDetailsModal({
                         variant="ghost"
                         size="sm"
                         leftIcon={<Mail className="h-3.5 w-3.5" />}
+                        title="Email invoice to customer (Resend) — sends via Resend, not just status"
                         onClick={() => void handleEmail()}
                         disabled={busy}
                     >

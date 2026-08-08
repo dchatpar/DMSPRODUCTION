@@ -11,6 +11,7 @@
 import { supabaseAdmin } from "@/src/lib/supabase-admin";
 import { crmEmail } from "@/src/lib/email";
 import { isResendConfigured, sendEmail } from "@/src/lib/resend";
+import { resolveEmailFrom } from "@/src/lib/email/from";
 import { buildUnsubscribeUrl } from "@/src/lib/casl-unsubscribe";
 
 export type ReviewRequestStatus =
@@ -200,6 +201,20 @@ export async function attemptSendReviewRequest(opts: {
       reason: "review_automation_disabled",
     };
   }
+
+  // Dealer-level from-address override (settings.email_from → EMAIL_FROM env).
+  let emailFrom: string | undefined;
+  const { data: dealerRow } = await supabaseAdmin
+    .from("dealerships")
+    .select("settings")
+    .eq("id", opts.dealershipId)
+    .maybeSingle();
+  if (dealerRow) {
+    emailFrom = resolveEmailFrom(
+      (dealerRow.settings as Record<string, unknown>) || null
+    ).from;
+  }
+
   if (!isResendConfigured()) {
     return {
       ok: true,
@@ -236,6 +251,7 @@ export async function attemptSendReviewRequest(opts: {
 
   const result = await sendEmail({
     to: opts.customerEmail,
+    from: emailFrom,
     subject: draft.subject,
     html: draft.html,
     text: draft.text,

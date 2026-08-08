@@ -12,6 +12,7 @@ import {
     type InvoicePdfPayload,
 } from "@/src/lib/invoice-pdf";
 import { isResendConfigured, sendEmail } from "@/src/lib/resend";
+import { resolveEmailFrom } from "@/src/lib/email/from";
 
 function uint8ToBase64(bytes: Uint8Array): string {
     let binary = "";
@@ -104,6 +105,7 @@ export async function POST(
         let dealerHst: string | null = null;
         let dealerLicence: string | null = null;
         let dealerLogoUrl: string | null = null;
+        let emailFrom: string | undefined;
 
         if (existing.dealership_id) {
             const { data: dealer } = await supabase
@@ -137,6 +139,7 @@ export async function POST(
                     typeof settings.hst_number === "string"
                         ? settings.hst_number
                         : null;
+                emailFrom = resolveEmailFrom(settings).from;
             }
         }
 
@@ -207,6 +210,7 @@ export async function POST(
 
         const sent = await sendEmail({
             to,
+            from: emailFrom,
             subject,
             html,
             text,

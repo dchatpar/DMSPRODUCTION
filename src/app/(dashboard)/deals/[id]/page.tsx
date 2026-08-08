@@ -208,7 +208,7 @@ export default function DealDetailPage() {
         try {
             await apiFetch(`/api/deals/${deal.id}`, {
                 method: "PATCH",
-                body: JSON.stringify({ deal_status: next }),
+                body: { deal_status: next },
             });
             toast.success(`Status → ${next}`);
             void load();
@@ -230,12 +230,12 @@ export default function DealDetailPage() {
                 "/api/payments/checkout",
                 {
                     method: "POST",
-                    body: JSON.stringify({
+                    body: {
                         reference_type: "deposit",
                         reference_id: deal.id,
                         success_path: `/deals/${deal.id}`,
                         cancel_path: `/deals/${deal.id}`,
-                    }),
+                    },
                 }
             );
             if (!res?.data?.url) {

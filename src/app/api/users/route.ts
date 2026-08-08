@@ -6,6 +6,7 @@ import {
     isResendConfigured,
     sendEmail,
 } from "@/src/lib/resend";
+import { resolveEmailFrom } from "@/src/lib/email/from";
 import {
     generateResetToken,
     sha256Hex,
@@ -328,10 +329,11 @@ export async function POST(req: NextRequest) {
         let inviteEmailSent = false;
         let inviteEmailWarning: string | undefined;
         let dealershipName: string | null = null;
+        let emailFrom: string | undefined;
         if (assignedDealershipId) {
             const { data: dealer } = await supabaseAdmin
                 .from("dealerships")
-                .select("name, business_name")
+                .select("name, business_name, settings")
                 .eq("id", assignedDealershipId)
                 .maybeSingle();
             if (dealer) {
@@ -339,6 +341,9 @@ export async function POST(req: NextRequest) {
                     (dealer.business_name as string) ||
                     (dealer.name as string) ||
                     null;
+                emailFrom = resolveEmailFrom(
+                    (dealer.settings as Record<string, unknown>) || null
+                ).from;
             }
         }
 
@@ -378,6 +383,7 @@ export async function POST(req: NextRequest) {
             });
             const sent = await sendEmail({
                 to: String(email).trim(),
+                from: emailFrom,
                 subject: mail.subject,
                 html: mail.html,
                 text: mail.text,

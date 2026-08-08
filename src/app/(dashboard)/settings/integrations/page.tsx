@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, Loader2, Plug, XCircle, ArrowRight, Wrench } from "lucide-react";
+import { CheckCircle2, Loader2, Plug, XCircle, ArrowRight, Wrench, Mail } from "lucide-react";
 import { ListPageShell } from "@/src/components/ListPageShell";
 import { apiFetch } from "@/src/lib/fetch";
 import { DeveloperPanel } from "./DeveloperPanel";
@@ -18,9 +18,18 @@ interface IntegrationRow {
     href?: string;
 }
 
+interface EmailFromInfo {
+    from: string;
+    source: "dealer" | "env" | "default";
+    display_name: string | null;
+    dealer_override: boolean;
+    email_from_set: boolean;
+}
+
 interface IntegrationsData {
     dealership_id: string | null;
     integrations: IntegrationRow[];
+    email_from?: EmailFromInfo | null;
 }
 
 export default function IntegrationsSettingsPage() {
@@ -28,6 +37,12 @@ export default function IntegrationsSettingsPage() {
     const [error, setError] = useState<string | null>(null);
     const [integrations, setIntegrations] = useState<IntegrationRow[]>([]);
     const [dealershipId, setDealershipId] = useState<string | null>(null);
+    const [emailFrom, setEmailFrom] = useState<EmailFromInfo | null>(null);
+    const [testingEmail, setTestingEmail] = useState(false);
+    const [emailTestResult, setEmailTestResult] = useState<{
+        kind: "ok" | "error";
+        message: string;
+    } | null>(null);
 
     useEffect(() => {
         (async () => {
@@ -38,6 +53,7 @@ export default function IntegrationsSettingsPage() {
                 }>("/api/settings/integrations");
                 setIntegrations(res.data.integrations || []);
                 setDealershipId(res.data.dealership_id || null);
+                setEmailFrom(res.data.email_from || null);
             } catch (err) {
                 setError(
                     err instanceof Error
@@ -49,6 +65,35 @@ export default function IntegrationsSettingsPage() {
             }
         })();
     }, []);
+
+    async function handleTestEmail() {
+        setTestingEmail(true);
+        setEmailTestResult(null);
+        try {
+            const res = await apiFetch<{
+                ok?: boolean;
+                to?: string;
+                error?: string;
+            }>("/api/settings/email/test", {
+                method: "POST",
+                silent5xx: true,
+            });
+            setEmailTestResult({
+                kind: "ok",
+                message: `Test email sent to ${res.to || "you"}`,
+            });
+        } catch (err) {
+            setEmailTestResult({
+                kind: "error",
+                message:
+                    err instanceof Error
+                        ? err.message
+                        : "Test email failed",
+            });
+        } finally {
+            setTestingEmail(false);
+        }
+    }
 
     return (
         <ListPageShell
@@ -169,6 +214,66 @@ export default function IntegrationsSettingsPage() {
                                                 Open module
                                                 <ArrowRight className="h-3 w-3" />
                                             </Link>
+                                        )}
+                                        {item.id === "resend" && (
+                                            <div className="mt-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs">
+                                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                                    <span className="text-muted-foreground">
+                                                        Sender:
+                                                    </span>
+                                                    <code className="rounded bg-background px-1.5 py-0.5">
+                                                        {emailFrom?.from ??
+                                                            "…"}
+                                                    </code>
+                                                    {emailFrom?.dealer_override ? (
+                                                        <span className="rounded-md bg-[#2563EB]/10 px-1.5 py-0.5 font-medium text-[#2563EB]">
+                                                            Dealership override
+                                                        </span>
+                                                    ) : emailFrom?.source ===
+                                                      "env" ? (
+                                                        <span className="rounded-md bg-muted px-1.5 py-0.5 text-muted-foreground">
+                                                            Worker EMAIL_FROM
+                                                        </span>
+                                                    ) : null}
+                                                </div>
+                                                {!emailFrom?.email_from_set && (
+                                                    <p className="mt-1 text-amber-700">
+                                                        EMAIL_FROM is not set in
+                                                        the Worker env — sends
+                                                        stay blocked until it is
+                                                        set.
+                                                    </p>
+                                                )}
+                                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            void handleTestEmail()
+                                                        }
+                                                        disabled={testingEmail}
+                                                        className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-60"
+                                                    >
+                                                        {testingEmail ? (
+                                                            <Loader2 className="h-3 w-3 animate-spin" />
+                                                        ) : (
+                                                            <Mail className="h-3 w-3" />
+                                                        )}
+                                                        Test email
+                                                    </button>
+                                                    {emailTestResult && (
+                                                        <span
+                                                            className={
+                                                                emailTestResult.kind ===
+                                                                "ok"
+                                                                    ? "text-emerald-700"
+                                                                    : "text-amber-700"
+                                                            }
+                                                        >
+                                                            {emailTestResult.message}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
                                         )}
                                     </div>
                                 </div>

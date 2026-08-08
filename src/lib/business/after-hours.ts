@@ -21,6 +21,7 @@ import { DESK_SYSTEM, isQuietHour, type QuietHoursConfig } from "@/src/lib/ai/gu
 import { supabaseAdmin } from "@/src/lib/supabase-admin";
 import { crmEmail } from "@/src/lib/email";
 import { isResendConfigured, sendEmail } from "@/src/lib/resend";
+import { resolveEmailFrom } from "@/src/lib/email/from";
 import { buildUnsubscribeUrl } from "@/src/lib/casl-unsubscribe";
 
 // ---------------------------------------------------------------------------
@@ -92,6 +93,8 @@ export interface AfterHoursLeadContext {
         retail_price: number | null;
     } | null;
     dealershipName: string | null;
+    /** Resolved sender for this dealership (settings.email_from → EMAIL_FROM). */
+    emailFrom: string | null;
     config: QuietHoursConfig & { auto_send_enabled: boolean };
 }
 
@@ -112,7 +115,7 @@ export async function loadAfterHoursContext(
 
     const { data: dealership } = await supabaseAdmin
         .from("dealerships")
-        .select("name")
+        .select("name, settings")
         .eq("id", dealershipId)
         .maybeSingle();
 
@@ -173,6 +176,11 @@ export async function loadAfterHoursContext(
         customer,
         vehicle,
         dealershipName: dealership?.name ?? null,
+        emailFrom: dealership?.settings
+            ? resolveEmailFrom(
+                  (dealership.settings as Record<string, unknown>) || null
+              ).from
+            : null,
         config,
     };
 }
@@ -371,6 +379,7 @@ export async function runAfterHoursFirstResponse(opts: {
 
     const sent = await sendEmail({
         to: ctx.customer.email,
+        from: ctx.emailFrom ?? undefined,
         subject: mail.subject,
         html: mail.html,
         text: mail.text,

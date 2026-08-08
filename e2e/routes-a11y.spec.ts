@@ -15,6 +15,16 @@ const A11Y_ROUTES = [
     { path: "/inventory", name: "inventory", auth: true },
     { path: "/invoices", name: "invoices", auth: true },
     { path: "/quotations", name: "quotations", auth: true },
+    { path: "/service", name: "service", auth: true },
+    { path: "/finance", name: "finance", auth: true },
+    { path: "/finance/credit", name: "finance-credit", auth: true },
+    { path: "/settings/integrations", name: "settings-integrations", auth: true },
+    { path: "/settings/accounting", name: "settings-accounting", auth: true },
+    { path: "/settings/audit", name: "settings-audit", auth: true },
+    { path: "/settings/retention", name: "settings-retention", auth: true },
+    { path: "/settings/ai-governance", name: "settings-ai-governance", auth: true },
+    { path: "/settings/reviews", name: "settings-reviews", auth: true },
+    { path: "/settings/locations", name: "settings-locations", auth: true },
     { path: "/platform", name: "platform", auth: true },
 ] as const;
 

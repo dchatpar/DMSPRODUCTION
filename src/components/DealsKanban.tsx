@@ -160,7 +160,7 @@ export default function DealsKanban({
         try {
             await apiFetch(`/api/deals/${current.id}`, {
                 method: "PATCH",
-                body: JSON.stringify({ deal_status: targetStatus }),
+                body: { deal_status: targetStatus },
             });
             onRefresh();
         } catch (err) {

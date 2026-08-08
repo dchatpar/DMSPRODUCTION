@@ -138,10 +138,10 @@ export default function LeadDetailsModal({
         try {
             await apiFetch(`/api/leads/${lead.id}/log-call`, {
                 method: "POST",
-                body: JSON.stringify({
+                body: {
                     outcome: "Connected",
                     note: "Call logged from lead drawer",
-                }),
+                },
             });
             toast.success("Call logged — score updated");
             onRefresh?.();

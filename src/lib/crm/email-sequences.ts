@@ -2,6 +2,7 @@
 
 import { crmEmail } from "@/src/lib/email";
 import { isResendConfigured, sendEmail } from "@/src/lib/resend";
+import { resolveEmailFrom } from "@/src/lib/email/from";
 import { buildUnsubscribeUrl } from "@/src/lib/casl-unsubscribe";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -314,6 +315,20 @@ export async function sendNextSequenceStep(
     };
   }
 
+  // Dealer-level from-address override (dealerships.settings.email_from),
+  // falling back to EMAIL_FROM env inside resolveEmailFrom.
+  let emailFrom: string | undefined;
+  const { data: dealerRow } = await supabase
+    .from("dealerships")
+    .select("settings")
+    .eq("id", opts.dealershipId)
+    .maybeSingle();
+  if (dealerRow) {
+    emailFrom = resolveEmailFrom(
+      (dealerRow.settings as Record<string, unknown>) || null
+    ).from;
+  }
+
   const vars: TemplateVars = {
     first_name: opts.recipient.firstName,
     dealership: opts.recipient.dealershipName,
@@ -343,6 +358,7 @@ export async function sendNextSequenceStep(
 
   const sent = await sendEmail({
     to: opts.recipient.toEmail,
+    from: emailFrom,
     subject: mail.subject,
     html: mail.html,
     text: mail.text,

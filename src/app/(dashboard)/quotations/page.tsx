@@ -826,7 +826,7 @@ export default function QuotationsPage() {
                                                     quote.status !== "Cancelled" && (
                                                     <button
                                                         type="button"
-                                                        title="Email quote (requires Resend)"
+                                                        title="Email quote to customer (Resend)"
                                                         className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
                                                         disabled={emailingId === quote.id}
                                                         onClick={() => void handleEmailQuote(quote)}

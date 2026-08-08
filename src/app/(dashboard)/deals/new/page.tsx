@@ -250,18 +250,18 @@ function NewDealWizardInner() {
 
             const res = await apiFetch<{ data: { id: string } }>("/api/deals", {
                 method: "POST",
-                body: JSON.stringify(payload),
+                body: payload,
             });
 
             if (form.lead_id && res.data?.id) {
                 try {
                     await apiFetch(`/api/leads/${form.lead_id}`, {
                         method: "PATCH",
-                        body: JSON.stringify({
+                        body: {
                             status: "Closed",
                             converted_deal_id: res.data.id,
                             notes: `Converted to deal ${res.data.id}`,
-                        }),
+                        },
                         silent: true,
                     });
                 } catch {

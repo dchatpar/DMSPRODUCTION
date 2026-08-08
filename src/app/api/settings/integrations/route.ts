@@ -8,6 +8,7 @@ import { isFlashAiConfigured } from "@/src/lib/ai/llm";
 import { AI_NOT_CONFIGURED_MESSAGE } from "@/src/lib/ai/guard";
 import { isTwilioConfigured } from "@/src/lib/sms/config";
 import { supabaseAdmin } from "@/src/lib/supabase-admin";
+import { resolveEmailFrom, type ResolvedEmailFrom } from "@/src/lib/email/from";
 
 type IntegrationStatus = {
     id: string;
@@ -39,6 +40,7 @@ export async function GET(req: NextRequest) {
         let facebookPageName: string | null = null;
         let autotraderCompanySet = false;
         let autotraderLastExport: string | null = null;
+        let resolvedEmailFrom: ResolvedEmailFrom | null = null;
         const dealershipId = auth.profile.dealership_id;
         if (dealershipId) {
             const { data: fbRow } = await supabaseAdmin
@@ -59,6 +61,7 @@ export async function GET(req: NextRequest) {
                 .eq("id", dealershipId)
                 .maybeSingle();
             const settings = (dealer?.settings || {}) as Record<string, unknown>;
+            resolvedEmailFrom = resolveEmailFrom(settings);
             autotraderCompanySet = Boolean(
                 (typeof settings.autotrader_company_id === "string" &&
                     settings.autotrader_company_id.trim()) ||
@@ -267,6 +270,16 @@ export async function GET(req: NextRequest) {
                 dealership_id: auth.profile.dealership_id,
                 integrations,
                 email_from_set: Boolean(process.env.EMAIL_FROM),
+                email_from: resolvedEmailFrom
+                    ? {
+                          from: resolvedEmailFrom.from,
+                          source: resolvedEmailFrom.source,
+                          display_name: resolvedEmailFrom.displayName ?? null,
+                          dealer_override:
+                              resolvedEmailFrom.source === "dealer",
+                          email_from_set: Boolean(process.env.EMAIL_FROM),
+                      }
+                    : null,
                 sms: {
                     configured: twilioOk,
                     missing: missingTwilio,
