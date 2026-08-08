@@ -140,7 +140,7 @@ const TicketsKanban: React.FC<TicketsKanbanProps> = ({
         e.dataTransfer.dropEffect = 'move';
     };
 
-    const handleDrop = async (e: React.DragEvent, targetStatus: string) => {
+    async function handleDrop(e: React.DragEvent, targetStatus: string) {
         e.preventDefault();
 
         if (!draggedTicket || draggedTicket.status === targetStatus) {
@@ -166,7 +166,7 @@ const TicketsKanban: React.FC<TicketsKanbanProps> = ({
         } finally {
             setUpdating(false);
         }
-    };
+    }
 
     const formatDate = (date: string | null) => {
         if (!date) return null;

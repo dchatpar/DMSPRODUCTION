@@ -102,28 +102,8 @@ export default function FollowUpFormModal({
         notes: ""
     });
 
-    useEffect(() => {
-        fetchData();
-    }, []);
 
-    useEffect(() => {
-        if (followUp && mode === "edit") {
-            setFormData({
-                title: followUp.title || "",
-                description: followUp.description || "",
-                customer_id: followUp.customer_id || "",
-                lead_id: followUp.lead_id || "",
-                assigned_to: followUp.assigned_to || "",
-                follow_up_date: followUp.follow_up_date?.split("T")[0] || "",
-                follow_up_time: followUp.follow_up_time || "",
-                priority: followUp.priority || "Medium",
-                status: followUp.status || "Pending",
-                notes: followUp.notes || ""
-            });
-        }
-    }, [followUp, mode]);
-
-    const fetchData = async () => {
+    async function fetchData() {
         try {
             const [customersRes, leadsRes, usersRes] = await Promise.all([
                 fetch("/api/customers?limit=1000", {
@@ -148,7 +128,28 @@ export default function FollowUpFormModal({
         } finally {
             setLoadingData(false);
         }
-    };
+    }
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    useEffect(() => {
+        if (followUp && mode === "edit") {
+            setFormData({
+                title: followUp.title || "",
+                description: followUp.description || "",
+                customer_id: followUp.customer_id || "",
+                lead_id: followUp.lead_id || "",
+                assigned_to: followUp.assigned_to || "",
+                follow_up_date: followUp.follow_up_date?.split("T")[0] || "",
+                follow_up_time: followUp.follow_up_time || "",
+                priority: followUp.priority || "Medium",
+                status: followUp.status || "Pending",
+                notes: followUp.notes || ""
+            });
+        }
+    }, [followUp, mode]);
+
 
     const handleChange = (
         e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
@@ -157,7 +158,7 @@ export default function FollowUpFormModal({
         setFormData((prev) => ({ ...prev, [name]: value }));
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         setLoading(true);
         setError(null);
@@ -197,7 +198,7 @@ export default function FollowUpFormModal({
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     return (
         <div className="fixed inset-0 z-50 overflow-y-auto">

@@ -46,10 +46,10 @@ interface Task {
     source_id: string | null;
     assigned_user: UserData | null;
     created_by_user: UserData | null;
-    task_notes?: any[];
-    task_attachments?: any[];
-    task_reminders?: any[];
-    task_links?: any[];
+    task_notes?: unknown[];
+    task_attachments?: unknown[];
+    task_reminders?: unknown[];
+    task_links?: unknown[];
 }
 
 interface TasksKanbanProps {
@@ -171,7 +171,7 @@ const TasksKanban: React.FC<TasksKanbanProps> = ({
         e.dataTransfer.dropEffect = 'move';
     };
 
-    const handleDrop = async (e: React.DragEvent, targetStatus: string) => {
+    async function handleDrop(e: React.DragEvent, targetStatus: string) {
         e.preventDefault();
 
         if (!draggedTask || draggedTask.status === targetStatus) {
@@ -197,7 +197,7 @@ const TasksKanban: React.FC<TasksKanbanProps> = ({
         } finally {
             setUpdating(false);
         }
-    };
+    }
 
     const formatDate = (date: string | null) => {
         if (!date) return null;

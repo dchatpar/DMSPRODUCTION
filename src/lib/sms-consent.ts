@@ -3,7 +3,7 @@
  */
 
 export type SmsConsentCustomer = {
-    id?: string;
+    id?: string | null;
     sms_consent?: boolean | null;
     phone?: string | null;
 };

@@ -20,6 +20,25 @@ import {
 import { apiFetch } from "@/src/lib/fetch";
 import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
 
+interface CustomerOption {
+    id: string;
+    name: string;
+    email?: string | null;
+}
+
+interface VehicleOption {
+    id: string;
+    year: string | number;
+    make: string;
+    model: string;
+    stock_number?: string | null;
+}
+
+interface UserOption {
+    id: string;
+    full_name: string;
+}
+
 interface Lead {
     id: string;
     customer_id: string;
@@ -70,9 +89,9 @@ export default function LeadFormModal({
 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [customers, setCustomers] = useState<any[]>([]);
-    const [vehicles, setVehicles] = useState<any[]>([]);
-    const [users, setUsers] = useState<any[]>([]);
+    const [customers, setCustomers] = useState<CustomerOption[]>([]);
+    const [vehicles, setVehicles] = useState<VehicleOption[]>([]);
+    const [users, setUsers] = useState<UserOption[]>([]);
     const [loadingData, setLoadingData] = useState(true);
     const [showAddCustomer, setShowAddCustomer] = useState(false);
     const [newCustomer, setNewCustomer] = useState({ name: "", email: "", phone: "" });
@@ -86,24 +105,8 @@ export default function LeadFormModal({
         notes: ""
     });
 
-    useEffect(() => {
-        fetchFormData();
-    }, []);
 
-    useEffect(() => {
-        if (mode === "edit" && lead) {
-            setFormData({
-                customer_id: lead.customer_id,
-                source: lead.source,
-                status: lead.status,
-                interest_vehicle_id: lead.interest_vehicle_id || "",
-                assigned_to: lead.assigned_to || "",
-                notes: lead.notes || ""
-            });
-        }
-    }, [mode, lead]);
-
-    const fetchFormData = async () => {
+    async function fetchFormData() {
         try {
             // Fetch customers, vehicles, and users in parallel
             const [customersRes, vehiclesRes, usersRes] = await Promise.all([
@@ -127,7 +130,24 @@ export default function LeadFormModal({
         } finally {
             setLoadingData(false);
         }
-    };
+    }
+    useEffect(() => {
+        fetchFormData();
+    }, []);
+
+    useEffect(() => {
+        if (mode === "edit" && lead) {
+            setFormData({
+                customer_id: lead.customer_id,
+                source: lead.source,
+                status: lead.status,
+                interest_vehicle_id: lead.interest_vehicle_id || "",
+                assigned_to: lead.assigned_to || "",
+                notes: lead.notes || ""
+            });
+        }
+    }, [mode, lead]);
+
 
     const handleChange = (
         e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -144,7 +164,7 @@ export default function LeadFormModal({
         setNewCustomer((prev) => ({ ...prev, [name]: value }));
     };
 
-    const handleAddCustomer = async () => {
+    async function handleAddCustomer() {
         if (!newCustomer.name.trim()) {
             setError("Customer name is required");
             return;
@@ -183,9 +203,9 @@ export default function LeadFormModal({
         } finally {
             setAddingCustomer(false);
         }
-    };
+    }
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         setLoading(true);
         setError(null);
@@ -221,7 +241,7 @@ export default function LeadFormModal({
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     if (loadingData) {
         return (

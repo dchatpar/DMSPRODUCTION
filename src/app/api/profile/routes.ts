@@ -60,10 +60,10 @@ export async function GET(req: NextRequest) {
             }
         }, { status: 200 });
 
-    } catch (err: any) {
+    } catch (err: unknown) {
         console.error("GET /api/profile error:", err);
         return NextResponse.json(
-            { error: err?.message || "Internal server error" },
+            { error: err instanceof Error ? err.message : "Internal server error" },
             { status: 500 }
         );
     }

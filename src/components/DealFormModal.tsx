@@ -104,28 +104,7 @@ export default function DealFormModal({
         deal_date: new Date().toISOString().split("T")[0]
     });
 
-    useEffect(() => {
-        fetchDropdownData();
-
-        if (mode === "edit" && deal) {
-            setFormData({
-                vehicle_id: deal.vehicle_id || "",
-                customer_id: deal.customer_id || "",
-                deal_status: deal.deal_status || "Negotiation",
-                sale_price: deal.sale_price || 0,
-                down_payment: deal.down_payment || 0,
-                trade_in_value: deal.trade_in_value || 0,
-                finance_term: deal.finance_term?.toString() || "",
-                interest_rate: deal.interest_rate?.toString() || "",
-                finance_company: deal.finance_company || "",
-                salesperson_id: deal.salesperson_id || "",
-                notes: deal.notes || "",
-                deal_date: deal.deal_date || new Date().toISOString().split("T")[0]
-            });
-        }
-    }, [mode, deal]);
-
-    const fetchDropdownData = async () => {
+    async function fetchDropdownData() {
         setLoadingData(true);
         try {
             // Fetch vehicles that are active (not sold)
@@ -149,7 +128,28 @@ export default function DealFormModal({
         } finally {
             setLoadingData(false);
         }
-    };
+    }
+
+    useEffect(() => {
+        void fetchDropdownData();
+
+        if (mode === "edit" && deal) {
+            setFormData({
+                vehicle_id: deal.vehicle_id || "",
+                customer_id: deal.customer_id || "",
+                deal_status: deal.deal_status || "Negotiation",
+                sale_price: deal.sale_price || 0,
+                down_payment: deal.down_payment || 0,
+                trade_in_value: deal.trade_in_value || 0,
+                finance_term: deal.finance_term?.toString() || "",
+                interest_rate: deal.interest_rate?.toString() || "",
+                finance_company: deal.finance_company || "",
+                salesperson_id: deal.salesperson_id || "",
+                notes: deal.notes || "",
+                deal_date: deal.deal_date || new Date().toISOString().split("T")[0]
+            });
+        }
+    }, [mode, deal]);
 
     const handleChange = (
         e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -172,7 +172,7 @@ export default function DealFormModal({
         }
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         setLoading(true);
         setError(null);
@@ -211,7 +211,7 @@ export default function DealFormModal({
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     const selectedVehicle = vehicles.find((v) => v.id === formData.vehicle_id);
 

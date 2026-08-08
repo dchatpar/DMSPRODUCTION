@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireDealershipAccess } from "@/src/lib/auth-helpers";
 import { supabaseAdmin } from "@/src/lib/supabase-admin";
+import {
+    AUCTION_SOURCE_FIELDS,
+    normalizeAuctionLotInfo,
+} from "@/src/lib/auction";
 
 export async function GET(req: NextRequest) {
     try {
@@ -136,6 +140,11 @@ export async function POST(req: NextRequest) {
                     exterior_color: v.exterior_color ? String(v.exterior_color) : null,
                     stock_number: v.stock_number ? String(v.stock_number) : null,
                     dealership_id: targetDealership,
+                    location_id:
+                        typeof body.location_id === "string" && body.location_id.trim()
+                            ? body.location_id.trim()
+                            : null,
+                    ...normalizeAuctionLotInfo(body),
                     internal_notes: body.notes
                         ? `Purchase from public: ${body.notes}`
                         : "Acquired via Purchase from Public",
@@ -167,6 +176,11 @@ export async function POST(req: NextRequest) {
             title_received: Boolean(body.title_received),
             title_number: body.title_number ? String(body.title_number).trim() : null,
             notes: body.notes ? String(body.notes).trim() : null,
+            location_id:
+                typeof body.location_id === "string" && body.location_id.trim()
+                    ? body.location_id.trim()
+                    : null,
+            ...normalizeAuctionLotInfo(body),
         };
 
         const { data, error } = await supabaseAdmin
@@ -202,6 +216,8 @@ const PURCHASE_PATCH_FIELDS = [
     "title_received",
     "title_number",
     "notes",
+    "location_id",
+    ...AUCTION_SOURCE_FIELDS,
 ] as const;
 
 export async function PATCH(req: NextRequest) {
@@ -260,7 +276,12 @@ export async function PATCH(req: NextRequest) {
                 key === "seller_phone" ||
                 key === "seller_address" ||
                 key === "title_number" ||
-                key === "notes"
+                key === "notes" ||
+                key === "location_id" ||
+                key === "auction_venue" ||
+                key === "auction_lot_number" ||
+                key === "auction_sale_date" ||
+                key === "comp_notes"
             ) {
                 const raw = body[key];
                 patch[key] = raw == null || raw === "" ? null : String(raw).trim();

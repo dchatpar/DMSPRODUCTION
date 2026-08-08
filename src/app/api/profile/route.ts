@@ -9,8 +9,8 @@ export async function GET(req: NextRequest) {
 
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -52,10 +52,10 @@ export async function GET(req: NextRequest) {
         }
 
         return NextResponse.json({ data: profile });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error fetching profile:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -68,8 +68,8 @@ export async function PATCH(req: NextRequest) {
 
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -150,7 +150,7 @@ export async function PATCH(req: NextRequest) {
 
         // Allowed fields for profile update
         const allowedFields = ["full_name", "phone", "avatar"];
-        const updateFields: Record<string, any> = {};
+        const updateFields: Record<string, unknown> = {};
 
         for (const field of allowedFields) {
             if (payload[field] !== undefined) {
@@ -160,7 +160,7 @@ export async function PATCH(req: NextRequest) {
 
         // Update user metadata in auth if needed
         if (updateFields.full_name || updateFields.avatar) {
-            const metadataUpdate: Record<string, any> = {};
+            const metadataUpdate: Record<string, unknown> = {};
             if (updateFields.full_name) metadataUpdate.full_name = updateFields.full_name;
             if (updateFields.avatar) metadataUpdate.avatar = updateFields.avatar;
 
@@ -196,10 +196,10 @@ export async function PATCH(req: NextRequest) {
             data: { id: user.id, email: user.email },
             message: "Password updated successfully"
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error updating profile:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }

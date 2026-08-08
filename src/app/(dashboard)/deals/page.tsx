@@ -24,7 +24,7 @@ import DealDetailsModal from "@/src/components/DealDetailsModal";
 import DealFormModal from "@/src/components/DealFormModal";
 import DealsKanban from "@/src/components/DealsKanban";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
-import BillOfSaleModal from "@/src/components/BillOfSaleModal";
+import BillOfSaleModal, { type BillOfSale } from "@/src/components/BillOfSaleModal";
 import LinkCustomerQueue from "@/src/components/LinkCustomerQueue";
 import * as XLSX from "xlsx";
 import { apiFetch } from "@/src/lib/fetch";
@@ -39,6 +39,7 @@ import { EntityLink } from "@/src/components/ui/EntityLink";
 import { RelationChip } from "@/src/components/ui/RelationChip";
 import { firstImageUrl } from "@/src/lib/vehicle-image";
 import { isDealStagnant } from "@/src/lib/business/lead-score";
+import { useLocations } from "@/src/hooks/useLocations";
 
 interface Vehicle {
     id: string;
@@ -129,6 +130,8 @@ function DealsPageInner() {
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
     const [statusFilter, setStatusFilter] = useState<string>("");
+    const [locationFilter, setLocationFilter] = useState<string>("");
+    const { locations } = useLocations();
     const [currentPage, setCurrentPage] = useState(1);
     const [totalItems, setTotalItems] = useState(0);
     const [exportLoading, setExportLoading] = useState(false);
@@ -169,7 +172,7 @@ function DealsPageInner() {
     const [showBillOfSaleModal, setShowBillOfSaleModal] = useState(false);
     const [selectedDealForBillOfSale, setSelectedDealForBillOfSale] = useState<Deal | null>(null);
     const [billOfSaleModalMode, setBillOfSaleModalMode] = useState<"add" | "edit" | "view">("add");
-    const [billOfSaleData, setBillOfSaleData] = useState<any>(null);
+    const [billOfSaleData, setBillOfSaleData] = useState<BillOfSale | null>(null);
     const [loadingBillOfSale, setLoadingBillOfSale] = useState(false);
     const [showLinkQueue, setShowLinkQueue] = useState(false);
     const [unlinkedCount, setUnlinkedCount] = useState(0);
@@ -179,7 +182,7 @@ function DealsPageInner() {
         fetchUserPermissions();
         fetchUnlinkedCount();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentPage, statusFilter, searchTerm, viewMode]);
+    }, [currentPage, statusFilter, locationFilter, searchTerm, viewMode]);
 
     // Deep-link: /deals?unlinked=true opens the link queue
     useEffect(() => {
@@ -189,7 +192,7 @@ function DealsPageInner() {
         }
     }, [searchParams]);
 
-    const fetchUnlinkedCount = async () => {
+    async function fetchUnlinkedCount() {
         try {
             const response = await fetch("/api/deals?unlinked=true&limit=1");
             if (response.ok) {
@@ -199,9 +202,9 @@ function DealsPageInner() {
         } catch {
             // non-blocking
         }
-    };
+    }
 
-    const fetchUserPermissions = async () => {
+    async function fetchUserPermissions() {
         try {
             const response = await fetch("/api/me", {
             });
@@ -218,9 +221,9 @@ function DealsPageInner() {
         } catch (error) {
             console.error("Error fetching user permissions:", error);
         }
-    };
+    }
 
-    const fetchDeals = async () => {
+    async function fetchDeals() {
         try {
             setLoading(true);
             setError(null);
@@ -230,6 +233,7 @@ function DealsPageInner() {
 
             let url = `/api/deals?limit=${limit}&offset=${offset}`;
             if (statusFilter) url += `&status=${encodeURIComponent(statusFilter)}`;
+            if (locationFilter) url += `&location_id=${encodeURIComponent(locationFilter)}`;
             if (searchTerm) url += `&q=${encodeURIComponent(searchTerm)}`;
 
             const response = await fetch(url, {
@@ -249,9 +253,9 @@ function DealsPageInner() {
         } finally {
             setLoading(false);
         }
-    };
+    }
 
-    const exportToExcel = async () => {
+    async function exportToExcel() {
         setExportLoading(true);
         try {
 
@@ -263,14 +267,14 @@ function DealsPageInner() {
                 throw new Error(errorData.error || `Failed to fetch deals (${response.status})`);
             }
 
-            const data = await response.json();
+            const data = (await response.json()) as { data: Deal[] };
             const exportData = data.data || [];
 
             if (exportData.length === 0) {
                 throw new Error("No deals found to export");
             }
 
-            const worksheetData = exportData.map((deal: any) => ({
+            const worksheetData = exportData.map((deal) => ({
                 "Customer": deal.customer?.name || (deal.customer_id ? "Unlinked" : "Cash"),
                 "Email": deal.customer?.email || "",
                 "Phone": deal.customer?.phone || "",
@@ -305,7 +309,7 @@ function DealsPageInner() {
         } finally {
             setExportLoading(false);
         }
-    };
+    }
 
     const handleViewDetails = (deal: Deal) => {
         router.push(`/deals/${deal.id}`);
@@ -327,12 +331,12 @@ function DealsPageInner() {
         fetchDeals();
     };
 
-    const handleDelete = async (deal: Deal) => {
+    async function handleDelete(deal: Deal) {
         setConfirmDialogData({ deal, loading: false });
         setShowConfirmDialog(true);
-    };
+    }
 
-    const handleOpenBillOfSale = async (deal: Deal) => {
+    async function handleOpenBillOfSale(deal: Deal) {
         setLoadingBillOfSale(true);
         try {
             // Check if bill of sale exists for this deal
@@ -365,9 +369,9 @@ function DealsPageInner() {
         } finally {
             setLoadingBillOfSale(false);
         }
-    };
+    }
 
-    const confirmDelete = async () => {
+    async function confirmDelete() {
         if (!confirmDialogData.deal) return;
 
         const dealId = confirmDialogData.deal.id;
@@ -399,9 +403,9 @@ function DealsPageInner() {
             toast.error(err instanceof Error ? err.message : "An error occurred");
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
-    };
+    }
 
-    const handleStatusChange = async (deal: Deal, newStatus: string) => {
+    async function handleStatusChange(deal: Deal, newStatus: string) {
         try {
             const response = await fetch(`/api/deals/${deal.id}`, {
                 method: "PATCH",
@@ -419,7 +423,7 @@ function DealsPageInner() {
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "An error occurred");
         }
-    };
+    }
 
     const getStatusColor = (status: string) => {
         return STATUS_COLORS[status]?.bg.replace("-50", "-100") || "bg-muted";
@@ -542,6 +546,20 @@ function DealsPageInner() {
                             ],
                             allLabel: "All status",
                         },
+                        ...(locations.length > 0
+                            ? [
+                                  {
+                                      id: "location",
+                                      value: locationFilter,
+                                      onChange: setLocationFilter,
+                                      options: locations.map((loc) => ({
+                                          value: loc.id,
+                                          label: loc.name,
+                                      })),
+                                      allLabel: "All locations",
+                                  },
+                              ]
+                            : []),
                     ]}
                     viewMode={viewMode}
                     onViewModeChange={setViewMode}

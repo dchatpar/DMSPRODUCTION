@@ -163,7 +163,7 @@ export default function CustomerDetailPage() {
     const [canEdit, setCanEdit] = useState(false);
     const [showEdit, setShowEdit] = useState(false);
 
-    const load = async () => {
+    async function load() {
         if (!id) return;
         try {
             setLoading(true);
@@ -208,7 +208,7 @@ export default function CustomerDetailPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     useEffect(() => {
         void load();

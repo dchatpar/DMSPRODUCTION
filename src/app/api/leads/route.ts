@@ -7,6 +7,7 @@ import {
     canCreate,
 } from "@/src/lib/permission-middleware";
 import { scoreLead, resolveLeadScore } from "@/src/lib/business/lead-score";
+import { emitDealershipEvent } from "@/src/lib/api/webhooks";
 
 export async function GET(req: NextRequest) {
     try {
@@ -14,8 +15,8 @@ export async function GET(req: NextRequest) {
 
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -77,6 +78,8 @@ export async function GET(req: NextRequest) {
         const assigned_to = url.searchParams.get("assigned_to");
         const temperature = url.searchParams.get("temperature");
         const q = url.searchParams.get("q");
+        // Multi-location (Tier 3): optional rooftop scope.
+        const locationId = url.searchParams.get("location_id") || url.searchParams.get("locationId");
         const createdAtFrom = url.searchParams.get("created_at_from");
         const createdAtTo = url.searchParams.get("created_at_to");
         const tempFilter =
@@ -183,6 +186,7 @@ export async function GET(req: NextRequest) {
 
         if (status) query = query.eq("status", status);
         if (source) query = query.eq("source", source);
+        if (locationId) query = query.eq("location_id", locationId);
         if (temperatureIds) {
             query = query.in("id", temperatureIds);
         }
@@ -237,10 +241,10 @@ export async function GET(req: NextRequest) {
             limit,
             offset,
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error fetching leads:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -253,8 +257,8 @@ export async function POST(req: NextRequest) {
 
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -331,6 +335,10 @@ export async function POST(req: NextRequest) {
         const now = new Date().toISOString();
         const interestVehicleId =
             payload.interest_vehicle_id || payload.vehicle_id || null;
+        const locationId =
+            typeof payload.location_id === "string" && payload.location_id.trim()
+                ? payload.location_id.trim()
+                : null;
         const scored = scoreLead({
             source: payload.source || "Website",
             status: payload.status || "Not Started",
@@ -353,6 +361,7 @@ export async function POST(req: NextRequest) {
             score: scored.score,
             temperature: scored.temperature,
             dealership_id: currentUser.dealership_id,
+            ...(locationId ? { location_id: locationId } : {}),
         };
 
         const { data, error: dbError } = await supabase
@@ -368,11 +377,28 @@ export async function POST(req: NextRequest) {
 
         if (dbError) throw dbError;
 
+        // Webhook dispatch (fire-and-forget; failures never fail the write).
+        if (currentUser.dealership_id) {
+            void emitDealershipEvent({
+                dealershipId: currentUser.dealership_id,
+                event: "lead.created",
+                payload: {
+                    lead_id: data.id,
+                    customer_id: data.customer_id,
+                    source: data.source,
+                    status: data.status,
+                    interest_vehicle_id: data.interest_vehicle_id,
+                },
+            }).catch((err: unknown) =>
+                console.error("lead.created webhook dispatch failed:", err)
+            );
+        }
+
         return NextResponse.json({ data }, { status: 201 });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error creating lead:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }

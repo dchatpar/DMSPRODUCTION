@@ -24,8 +24,8 @@ export async function GET(
         let supabase;
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -68,10 +68,10 @@ export async function GET(
         }
 
         return NextResponse.json({ data: role });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error fetching role:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -96,8 +96,8 @@ export async function PATCH(
         let supabase;
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -143,7 +143,7 @@ export async function PATCH(
 
         // Whitelist the update payload and block dealership_id changes
         const safePayload = pickAllowed(payload, ROLE_ALLOWED_FIELDS);
-        delete (safePayload as any).dealership_id;
+        delete (safePayload as { dealership_id?: unknown }).dealership_id;
 
         const { data, error: dbError } = await supabase
             .from("roles")
@@ -160,10 +160,10 @@ export async function PATCH(
         if (dbError) throw dbError;
 
         return NextResponse.json({ data });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error updating role:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -188,8 +188,8 @@ export async function DELETE(
         let supabase;
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -252,10 +252,10 @@ export async function DELETE(
         if (dbError) throw dbError;
 
         return NextResponse.json({ success: true });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error deleting role:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }

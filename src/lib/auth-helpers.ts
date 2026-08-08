@@ -15,6 +15,7 @@
 // changes take effect immediately without a re-login.
 
 import { NextRequest, NextResponse } from "next/server";
+import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { createClient } from "./server";
 import { createTokenClient, MissingBearerError } from "./server-token";
 import { shouldScopeToAssigned } from "./permission-middleware";
@@ -36,7 +37,7 @@ export interface UserProfile {
 }
 
 export interface AuthResult {
-    user: any | null;
+    user: SupabaseUser | null;
     profile: UserProfile | null;
     error: string | null;
     /** HTTP status hint for denied auth (e.g. 402 trial expired). */
@@ -95,7 +96,10 @@ async function resolveFromBearer(req: NextRequest): Promise<AuthResult | null> {
     return { user, profile, error: null };
 }
 
-async function fetchProfile(supabase: any, userId: string): Promise<UserProfile | null> {
+async function fetchProfile(
+    supabase: ReturnType<typeof createTokenClient> | typeof supabaseAdmin,
+    userId: string
+): Promise<UserProfile | null> {
     const { data: profile, error } = await supabase
         .from("users")
         .select("*")
@@ -289,7 +293,7 @@ export function pickSupabaseClient(req: NextRequest, profile: UserProfile): {
     return { supabase: createTokenClient(req), isPlatformAdmin: false };
 }
 
-export function handleApiError(error: any) {
+export function handleApiError(error: { message?: string; status?: number }) {
     console.error("API Error:", error);
     return {
         error: error.message || "Internal server error",
@@ -383,14 +387,14 @@ export function assertOwnershipOrDeny(
  *   const safe = pickAllowed(payload, ['name', 'email', 'phone', 'assigned_to']);
  *   await supabase.from('customers').update(safe).eq('id', id);
  */
-export function pickAllowed<T extends Record<string, any>>(
+export function pickAllowed<T extends Record<string, unknown>>(
     payload: T,
     allowedFields: readonly string[]
 ): Partial<T> {
     const out: Partial<T> = {};
     for (const k of allowedFields) {
         if (k in payload) {
-            (out as any)[k] = payload[k];
+            (out as Record<string, unknown>)[k] = payload[k];
         }
     }
     return out;

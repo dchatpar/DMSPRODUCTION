@@ -45,7 +45,10 @@ export function useOverlayDismiss(
     const { open = true, enabled = true, persistent = false } = options;
     const id = useId();
     const onCloseRef = useRef(onClose);
-    onCloseRef.current = onClose;
+
+    useEffect(() => {
+        onCloseRef.current = onClose;
+    }, [onClose]);
 
     useEffect(() => {
         if (!enabled || persistent || open === false) return;

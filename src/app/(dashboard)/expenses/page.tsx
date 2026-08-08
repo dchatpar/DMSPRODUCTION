@@ -150,7 +150,7 @@ export default function ExpensesPage() {
         fetchUserPermissions();
     }, [currentPage, categoryFilter, statusFilter, debouncedSearch, expenseDateFrom, expenseDateTo]);
 
-    const fetchUserPermissions = async () => {
+    async function fetchUserPermissions() {
         try {
             const response = await fetch("/api/me", {
             });
@@ -162,7 +162,7 @@ export default function ExpensesPage() {
         } catch (error) {
             console.error("Error fetching user permissions:", error);
         }
-    };
+    }
 
     // Debounce search input
     useEffect(() => {
@@ -188,7 +188,7 @@ export default function ExpensesPage() {
         }
     };
 
-    const exportToExcel = async () => {
+    async function exportToExcel() {
         setExportLoading(true);
         try {
 
@@ -206,14 +206,14 @@ export default function ExpensesPage() {
                 throw new Error(errorData.error || `Failed to fetch expenses (${response.status})`);
             }
 
-            const data = await response.json();
+            const data = (await response.json()) as { data: Expense[] };
             const exportData = data.data || [];
 
             if (exportData.length === 0) {
                 throw new Error("No expenses found to export");
             }
 
-            const worksheetData = exportData.map((expense: any) => ({
+            const worksheetData = exportData.map((expense) => ({
                 "Date": expense.expense_date ? new Date(expense.expense_date).toLocaleDateString() : "",
                 "Category": expense.category || "",
                 "Description": expense.description || "",
@@ -254,9 +254,9 @@ export default function ExpensesPage() {
         } finally {
             setExportLoading(false);
         }
-    };
+    }
 
-    const fetchExpenses = async () => {
+    async function fetchExpenses() {
         try {
             setLoading(true);
             setError(null);
@@ -294,7 +294,7 @@ export default function ExpensesPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     const handleViewDetails = (expense: Expense) => {
         setSelectedExpense(expense);
@@ -319,12 +319,12 @@ export default function ExpensesPage() {
         fetchExpenses();
     };
 
-    const handleDelete = async (expense: Expense) => {
+    async function handleDelete(expense: Expense) {
         setConfirmDialogData({ expense, loading: false });
         setShowConfirmDialog(true);
-    };
+    }
 
-    const confirmDelete = async () => {
+    async function confirmDelete() {
         if (!confirmDialogData.expense) return;
 
         const expenseId = confirmDialogData.expense.id;
@@ -349,9 +349,9 @@ export default function ExpensesPage() {
             toast.error(err instanceof Error ? err.message : "An error occurred");
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
-    };
+    }
 
-    const handleStatusChange = async (expense: Expense, newStatus: string) => {
+    async function handleStatusChange(expense: Expense, newStatus: string) {
         try {
             const response = await fetch(`/api/expenses/${expense.id}`, {
                 method: "PATCH",
@@ -368,7 +368,7 @@ export default function ExpensesPage() {
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "An error occurred");
         }
-    };
+    }
 
     const getStatusColor = (status: string) => {
         const colors: Record<string, string> = {

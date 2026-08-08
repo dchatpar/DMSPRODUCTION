@@ -20,6 +20,12 @@ const BUCKET = "vehicles";
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const MAX_BYTES = 5 * 1024 * 1024; // 5MB per file
 
+interface ImageUpload {
+    filename?: string;
+    base64?: string;
+    contentType?: string;
+}
+
 interface AuthedUser {
     id: string;
     role: string;
@@ -102,13 +108,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             candidates.push({ name: val.name || "upload", mime: val.type || "image/jpeg", bytes });
         }
     } else {
-        let body: any;
+        let body: { images?: ImageUpload[]; image?: ImageUpload } | null = null;
         try {
             body = await req.json();
         } catch (e) {
             return NextResponse.json({ error: `Invalid JSON body: ${(e as Error).message}` }, { status: 400 });
         }
-        const incoming: any[] = Array.isArray(body?.images) ? body.images : body?.image ? [body.image] : [];
+        const incoming: ImageUpload[] = Array.isArray(body?.images) ? body.images : body?.image ? [body.image] : [];
         if (incoming.length === 0) {
             return NextResponse.json({ error: "No images provided (use multipart 'file' field or JSON {filename, base64})" }, { status: 400 });
         }
@@ -201,7 +207,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     // Param folder is [id] for slug consistency; value is the vehicle VIN.
     const { id: rawVin } = await params;
     const vin = decodeURIComponent(rawVin);
-    let body: any;
+    let body: { url?: string } | null = null;
     try {
         body = await req.json();
     } catch {

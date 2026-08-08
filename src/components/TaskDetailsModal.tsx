@@ -128,7 +128,7 @@ export default function TaskDetailsModal({
         task.status !== "Cancelled" &&
         new Date(task.due_date) < new Date();
 
-    const handleDelete = async () => {
+    async function handleDelete() {
         setDeleting(true);
         try {
             const response = await fetch(`/api/tasks/${task.id}`, { method: "DELETE" });
@@ -140,9 +140,9 @@ export default function TaskDetailsModal({
         } finally {
             setDeleting(false);
         }
-    };
+    }
 
-    const handleAddNote = async () => {
+    async function handleAddNote() {
         if (!newNote.trim()) return;
         setAddingNote(true);
         try {
@@ -159,7 +159,7 @@ export default function TaskDetailsModal({
         } finally {
             setAddingNote(false);
         }
-    };
+    }
 
     const activityItems: ActivityItem[] = (task.task_activity ?? []).map((a) => ({
         id: a.id,

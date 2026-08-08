@@ -40,6 +40,10 @@ import {
     Images,
     Landmark,
     Mail,
+    ShieldCheck,
+    FileSpreadsheet,
+    ScrollText,
+    Archive,
     type LucideIcon,
 } from "lucide-react";
 import { apiFetch } from "@/src/lib/fetch";
@@ -162,6 +166,7 @@ const dealershipSections: PermNavSection[] = [
         title: "Financial",
         items: [
             { name: "Invoices", href: "/invoices", icon: Receipt },
+            { name: "Credit Applications", href: "/finance/credit", icon: CreditCard },
             { name: "Expenses", href: "/expenses", icon: ReceiptIcon },
             {
                 name: "Vendors",
@@ -215,6 +220,12 @@ const dealershipSections: PermNavSection[] = [
             },
             { name: "Website embed", href: "/settings/website", icon: Globe, anyOf: ["settings:read", "settings:write", "settings:company"] },
             {
+                name: "AI Governance",
+                href: "/settings/ai-governance",
+                icon: ShieldCheck,
+                anyOf: ["settings:read", "settings:write"],
+            },
+            {
                 name: "Integrations",
                 href: "/settings/integrations",
                 icon: Plug,
@@ -231,6 +242,24 @@ const dealershipSections: PermNavSection[] = [
                 href: "/settings/billing",
                 icon: CreditCard,
                 anyOf: ["settings:read", "settings:write", "settings:company"],
+            },
+            {
+                name: "Accounting Export",
+                href: "/settings/accounting",
+                icon: FileSpreadsheet,
+                anyOf: ["settings:read", "settings:write", "settings:company"],
+            },
+            {
+                name: "Audit Trail",
+                href: "/settings/audit",
+                icon: ScrollText,
+                anyOf: ["settings:read", "settings:write"],
+            },
+            {
+                name: "Retention & Compliance",
+                href: "/settings/retention",
+                icon: Archive,
+                anyOf: ["settings:read", "settings:write"],
             },
         ],
     },
@@ -295,7 +324,7 @@ export default function Sidebar() {
     }, [isMobileOpen]);
 
     useEffect(() => {
-        const fetchUserData = async () => {
+        async function fetchUserData() {
             try {
                 const data = await apiFetch<{ data: UserData }>("/api/me", { silent: true });
                 if (data?.data) setUserData(data.data);
@@ -304,7 +333,7 @@ export default function Sidebar() {
             } finally {
                 setLoading(false);
             }
-        };
+        }
         fetchUserData();
     }, []);
 
@@ -337,7 +366,7 @@ export default function Sidebar() {
                 : userData?.user_permissions || [];
         const role = userData?.role || "";
 
-        let base: NavSection[] = dealershipSections
+        const base: NavSection[] = dealershipSections
             .map((section) => ({
                 title: section.title,
                 items: section.items.filter((item) =>
@@ -368,7 +397,7 @@ export default function Sidebar() {
         );
     };
 
-    const handleLogout = async () => {
+    async function handleLogout() {
         if (logoutLoading) return;
         setLogoutLoading(true);
         try {
@@ -380,7 +409,7 @@ export default function Sidebar() {
             toast.error("Could not sign out", err instanceof Error ? err.message : "Please try again.");
             setLogoutLoading(false);
         }
-    };
+    }
 
     const renderNav = () => (
         <nav className="flex h-full flex-col" aria-label="Main">

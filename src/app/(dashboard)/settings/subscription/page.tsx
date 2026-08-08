@@ -11,6 +11,7 @@ import {
     RefreshCw,
     Zap
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 interface Subscription {
     id: string;
     dealership_id: string;
@@ -45,7 +46,7 @@ export default function SubscriptionPage() {
         fetchData();
     }, []);
 
-    const fetchData = async () => {
+    async function fetchData() {
         try {
             setLoading(true);
             setError(null);
@@ -82,13 +83,13 @@ export default function SubscriptionPage() {
                 setDealership(dealershipData.data);
                 setSubscription(dealershipData.data.subscription || null);
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Error fetching subscription:", err);
-            setError(err.message || "Failed to load subscription");
+            setError(err instanceof Error ? err.message : "Failed to load subscription");
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     const formatDate = (dateString: string | null) => {
         if (!dateString) return "N/A";
@@ -107,7 +108,7 @@ export default function SubscriptionPage() {
     };
 
     const getStatusBadge = (status: string) => {
-        const styles: Record<string, { bg: string; text: string; icon: any }> = {
+        const styles: Record<string, { bg: string; text: string; icon: LucideIcon }> = {
             Active: { bg: "bg-green-100", text: "text-green-700", icon: CheckCircle },
             Trial: { bg: "bg-blue-100", text: "text-blue-700", icon: Zap },
             PastDue: { bg: "bg-amber-100", text: "text-amber-700", icon: AlertCircle },

@@ -37,7 +37,7 @@ export function AiActionButton({
     const [loading, setLoading] = useState(false);
     const [missing, setMissing] = useState(false);
 
-    const run = async () => {
+    async function run() {
         setLoading(true);
         setMissing(false);
         try {
@@ -70,7 +70,7 @@ export function AiActionButton({
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     return (
         <div className={cn("space-y-2", className)}>

@@ -71,7 +71,7 @@ export default function DealershipUsersPage() {
         }
     }, [dealershipId, searchTerm]);
 
-    const fetchDealership = async () => {
+    async function fetchDealership() {
         try {
             const response = await fetch(`/api/dealerships/${dealershipId}`, {});
             if (response.ok) {
@@ -81,9 +81,9 @@ export default function DealershipUsersPage() {
         } catch (err) {
             console.error("Error fetching dealership:", err);
         }
-    };
+    }
 
-    const fetchUsers = async () => {
+    async function fetchUsers() {
         try {
             setLoading(true);
             setError(null);
@@ -111,7 +111,7 @@ export default function DealershipUsersPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     const handleAdd = () => {
         setSelectedUser(null);
@@ -130,7 +130,7 @@ export default function DealershipUsersPage() {
         setShowConfirmDialog(true);
     };
 
-    const confirmDelete = async () => {
+    async function confirmDelete() {
         if (!confirmDialogData.user) return;
 
         const userId = confirmDialogData.user.id;
@@ -152,7 +152,7 @@ export default function DealershipUsersPage() {
             toast.error(err instanceof Error ? err.message : "Failed to delete user");
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
-    };
+    }
 
     const handleFormSuccess = () => {
         setShowFormModal(false);

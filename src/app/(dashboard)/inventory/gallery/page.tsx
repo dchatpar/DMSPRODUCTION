@@ -65,7 +65,7 @@ export default function ImageLibraryPage() {
 
     useEffect(() => {
         let cancelled = false;
-        const load = async () => {
+        async function load() {
             try {
                 setLoading(true);
                 setError(null);
@@ -90,7 +90,7 @@ export default function ImageLibraryPage() {
             } finally {
                 if (!cancelled) setLoading(false);
             }
-        };
+        }
         load();
         return () => {
             cancelled = true;

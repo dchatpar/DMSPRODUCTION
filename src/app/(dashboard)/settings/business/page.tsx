@@ -39,7 +39,7 @@ export default function BusinessSettingsPage() {
         autotrader_category_id: "",
     });
 
-    const load = async () => {
+    async function load() {
         try {
             setLoading(true);
             setError(null);
@@ -66,13 +66,13 @@ export default function BusinessSettingsPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     useEffect(() => {
         void load();
     }, []);
 
-    const save = async () => {
+    async function save() {
         if (!canEdit) return;
         try {
             setSaving(true);
@@ -90,7 +90,7 @@ export default function BusinessSettingsPage() {
         } finally {
             setSaving(false);
         }
-    };
+    }
 
     const fieldClass =
         "w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-60";

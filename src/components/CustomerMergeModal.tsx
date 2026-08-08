@@ -91,7 +91,7 @@ export default function CustomerMergeModal({
     const keep = allMembers.find((m) => m.id === keepId) || null;
     const merge = allMembers.find((m) => m.id === mergeId) || null;
 
-    const runMerge = async () => {
+    async function runMerge() {
         if (!keepId || !mergeId) {
             setError("Select keep and merge customers");
             return;
@@ -111,7 +111,7 @@ export default function CustomerMergeModal({
         } finally {
             setMerging(false);
         }
-    };
+    }
 
     return (
         <ModalShell

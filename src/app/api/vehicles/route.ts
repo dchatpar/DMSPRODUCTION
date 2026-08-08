@@ -14,8 +14,8 @@ export async function GET(req: NextRequest) {
 
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -84,6 +84,8 @@ export async function GET(req: NextRequest) {
         const condition = url.searchParams.get("condition");
         const minDays = url.searchParams.get("minDays") || url.searchParams.get("days_min");
         const maxDays = url.searchParams.get("maxDays") || url.searchParams.get("days_max");
+        // Multi-location (Tier 3): optional rooftop scope.
+        const locationId = url.searchParams.get("location_id") || url.searchParams.get("locationId");
         // sort=year or sort=-year or sortBy=year&sortDir=desc
         // days → created_at (older = more days in stock); retail → retail_price; cost → purchase_price
         const sortFieldRaw = url.searchParams.get("sort") || url.searchParams.get("sortBy") || "created_at";
@@ -149,6 +151,7 @@ export async function GET(req: NextRequest) {
                 query = query.gte("created_at", new Date(Date.now() - ms).toISOString());
             }
         }
+        if (locationId) query = query.eq("location_id", locationId);
         if (q) query = query.or(`vin.ilike.%${q}%,make.ilike.%${q}%,model.ilike.%${q}%,trim.ilike.%${q}%,stock_number.ilike.%${q}%,description.ilike.%${q}%`);
 
         const { data, error: dbError, count } = await query;
@@ -161,10 +164,10 @@ export async function GET(req: NextRequest) {
             limit,
             offset,
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error fetching vehicles:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -177,8 +180,8 @@ export async function POST(req: NextRequest) {
 
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -266,10 +269,10 @@ export async function POST(req: NextRequest) {
         }
 
         return NextResponse.json({ data }, { status: 201 });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error creating vehicle:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }

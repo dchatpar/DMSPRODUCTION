@@ -17,11 +17,35 @@ const nextConfig: NextConfig = {
             { protocol: "https", hostname: "*.supabase.co" },
         ],
     },
+    async redirects() {
+        return [
+            // Legacy bookmark / email CTA — real page is /register
+            {
+                source: "/signup",
+                destination: "/register",
+                permanent: true,
+            },
+        ];
+    },
     async headers() {
         return [
             {
                 source: "/(.*)",
                 headers: SECURITY_HEADERS,
+            },
+            {
+                // PWA manifest + install icons: safe to cache, fast revalidation.
+                source: "/manifest.webmanifest",
+                headers: [
+                    { key: "Content-Type", value: "application/manifest+json" },
+                    { key: "Cache-Control", value: "public, max-age=86400" },
+                ],
+            },
+            {
+                source: "/brand/:path*",
+                headers: [
+                    { key: "Cache-Control", value: "public, max-age=604800, immutable" },
+                ],
             },
         ];
     },

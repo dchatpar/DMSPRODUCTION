@@ -41,7 +41,7 @@ export function KijijiListingPack({ vehicleId, vin }: KijijiListingPackProps) {
         return res.data;
     };
 
-    const handleCopy = async () => {
+    async function handleCopy() {
         setBusy("copy");
         try {
             const pack = await loadPack();
@@ -54,7 +54,7 @@ export function KijijiListingPack({ vehicleId, vin }: KijijiListingPackProps) {
         } finally {
             setBusy(null);
         }
-    };
+    }
 
     const downloadBlob = (content: string, filename: string, mime: string) => {
         const blob = new Blob([content], { type: mime });
@@ -66,7 +66,7 @@ export function KijijiListingPack({ vehicleId, vin }: KijijiListingPackProps) {
         URL.revokeObjectURL(url);
     };
 
-    const handleJson = async () => {
+    async function handleJson() {
         setBusy("json");
         try {
             const pack = await loadPack();
@@ -83,9 +83,9 @@ export function KijijiListingPack({ vehicleId, vin }: KijijiListingPackProps) {
         } finally {
             setBusy(null);
         }
-    };
+    }
 
-    const handleCsv = async () => {
+    async function handleCsv() {
         setBusy("csv");
         try {
             const res = await fetch(
@@ -108,9 +108,9 @@ export function KijijiListingPack({ vehicleId, vin }: KijijiListingPackProps) {
         } finally {
             setBusy(null);
         }
-    };
+    }
 
-    const handleAutoTrader = async (format: "feed" | "csv") => {
+    async function handleAutoTrader(format: "feed" | "csv") {
         setBusy(format === "feed" ? "at-feed" : "at-csv");
         setAtIssues([]);
         try {
@@ -149,9 +149,9 @@ export function KijijiListingPack({ vehicleId, vin }: KijijiListingPackProps) {
         } finally {
             setBusy(null);
         }
-    };
+    }
 
-    const handleAtCheck = async () => {
+    async function handleAtCheck() {
         setBusy("at-check");
         setAtIssues([]);
         try {
@@ -184,7 +184,7 @@ export function KijijiListingPack({ vehicleId, vin }: KijijiListingPackProps) {
         } finally {
             setBusy(null);
         }
-    };
+    }
 
     return (
         <section className="rounded-xl border border-border bg-card p-3.5 space-y-4">

@@ -24,7 +24,7 @@ export default function ComingSoon() {
 
             {/* Description */}
             <p className="text-gray-500 max-w-md mb-6">
-                This feature is currently under development. We're working hard to bring it to you soon!
+                This feature is currently under development. We&apos;re working hard to bring it to you soon!
             </p>
 
             {/* Status Badge */}

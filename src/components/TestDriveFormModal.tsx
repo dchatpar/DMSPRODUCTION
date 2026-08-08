@@ -25,6 +25,33 @@ import {
 import { apiFetch } from "@/src/lib/fetch";
 import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
 
+interface FormCustomerOption {
+    id: string;
+    name: string;
+    email?: string | null;
+}
+
+interface FormLeadOption {
+    id: string;
+    source?: string | null;
+    status?: string | null;
+    customer?: { name?: string } | null;
+}
+
+interface FormVehicleOption {
+    id: string;
+    year: string | number;
+    make: string;
+    model: string;
+    vin?: string;
+    stock_number?: string | null;
+}
+
+interface FormUserOption {
+    id: string;
+    full_name: string;
+}
+
 interface TestDrive {
     id: string;
     customer_id: string | null;
@@ -63,10 +90,10 @@ export default function TestDriveFormModal({
 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [customers, setCustomers] = useState<any[]>([]);
-    const [leads, setLeads] = useState<any[]>([]);
-    const [vehicles, setVehicles] = useState<any[]>([]);
-    const [users, setUsers] = useState<any[]>([]);
+    const [customers, setCustomers] = useState<FormCustomerOption[]>([]);
+    const [leads, setLeads] = useState<FormLeadOption[]>([]);
+    const [vehicles, setVehicles] = useState<FormVehicleOption[]>([]);
+    const [users, setUsers] = useState<FormUserOption[]>([]);
     const [loadingData, setLoadingData] = useState(true);
     const [customerType, setCustomerType] = useState<"customer" | "lead">("customer");
     const [errors, setErrors] = useState<Record<string, string>>({});
@@ -105,6 +132,35 @@ export default function TestDriveFormModal({
         { key: "keysReturned" as const, label: "Keys returned / vehicle inspected" },
     ];
 
+
+    async function fetchFormData() {
+        try {
+            const [customersRes, leadsRes, vehiclesRes, usersRes] = await Promise.all([
+                fetch("/api/customers?limit=1000", {
+                }),
+                fetch("/api/leads?limit=1000", {
+                }),
+                fetch("/api/vehicles?limit=1000&status=Active", {
+                }),
+                fetch("/api/users?limit=1000", {
+                }),
+            ]);
+
+            const customersData = await customersRes.json();
+            const leadsData = await leadsRes.json();
+            const vehiclesData = await vehiclesRes.json();
+            const usersData = await usersRes.json();
+
+            setCustomers(customersData.data || []);
+            setLeads(leadsData.data || []);
+            setVehicles(vehiclesData.data || []);
+            setUsers(usersData.data || []);
+        } catch (error) {
+            console.error("Error fetching form data:", error);
+        } finally {
+            setLoadingData(false);
+        }
+    }
     useEffect(() => {
         fetchFormData();
     }, []);
@@ -138,34 +194,6 @@ export default function TestDriveFormModal({
         }
     }, [mode, testDrive]);
 
-    const fetchFormData = async () => {
-        try {
-            const [customersRes, leadsRes, vehiclesRes, usersRes] = await Promise.all([
-                fetch("/api/customers?limit=1000", {
-                }),
-                fetch("/api/leads?limit=1000", {
-                }),
-                fetch("/api/vehicles?limit=1000&status=Active", {
-                }),
-                fetch("/api/users?limit=1000", {
-                }),
-            ]);
-
-            const customersData = await customersRes.json();
-            const leadsData = await leadsRes.json();
-            const vehiclesData = await vehiclesRes.json();
-            const usersData = await usersRes.json();
-
-            setCustomers(customersData.data || []);
-            setLeads(leadsData.data || []);
-            setVehicles(vehiclesData.data || []);
-            setUsers(usersData.data || []);
-        } catch (error) {
-            console.error("Error fetching form data:", error);
-        } finally {
-            setLoadingData(false);
-        }
-    };
 
     const handleChange = (
         e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -190,7 +218,7 @@ export default function TestDriveFormModal({
         setNewCustomer((prev) => ({ ...prev, [name]: value }));
     };
 
-    const handleAddCustomer = async () => {
+    async function handleAddCustomer() {
         if (!newCustomer.name.trim()) {
             setError("Customer name is required");
             return;
@@ -230,7 +258,7 @@ export default function TestDriveFormModal({
         } finally {
             setAddingCustomer(false);
         }
-    };
+    }
 
     const validateForm = (): boolean => {
         const newErrors: Record<string, string> = {};
@@ -272,7 +300,7 @@ export default function TestDriveFormModal({
         return Object.keys(newErrors).length === 0;
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
 
         // Validate before submission
@@ -289,7 +317,7 @@ export default function TestDriveFormModal({
             const method = mode === "add" ? "POST" : "PUT";
 
             // Build payload only with schema-backed fields
-            const payload: Record<string, any> = {
+            const payload: Record<string, unknown> = {
                 vehicle_id: formData.vehicle_id,
                 scheduled_date: formData.start_time,
                 start_time: formData.start_time,
@@ -358,7 +386,7 @@ export default function TestDriveFormModal({
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     if (loadingData) {
         return (

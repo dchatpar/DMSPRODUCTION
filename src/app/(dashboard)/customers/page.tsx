@@ -22,6 +22,7 @@ import CustomerMergeModal from "@/src/components/CustomerMergeModal";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
 import { ListPageShell } from "@/src/components/ListPageShell";
 import { ListToolbar } from "@/src/components/ListToolbar";
+import { EquityTriggersBanner } from "@/src/components/EquityTriggersBanner";
 import { toast } from "@/src/lib/toast";
 import { Button } from "@/src/components/ui/Button";
 import { EmptyState } from "@/src/components/ui/EmptyState";
@@ -99,7 +100,7 @@ export default function CustomersPage() {
         fetchCustomers();
     }, [currentPage, statusFilter, debouncedSearch]);
 
-    const fetchActiveCount = async () => {
+    async function fetchActiveCount() {
         try {
             const response = await fetch("/api/customers?status=Active&limit=1");
             if (response.ok) {
@@ -109,9 +110,9 @@ export default function CustomersPage() {
         } catch {
             /* non-fatal */
         }
-    };
+    }
 
-    const fetchUserPermissions = async () => {
+    async function fetchUserPermissions() {
         try {
             const response = await fetch("/api/me", {});
             if (response.ok) {
@@ -122,9 +123,9 @@ export default function CustomersPage() {
         } catch (error) {
             console.error("Error fetching user permissions:", error);
         }
-    };
+    }
 
-    const fetchStatusOptions = async () => {
+    async function fetchStatusOptions() {
         try {
             const response = await fetch("/api/customers?distinct_status=true", {});
             if (response.ok) {
@@ -134,9 +135,9 @@ export default function CustomersPage() {
         } catch (error) {
             console.error("Error fetching status options:", error);
         }
-    };
+    }
 
-    const exportToExcel = async () => {
+    async function exportToExcel() {
         setExportLoading(true);
         try {
             // Fetch all customers for export (without pagination)
@@ -199,7 +200,7 @@ export default function CustomersPage() {
         } finally {
             setExportLoading(false);
         }
-    };
+    }
 
     // Check if user has write permission for a resource
     const canWrite = (resource: string): boolean => {
@@ -213,7 +214,7 @@ export default function CustomersPage() {
         return userPermissions.includes(`${resource}:delete`);
     };
 
-    const fetchCustomers = async () => {
+    async function fetchCustomers() {
         try {
             setLoading(true);
             setError(null);
@@ -240,7 +241,7 @@ export default function CustomersPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     const handleViewDetails = (customer: Customer) => {
         setSelectedCustomer(customer);
@@ -265,12 +266,12 @@ export default function CustomersPage() {
         fetchCustomers();
     };
 
-    const handleDelete = async (customer: Customer) => {
+    async function handleDelete(customer: Customer) {
         setConfirmDialogData({ customer, loading: false });
         setShowConfirmDialog(true);
-    };
+    }
 
-    const confirmDelete = async () => {
+    async function confirmDelete() {
         if (!confirmDialogData.customer) return;
 
         const customerId = confirmDialogData.customer.id;
@@ -300,7 +301,7 @@ export default function CustomersPage() {
             toast.error(err instanceof Error ? err.message : "An error occurred");
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
-    };
+    }
 
     const formatDate = (date: string) => {
         return new Date(date).toLocaleDateString('en-US', {
@@ -381,6 +382,11 @@ export default function CustomersPage() {
                 />
             }
         >
+            <EquityTriggersBanner
+                mode="customers"
+                inventoryHref="/inventory?aging=1"
+                customersHref="#"
+            />
             {/* Table */}
             <div className="overflow-hidden rounded-lg border border-border bg-card">
                 <div className="hidden max-h-[calc(100vh-14rem)] overflow-auto lg:block">

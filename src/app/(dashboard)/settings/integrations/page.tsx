@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, Loader2, Plug, XCircle, ArrowRight } from "lucide-react";
+import { CheckCircle2, Loader2, Plug, XCircle, ArrowRight, Wrench } from "lucide-react";
 import { ListPageShell } from "@/src/components/ListPageShell";
 import { apiFetch } from "@/src/lib/fetch";
+import { DeveloperPanel } from "./DeveloperPanel";
 
 interface IntegrationRow {
     id: string;
@@ -17,19 +18,26 @@ interface IntegrationRow {
     href?: string;
 }
 
+interface IntegrationsData {
+    dealership_id: string | null;
+    integrations: IntegrationRow[];
+}
+
 export default function IntegrationsSettingsPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [integrations, setIntegrations] = useState<IntegrationRow[]>([]);
+    const [dealershipId, setDealershipId] = useState<string | null>(null);
 
     useEffect(() => {
         (async () => {
             try {
                 setLoading(true);
                 const res = await apiFetch<{
-                    data: { integrations: IntegrationRow[] };
+                    data: IntegrationsData;
                 }>("/api/settings/integrations");
                 setIntegrations(res.data.integrations || []);
+                setDealershipId(res.data.dealership_id || null);
             } catch (err) {
                 setError(
                     err instanceof Error
@@ -176,6 +184,16 @@ export default function IntegrationsSettingsPage() {
                     </p>
                 </div>
             )}
+
+            <div className="pt-2">
+                <div className="mb-4 flex items-center gap-2">
+                    <Wrench className="h-4 w-4 text-muted-foreground" />
+                    <h2 className="text-base font-semibold text-foreground">
+                        Developer tools
+                    </h2>
+                </div>
+                <DeveloperPanel dealershipId={dealershipId} />
+            </div>
         </ListPageShell>
     );
 }

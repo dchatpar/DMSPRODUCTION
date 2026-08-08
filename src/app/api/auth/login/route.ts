@@ -147,7 +147,7 @@ export async function POST(req: NextRequest) {
         null,
         email,
         false,
-        error?.message || "Invalid credentials",
+        error instanceof Error ? error.message : "Invalid credentials",
         ipAddress,
         userAgent,
         null

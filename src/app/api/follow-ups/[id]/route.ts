@@ -29,8 +29,8 @@ export async function GET(
         try {
             const picked = pickSupabaseClient(req, auth.profile);
             supabase = picked.supabase;
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -94,10 +94,10 @@ export async function GET(
             .order("created_at", { ascending: true });
 
         return NextResponse.json({ data: { ...data, history: history || [] } });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error fetching follow-up:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -121,8 +121,8 @@ export async function PATCH(
         try {
             const picked = pickSupabaseClient(req, auth.profile);
             supabase = picked.supabase;
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -174,10 +174,10 @@ export async function PATCH(
 
         // Whitelist the update payload and block dealership_id changes
         const safePayload = pickAllowed(payload, FOLLOWUP_ALLOWED_FIELDS);
-        delete (safePayload as any).dealership_id;
+        delete (safePayload as { dealership_id?: unknown }).dealership_id;
 
         // Build update data
-        const updateData: any = { ...safePayload };
+        const updateData: Record<string, unknown> = { ...safePayload };
 
         if (updateData.status === 'Completed') {
             updateData.completed_at = new Date().toISOString();
@@ -242,10 +242,10 @@ export async function PATCH(
             .order("created_at", { ascending: true });
 
         return NextResponse.json({ data: { ...data, history: history || [] } });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error updating follow-up:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -269,8 +269,8 @@ export async function DELETE(
         try {
             const picked = pickSupabaseClient(req, auth.profile);
             supabase = picked.supabase;
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -282,7 +282,7 @@ export async function DELETE(
         const { id } = await params;
 
         const userRole = auth.profile.role;
-        const userPerms = (auth.profile as any).user_permissions || [];
+        const userPerms = auth.profile?.user_permissions || [];
         const isPlatformAdmin = auth.profile.is_platform_admin;
 
         const canDelete = isPlatformAdmin ||
@@ -326,10 +326,10 @@ export async function DELETE(
         if (dbError) throw dbError;
 
         return NextResponse.json({ success: true });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error deleting follow-up:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }

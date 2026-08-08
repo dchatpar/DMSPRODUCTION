@@ -6,6 +6,7 @@ import {
     canViewAll,
     canCreate,
 } from "@/src/lib/permission-middleware";
+import { emitDealershipEvent } from "@/src/lib/api/webhooks";
 
 // GET all deals
 export async function GET(req: NextRequest) {
@@ -14,8 +15,8 @@ export async function GET(req: NextRequest) {
 
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -54,6 +55,8 @@ export async function GET(req: NextRequest) {
         const status = url.searchParams.get("status");
         const q = url.searchParams.get("q");
         const unlinked = url.searchParams.get("unlinked");
+        // Multi-location (Tier 3): optional rooftop scope.
+        const locationId = url.searchParams.get("location_id") || url.searchParams.get("locationId");
 
         let query = supabase
             .from("sales_deals")
@@ -89,6 +92,7 @@ export async function GET(req: NextRequest) {
         }
 
         if (status) query = query.eq("deal_status", status);
+        if (locationId) query = query.eq("location_id", locationId);
         if (q) {
             const { data: matchingCustomers } = await supabase
                 .from("customers")
@@ -116,10 +120,10 @@ export async function GET(req: NextRequest) {
         if (dbError) throw dbError;
 
         return NextResponse.json({ data: data || [], count: count || 0, limit, offset });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error fetching deals:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -132,8 +136,8 @@ export async function POST(req: NextRequest) {
 
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -189,6 +193,9 @@ export async function POST(req: NextRequest) {
         const dealData = {
             vehicle_id: payload.vehicle_id,
             customer_id: payload.customer_id || null,
+            ...(typeof payload.location_id === "string" && payload.location_id.trim()
+                ? { location_id: payload.location_id.trim() }
+                : {}),
             deal_status: payload.deal_status || 'Negotiation',
             finance_term: payload.finance_term || null,
             interest_rate: payload.interest_rate || null,
@@ -231,11 +238,29 @@ export async function POST(req: NextRequest) {
                 .eq("id", payload.vehicle_id);
         }
 
+        // Webhook dispatch (fire-and-forget; failures never fail the write).
+        if (currentUser.dealership_id) {
+            void emitDealershipEvent({
+                dealershipId: currentUser.dealership_id,
+                event: "deal.created",
+                payload: {
+                    deal_id: data.id,
+                    vehicle_id: data.vehicle_id,
+                    customer_id: data.customer_id,
+                    deal_status: data.deal_status,
+                    sale_price: data.sale_price,
+                    deal_date: data.deal_date,
+                },
+            }).catch((err: unknown) =>
+                console.error("deal.created webhook dispatch failed:", err)
+            );
+        }
+
         return NextResponse.json({ data }, { status: 201 });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error creating deal:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }

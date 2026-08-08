@@ -41,6 +41,12 @@ interface Dealership {
 export default function BillingPage() {
     const [billingInfo, setBillingInfo] = useState<BillingInfo | null>(null);
     const [dealership, setDealership] = useState<Dealership | null>(null);
+    const [paymentConfig, setPaymentConfig] = useState<{
+        configured: boolean;
+        provider: string | null;
+        publishableKey: string | null;
+        currency: string;
+    } | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -48,7 +54,7 @@ export default function BillingPage() {
         void fetchData();
     }, []);
 
-    const fetchData = async () => {
+    async function fetchData() {
         try {
             setLoading(true);
             setError(null);
@@ -81,6 +87,12 @@ export default function BillingPage() {
                     setBillingInfo(null);
                 }
             }
+
+            const paymentsResponse = await fetch("/api/payments/config");
+            if (paymentsResponse.ok) {
+                const paymentsJson = await paymentsResponse.json();
+                setPaymentConfig(paymentsJson.data || null);
+            }
         } catch (err: unknown) {
             console.error("Error fetching billing info:", err);
             setError(
@@ -91,7 +103,7 @@ export default function BillingPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     const formatCardDisplay = () => {
         if (!billingInfo?.payment_method_type) return null;
@@ -337,6 +349,58 @@ export default function BillingPage() {
                             >
                                 View Subscription
                             </a>
+                        </div>
+
+                        <div className="rounded-xl border border-gray-200 bg-white p-6">
+                            <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-gray-500">
+                                <CreditCard className="h-4 w-4" />
+                                Online Payments
+                            </h3>
+                            {paymentConfig ? (
+                                paymentConfig.configured ? (
+                                    <div className="flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2.5 text-sm text-green-800">
+                                        <span className="mt-0.5 h-2 w-2 flex-shrink-0 rounded-full bg-green-500" />
+                                        <p>
+                                            Payments are live via Stripe
+                                            ({paymentConfig.currency}).
+                                            Invoices and deal deposits can be
+                                            collected online.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-950">
+                                        <p className="font-medium">
+                                            Payments not configured
+                                        </p>
+                                        <p className="mt-0.5 text-xs text-amber-900/90">
+                                            Online checkout is not live. No
+                                            charges are made and no card
+                                            details are collected until Stripe
+                                            is set up. Contact your AdaptUs
+                                            representative to enable it.
+                                        </p>
+                                    </div>
+                                )
+                            ) : (
+                                <p className="text-sm text-gray-400">
+                                    Checking configuration…
+                                </p>
+                            )}
+                            <p className="mt-2 text-[11px] text-gray-400">
+                                Collect invoice balances and deal deposits via
+                                hosted checkout. Payments appear on{" "}
+                                <a
+                                    href="/settings/accounting"
+                                    className="underline"
+                                >
+                                    Accounting export
+                                </a>{" "}
+                                and the{" "}
+                                <a href="/settings/audit" className="underline">
+                                    audit trail
+                                </a>
+                                .
+                            </p>
                         </div>
 
                         <div className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 p-6">

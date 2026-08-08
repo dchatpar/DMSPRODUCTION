@@ -9,6 +9,8 @@ import {
     type UserProfile,
 } from "@/src/lib/auth-helpers";
 import { isFlashAiConfigured } from "@/src/lib/ai/llm";
+import { parseClock } from "@/src/lib/ai/clock";
+export { formatClock } from "@/src/lib/ai/clock";
 
 export const AI_NOT_CONFIGURED_MESSAGE =
     "Flash AI not configured — add via wrangler when ready.";
@@ -75,3 +77,89 @@ Rules:
 - Ontario MVDA: disclosure helpers are drafts requiring human confirm before save.
 - Currency: CAD. Tone: professional dealership desk.
 - Never include chain-of-thought, reasoning tags, or <think> blocks in user-visible output. Reply as Flash AI only.`;
+
+// ---------------------------------------------------------------------------
+// Claims guardrails (FTC: "AI claims are dealer claims")
+// ---------------------------------------------------------------------------
+
+export const DEFAULT_BLOCKED_CLAIMS: string[] = [
+    "best price guarantee",
+    "lowest price",
+    "guaranteed approval",
+    "no credit check",
+    "0 down guaranteed",
+    "anyone can get financed",
+    "certified by manufacturer",
+    "warranty covers everything",
+    "this will not affect your credit",
+    "price locked forever",
+];
+
+export interface ClaimsGuardrailResult {
+    ok: boolean;
+    blocked: string[];
+    message: string;
+}
+
+/**
+ * Check free text against a blocked-claims list. Case-insensitive substring
+ * match. Honesty gate for any AI output shown to a customer.
+ */
+export function validateClaimsGuardrail(
+    text: string,
+    blockedClaims: string[]
+): ClaimsGuardrailResult {
+    const needle = (text || "").toLowerCase();
+    const blocked = (blockedClaims || [])
+        .map((c) => c.trim().toLowerCase())
+        .filter(Boolean)
+        .filter((c) => needle.includes(c));
+    if (blocked.length > 0) {
+        return {
+            ok: false,
+            blocked,
+            message: `Output contains blocked claims: ${blocked.join(", ")}`,
+        };
+    }
+    return { ok: true, blocked: [], message: "" };
+}
+
+// ---------------------------------------------------------------------------
+// Quiet-hours helpers (used by after-hours AI first response + governance)
+// ---------------------------------------------------------------------------
+
+export interface QuietHoursConfig {
+    quiet_hours_enabled: boolean;
+    /** "HH:MM" 24h start of quiet window. */
+    quiet_hours_start: string;
+    /** "HH:MM" 24h end of quiet window (may wrap past midnight). */
+    quiet_hours_end: string;
+    /** IANA tz for interpreting the window (best-effort in Edge runtime). */
+    quiet_hours_timezone?: string | null;
+}
+
+function isOvernightWindow(startMin: number, endMin: number): boolean {
+    return endMin <= startMin;
+}
+
+function minuteOfDay(now: Date): number {
+    return now.getHours() * 60 + now.getMinutes();
+}
+
+/**
+ * True when `now` falls inside the configured quiet window.
+ * No timezone math is attempted at runtime — the config records a tz so the
+ * console can display it; enforcement uses server-local time.
+ */
+export function isQuietHour(now: Date, config: QuietHoursConfig): boolean {
+    if (!config?.quiet_hours_enabled) return false;
+    const start = parseClock(config.quiet_hours_start);
+    const end = parseClock(config.quiet_hours_end);
+    if (Number.isNaN(start) || Number.isNaN(end)) return false;
+    const minute = minuteOfDay(now);
+    if (isOvernightWindow(start, end)) {
+        return minute >= start || minute < end;
+    }
+    return minute >= start && minute < end;
+}
+

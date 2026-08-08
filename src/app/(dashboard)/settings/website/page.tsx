@@ -28,7 +28,7 @@ export default function WebsiteEmbedSettingsPage() {
     const [vdpBase, setVdpBase] = useState("");
     const [error, setError] = useState<string | null>(null);
 
-    const load = async () => {
+    async function load() {
         try {
             setLoading(true);
             setError(null);
@@ -40,13 +40,13 @@ export default function WebsiteEmbedSettingsPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     useEffect(() => {
         void load();
     }, []);
 
-    const copySnippet = async () => {
+    async function copySnippet() {
         if (!data?.snippet) return;
         try {
             await navigator.clipboard.writeText(data.snippet);
@@ -56,9 +56,9 @@ export default function WebsiteEmbedSettingsPage() {
         } catch {
             toast.error("Copy failed", "Select the snippet and copy manually.");
         }
-    };
+    }
 
-    const rotateToken = async () => {
+    async function rotateToken() {
         try {
             setRotating(true);
             const res = await apiFetch<{ data: EmbedSettings & { message?: string } }>(
@@ -83,9 +83,9 @@ export default function WebsiteEmbedSettingsPage() {
         } finally {
             setRotating(false);
         }
-    };
+    }
 
-    const saveVdp = async () => {
+    async function saveVdp() {
         try {
             setSaving(true);
             const res = await apiFetch<{ data: EmbedSettings }>(
@@ -100,7 +100,7 @@ export default function WebsiteEmbedSettingsPage() {
         } finally {
             setSaving(false);
         }
-    };
+    }
 
     return (
         <ListPageShell

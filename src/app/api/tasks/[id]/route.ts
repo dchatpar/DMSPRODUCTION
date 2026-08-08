@@ -24,8 +24,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         let supabase;
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json({ error: "Authorization token required" }, { status: 401 });
             }
             throw error;
@@ -109,9 +109,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
                 task_activity: activity || [],
             }
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error fetching task:", error);
-        return NextResponse.json({ error: error?.message || "Internal server error" }, { status: 500 });
+        return NextResponse.json({ error: error instanceof Error ? error.message : "Internal server error" }, { status: 500 });
     }
 }
 
@@ -129,8 +129,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         let supabase;
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json({ error: "Authorization token required" }, { status: 401 });
             }
             throw error;
@@ -158,10 +158,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
         // Whitelist the update payload and block dealership_id changes
         const safePayload = pickAllowed(payload, TASK_ALLOWED_FIELDS);
-        delete (safePayload as any).dealership_id;
+        delete (safePayload as { dealership_id?: unknown }).dealership_id;
 
         // Build update data
-        const updateData: any = { ...safePayload };
+        const updateData: Record<string, unknown> = { ...safePayload };
 
         if (payload.due_date !== undefined) {
             updateData.due_date = payload.due_date ? new Date(payload.due_date).toISOString() : null;
@@ -194,7 +194,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         if (payload.links !== undefined) {
             await supabase.from("task_links").delete().eq("task_id", id);
             if (payload.links.length > 0) {
-                const linkInserts = payload.links.map((link: any) => ({
+                const linkInserts = payload.links.map((link: { link_type: string; linked_id: string }) => ({
                     task_id: id,
                     link_type: link.link_type,
                     linked_id: link.linked_id,
@@ -204,7 +204,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         }
 
         // Log activity
-        const changes: any = {};
+        const changes: Record<string, unknown> = {};
         if (payload.status !== undefined && payload.status !== existing.status) {
             changes.status_change = { from: existing.status, to: payload.status };
         }
@@ -226,9 +226,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         }
 
         return NextResponse.json({ data: task });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error updating task:", error);
-        return NextResponse.json({ error: error?.message || "Internal server error" }, { status: 500 });
+        return NextResponse.json({ error: error instanceof Error ? error.message : "Internal server error" }, { status: 500 });
     }
 }
 
@@ -246,8 +246,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
         let supabase;
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json({ error: "Authorization token required" }, { status: 401 });
             }
             throw error;
@@ -256,7 +256,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
         const { id } = await params;
 
         const userRole = auth.profile.role;
-        const userPerms = (auth.profile as any).user_permissions || [];
+        const userPerms = auth.profile?.user_permissions || [];
         const isPlatformAdmin = auth.profile.is_platform_admin;
 
         // Check tasks:delete permission
@@ -302,8 +302,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
         if (dbError) throw dbError;
 
         return NextResponse.json({ success: true });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error deleting task:", error);
-        return NextResponse.json({ error: error?.message || "Internal server error" }, { status: 500 });
+        return NextResponse.json({ error: error instanceof Error ? error.message : "Internal server error" }, { status: 500 });
     }
 }

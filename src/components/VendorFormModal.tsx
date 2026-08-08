@@ -89,7 +89,7 @@ export default function VendorFormModal({
         setFormData((prev) => ({ ...prev, [name]: value }));
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         setLoading(true);
         setError(null);
@@ -136,7 +136,7 @@ export default function VendorFormModal({
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     return (
         <div className="fixed inset-0 z-50 overflow-y-auto">

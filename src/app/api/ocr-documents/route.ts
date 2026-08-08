@@ -6,8 +6,8 @@ export async function GET(req: NextRequest) {
         let supabase;
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json({ error: "Authorization token required" }, { status: 401 });
             }
             throw error;
@@ -71,8 +71,8 @@ export async function POST(req: NextRequest) {
         let supabase;
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json({ error: "Authorization token required" }, { status: 401 });
             }
             throw error;
@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
             "address", "city", "province", "postal_code", "issue_date", "country",
             "raw_ocr_text", "confidence_score", "image_url"
         ];
-        const docData: Record<string, any> = {
+        const docData: Record<string, unknown> = {
             dealership_id: currentUser.dealership_id,
             verified_by: user.id,
         };
@@ -130,8 +130,8 @@ export async function POST(req: NextRequest) {
         if (error) throw error;
 
         return Response.json({ data }, { status: 201 });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error creating OCR document:", error);
-        return Response.json({ error: error?.message || "Failed to create document" }, { status: 500 });
+        return Response.json({ error: error instanceof Error ? error.message : "Failed to create document" }, { status: 500 });
     }
 }

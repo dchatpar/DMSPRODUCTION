@@ -96,7 +96,7 @@ export default function DealershipsPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentPage, statusFilter, searchTerm]);
 
-    const fetchDealerships = async () => {
+    async function fetchDealerships() {
         try {
             setLoading(true);
             setError(null);
@@ -131,7 +131,7 @@ export default function DealershipsPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     const metrics = useMemo(() => {
         const active = dealerships.filter((d) => d.status === "Active").length;
@@ -162,7 +162,7 @@ export default function DealershipsPage() {
         setShowConfirmDialog(true);
     };
 
-    const confirmDelete = async () => {
+    async function confirmDelete() {
         if (!confirmDialogData.dealership) return;
 
         setConfirmDialogData((prev) => ({ ...prev, loading: true }));
@@ -195,7 +195,7 @@ export default function DealershipsPage() {
         } finally {
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
-    };
+    }
 
     const formatDate = (dateString: string) =>
         new Date(dateString).toLocaleDateString("en-US", {

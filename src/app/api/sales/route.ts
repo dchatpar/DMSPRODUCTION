@@ -8,8 +8,8 @@ export async function GET(req: NextRequest) {
         let supabase;
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json({ error: "Authorization token required" }, { status: 401 });
             }
             throw error;
@@ -61,10 +61,10 @@ export async function GET(req: NextRequest) {
         if (dbError) throw dbError;
 
         return NextResponse.json({ data: data || [], count: count || 0, limit, offset });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error fetching sales deals:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -75,8 +75,8 @@ export async function POST(req: NextRequest) {
         let supabase;
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json({ error: "Authorization token required" }, { status: 401 });
             }
             throw error;
@@ -135,10 +135,10 @@ export async function POST(req: NextRequest) {
             .eq("id", payload.vehicle_id);
 
         return NextResponse.json({ data }, { status: 201 });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error creating sales deal:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }

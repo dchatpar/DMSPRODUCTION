@@ -1,7 +1,25 @@
 // app/api/users/route.ts
 import { createTokenClient } from "@/src/lib/server-token";
 import { supabaseAdmin } from "@/src/lib/supabase-admin";
+import { inviteEmail } from "@/src/lib/email";
+import {
+    isResendConfigured,
+    sendEmail,
+} from "@/src/lib/resend";
+import {
+    generateResetToken,
+    sha256Hex,
+} from "@/src/lib/trial";
 import { NextRequest, NextResponse } from "next/server";
+
+function appBaseUrl(req: NextRequest): string {
+    const fromEnv = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL;
+    if (fromEnv) return fromEnv.replace(/\/$/, "");
+    const host = req.headers.get("x-forwarded-host") || req.headers.get("host");
+    const proto = req.headers.get("x-forwarded-proto") || "https";
+    if (host) return `${proto}://${host}`;
+    return "https://app.flashfender.com";
+}
 
 // GET all users (filtered by dealership OR all for platform admin)
 export async function GET(req: NextRequest) {
@@ -10,8 +28,8 @@ export async function GET(req: NextRequest) {
 
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -89,8 +107,8 @@ export async function GET(req: NextRequest) {
         let usersWithDealerships = data || [];
         if (isPlatformAdmin && usersWithDealerships.length > 0) {
             const dealershipIds = [...new Set(usersWithDealerships
-                .filter((u: any) => u.dealership_id)
-                .map((u: any) => u.dealership_id))];
+                .filter((u) => u.dealership_id)
+                .map((u) => u.dealership_id))];
 
             if (dealershipIds.length > 0) {
                 const { data: dealerships } = await supabase
@@ -99,11 +117,11 @@ export async function GET(req: NextRequest) {
                     .in("id", dealershipIds);
 
                 const dealershipMap: Record<string, string> = {};
-                dealerships?.forEach((d: any) => {
+                dealerships?.forEach((d) => {
                     dealershipMap[d.id] = d.name;
                 });
 
-                usersWithDealerships = usersWithDealerships.map((u: any) => ({
+                usersWithDealerships = usersWithDealerships.map((u) => ({
                     ...u,
                     dealership_name: u.dealership_id ? (dealershipMap[u.dealership_id] || "Unknown") : null
                 }));
@@ -116,10 +134,10 @@ export async function GET(req: NextRequest) {
             limit,
             offset,
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error fetching users:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -132,8 +150,8 @@ export async function POST(req: NextRequest) {
 
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -228,8 +246,9 @@ export async function POST(req: NextRequest) {
 
         // Create auth user
         // SECURITY: F-05 of v3 master plan. Reject creation without a password;
-        // never default to a known credential. The admin must set one explicitly,
-        // or the user will be sent a one-time reset link (TODO: implement).
+        // never default to a known credential. The admin must set one explicitly.
+        // After create we also email a one-time setup link so the user can set
+        // their own password (same token pattern as forgot-password).
         if (!password || typeof password !== "string" || password.length < 12) {
             return NextResponse.json(
                 { error: "Password is required and must be at least 12 characters" },
@@ -305,17 +324,89 @@ export async function POST(req: NextRequest) {
             }
         }
 
+        // Staff invite / welcome email (best-effort — never roll back create)
+        let inviteEmailSent = false;
+        let inviteEmailWarning: string | undefined;
+        let dealershipName: string | null = null;
+        if (assignedDealershipId) {
+            const { data: dealer } = await supabaseAdmin
+                .from("dealerships")
+                .select("name, business_name")
+                .eq("id", assignedDealershipId)
+                .maybeSingle();
+            if (dealer) {
+                dealershipName =
+                    (dealer.business_name as string) ||
+                    (dealer.name as string) ||
+                    null;
+            }
+        }
+
+        let setupUrl: string | null = null;
+        try {
+            const token = generateResetToken();
+            const tokenHash = await sha256Hex(token);
+            const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+            await supabaseAdmin
+                .from("password_reset_tokens")
+                .update({ consumed_at: new Date().toISOString() })
+                .eq("user_id", authData.user.id)
+                .is("consumed_at", null);
+            await supabaseAdmin.from("password_reset_tokens").insert({
+                user_id: authData.user.id,
+                token_hash: tokenHash,
+                expires_at: expiresAt,
+            });
+            const emailNorm = String(email).trim().toLowerCase();
+            setupUrl = `${appBaseUrl(req)}/reset-password?token=${token}&email=${encodeURIComponent(emailNorm)}`;
+        } catch (err) {
+            console.error("staff invite: failed to create setup token", err);
+        }
+
+        if (!isResendConfigured()) {
+            inviteEmailWarning =
+                "Invite email not sent — Resend is not configured (RESEND_API_KEY / EMAIL_FROM).";
+        } else {
+            const mail = inviteEmail({
+                recipientName: full_name,
+                recipientEmail: String(email).trim(),
+                role,
+                dealershipName,
+                setupUrl,
+                loginUrl: `${appBaseUrl(req)}/login`,
+                passwordWasSetByAdmin: true,
+            });
+            const sent = await sendEmail({
+                to: String(email).trim(),
+                subject: mail.subject,
+                html: mail.html,
+                text: mail.text,
+            });
+            if (sent.ok) {
+                inviteEmailSent = true;
+            } else {
+                inviteEmailWarning = sent.error;
+                console.error("staff invite email failed:", sent.error, {
+                    missingConfig: sent.missingConfig,
+                });
+            }
+        }
+
         return NextResponse.json(
             {
                 data: profile,
-                default_password_used: !password
+                default_password_used: false,
+                invite_email_sent: inviteEmailSent,
+                ...(inviteEmailWarning
+                    ? { invite_email_warning: inviteEmailWarning }
+                    : {}),
             },
             { status: 201 }
         );
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error creating user:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }

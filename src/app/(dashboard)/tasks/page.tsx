@@ -17,6 +17,7 @@ import {
     Filter,
     FilterX,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import TaskFormModal from "@/src/components/TaskFormModal";
 import TaskDetailsModal from "@/src/components/TaskDetailsModal";
 import TasksKanban from "@/src/components/TasksKanban";
@@ -57,10 +58,6 @@ interface Task {
     source_id: string | null;
     assigned_user: UserData | null;
     created_by_user: UserData | null;
-    task_notes?: any[];
-    task_attachments?: any[];
-    task_reminders?: any[];
-    task_links?: any[];
 }
 
 interface TaskNote {
@@ -91,7 +88,7 @@ interface FilterState {
 
 const TASK_STAGES = ["Pending", "In Progress", "Completed", "Cancelled", "On Hold"];
 
-const STATUS_COLORS: Record<string, { bg: string; text: string; border: string; icon: any }> = {
+const STATUS_COLORS: Record<string, { bg: string; text: string; border: string; icon: LucideIcon }> = {
     "Pending": { bg: "bg-warning-50", text: "text-warning", border: "border-yellow-200", icon: Clock },
     "In Progress": { bg: "bg-primary-50", text: "text-primary", border: "border-blue-200", icon: Circle },
     "Completed": { bg: "bg-success-50", text: "text-success", border: "border-green-200", icon: CheckCircle },
@@ -138,12 +135,7 @@ export default function TasksPage() {
     const [showConfirmDialog, setShowConfirmDialog] = useState(false);
     const [confirmDialogData, setConfirmDialogData] = useState<{ task: Task | null; loading: boolean }>({ task: null, loading: false });
 
-    useEffect(() => {
-        fetchTasks();
-        fetchUsers();
-    }, [currentPage, filters]);
-
-    const fetchUsers = async () => {
+    async function fetchUsers() {
         try {
             const response = await fetch("/api/users?limit=100", {
             });
@@ -154,9 +146,9 @@ export default function TasksPage() {
         } catch (err) {
             console.error("Failed to fetch users:", err);
         }
-    };
+    }
 
-    const fetchTasks = useCallback(async () => {
+    async function fetchTasks() {
         try {
             setLoading(true);
             setError(null);
@@ -185,9 +177,14 @@ export default function TasksPage() {
         } finally {
             setLoading(false);
         }
+    }
+
+    useEffect(() => {
+        void fetchTasks();
+        void fetchUsers();
     }, [currentPage, filters]);
 
-    const handleViewDetails = async (task: Task) => {
+    async function handleViewDetails(task: Task) {
         try {
             const response = await fetch(`/api/tasks/${task.id}`, {
             });
@@ -199,9 +196,9 @@ export default function TasksPage() {
         } catch (err) {
             console.error("Failed to fetch task details:", err);
         }
-    };
+    }
 
-    const handleEdit = async (task: Task) => {
+    async function handleEdit(task: Task) {
         try {
             const response = await fetch(`/api/tasks/${task.id}`, {
             });
@@ -214,7 +211,7 @@ export default function TasksPage() {
         } catch (err) {
             console.error("Failed to fetch task details:", err);
         }
-    };
+    }
 
     const handleAdd = () => {
         setSelectedTask(null);
@@ -233,7 +230,7 @@ export default function TasksPage() {
         setShowConfirmDialog(true);
     };
 
-    const confirmDelete = async () => {
+    async function confirmDelete() {
         if (!confirmDialogData.task) return;
 
         const taskId = confirmDialogData.task.id;
@@ -253,9 +250,9 @@ export default function TasksPage() {
             toast.error(err instanceof Error ? err.message : "An error occurred");
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
-    };
+    }
 
-    const handleStatusChange = async (task: Task, newStatus: string) => {
+    async function handleStatusChange(task: Task, newStatus: string) {
         try {
             const response = await fetch(`/api/tasks/${task.id}`, {
                 method: "PATCH",
@@ -278,7 +275,7 @@ export default function TasksPage() {
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "An error occurred");
         }
-    };
+    }
 
     const clearFilters = () => {
         setFilters({

@@ -50,7 +50,7 @@ export default function ProfilePage() {
         fetchProfile();
     }, []);
 
-    const fetchProfile = async () => {
+    async function fetchProfile() {
         try {
             setLoading(true);
             setError(null);
@@ -81,9 +81,9 @@ export default function ProfilePage() {
         } finally {
             setLoading(false);
         }
-    };
+    }
 
-    const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
         const file = e.target.files?.[0];
         if (!file) return;
 
@@ -105,13 +105,13 @@ export default function ProfilePage() {
             setAvatarPreview(reader.result as string);
         };
         reader.readAsDataURL(file);
-    };
+    }
 
     const triggerFileInput = () => {
         fileInputRef.current?.click();
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
 
         // Validate password if provided
@@ -131,7 +131,7 @@ export default function ProfilePage() {
         setSuccessMessage(null);
 
         try {
-            const payload: Record<string, any> = {
+            const payload: Record<string, unknown> = {
                 full_name: formData.full_name,
                 phone: formData.phone || null
             };
@@ -178,7 +178,7 @@ export default function ProfilePage() {
         } finally {
             setSaving(false);
         }
-    };
+    }
 
     const formatDate = (date: string | null) => {
         if (!date) return "Not set";

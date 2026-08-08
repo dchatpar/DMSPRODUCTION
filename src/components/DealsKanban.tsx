@@ -128,7 +128,7 @@ export default function DealsKanban({
         e.dataTransfer.dropEffect = "move";
     };
 
-    const handleDrop = async (e: React.DragEvent, targetStatus: string) => {
+    async function handleDrop(e: React.DragEvent, targetStatus: string) {
         e.preventDefault();
         const current = dragged;
         if (!current) return;
@@ -171,7 +171,7 @@ export default function DealsKanban({
         } finally {
             setUpdating(false);
         }
-    };
+    }
 
     if (loading) {
         return (

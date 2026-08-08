@@ -127,7 +127,7 @@ export default function FollowUpsPage() {
         fetchFollowUps();
     }, [currentPage, statusFilter, searchTerm, followUpDateFrom, followUpDateTo]);
 
-    const fetchFollowUps = async () => {
+    async function fetchFollowUps() {
         try {
             setLoading(true);
             setError(null);
@@ -156,9 +156,9 @@ export default function FollowUpsPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }
 
-    const handleViewDetails = async (followUp: FollowUp) => {
+    async function handleViewDetails(followUp: FollowUp) {
         try {
             const response = await fetch(`/api/follow-ups/${followUp.id}`, {
             });
@@ -171,7 +171,7 @@ export default function FollowUpsPage() {
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "Failed to load follow-up details");
         }
-    };
+    }
 
     const handleEdit = (followUp: FollowUp) => {
         setSelectedFollowUp(followUp);
@@ -191,12 +191,12 @@ export default function FollowUpsPage() {
         fetchFollowUps();
     };
 
-    const handleDelete = async (followUp: FollowUp) => {
+    async function handleDelete(followUp: FollowUp) {
         setConfirmDialogData({ followUp, loading: false });
         setShowConfirmDialog(true);
-    };
+    }
 
-    const confirmDelete = async () => {
+    async function confirmDelete() {
         if (!confirmDialogData.followUp) return;
 
         const followUpId = confirmDialogData.followUp.id;
@@ -221,9 +221,9 @@ export default function FollowUpsPage() {
             toast.error(err instanceof Error ? err.message : "An error occurred");
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
-    };
+    }
 
-    const handleStatusChange = async (followUp: FollowUp, newStatus: string) => {
+    async function handleStatusChange(followUp: FollowUp, newStatus: string) {
         try {
             const response = await fetch(`/api/follow-ups/${followUp.id}`, {
                 method: "PATCH",
@@ -240,7 +240,7 @@ export default function FollowUpsPage() {
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "An error occurred");
         }
-    };
+    }
 
     const getPriorityColor = (priority: string) => {
         const colors: Record<string, string> = {

@@ -28,8 +28,8 @@ interface ApiFetchOptions extends Omit<RequestInit, "body" | "credentials"> {
 
 export class ApiError extends Error {
     status: number;
-    data: any;
-    constructor(status: number, message: string, data: any) {
+    data: unknown;
+    constructor(status: number, message: string, data: unknown) {
         super(message);
         this.name = "ApiError";
         this.status = status;
@@ -51,7 +51,7 @@ function dispatchApiError(detail: {
     }
 }
 
-export async function apiFetch<T = any>(
+export async function apiFetch<T = unknown>(
     input: string,
     options: ApiFetchOptions = {}
 ): Promise<T> {
@@ -70,9 +70,9 @@ export async function apiFetch<T = any>(
     let res: Response;
     try {
         res = await fetch(input, init);
-    } catch (err: any) {
+    } catch (err: unknown) {
         if (!silent) toast.error("Network error", "Check your connection.");
-        throw new ApiError(0, err?.message || "Network error", null);
+        throw new ApiError(0, err instanceof Error ? err.message : "Network error", null);
     }
 
     // 204 No Content
@@ -80,7 +80,7 @@ export async function apiFetch<T = any>(
         return undefined as T;
     }
 
-    let data: any = null;
+    let data: unknown = null;
     const text = await res.text();
     if (text) {
         try {
@@ -91,13 +91,17 @@ export async function apiFetch<T = any>(
     }
 
     if (!res.ok) {
-        const message =
-            (data && typeof data === "object" && (data.error || data.message)) ||
-            `Request failed (${res.status})`;
+        const dataObj =
+            data && typeof data === "object" ? (data as Record<string, unknown>) : null;
+        const rawMessage =
+            dataObj && typeof dataObj.error === "string"
+                ? dataObj.error
+                : dataObj && typeof dataObj.message === "string"
+                  ? dataObj.message
+                  : null;
+        const message = rawMessage || `Request failed (${res.status})`;
         const code =
-            data && typeof data === "object" && typeof data.code === "string"
-                ? data.code
-                : undefined;
+            dataObj && typeof dataObj.code === "string" ? dataObj.code : undefined;
 
         // 401 -> delegate redirect to the bridge (debounced)
         if (res.status === 401) {

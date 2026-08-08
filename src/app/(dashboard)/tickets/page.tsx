@@ -22,6 +22,7 @@ import {
     User,
     Filter
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import * as XLSX from "xlsx";
 import TicketFormModal from "@/src/components/TicketFormModal";
 import TicketDetailsModal from "@/src/components/TicketDetailsModal";
@@ -67,7 +68,7 @@ interface ApiResponse {
 
 const TICKET_STAGES = ["Open", "In Progress", "Resolved", "Closed"];
 
-const STATUS_COLORS: Record<string, { bg: string; text: string; border: string; icon: any }> = {
+const STATUS_COLORS: Record<string, { bg: string; text: string; border: string; icon: LucideIcon }> = {
     "Open": { bg: "bg-red-50", text: "text-red-700", border: "border-red-200", icon: AlertCircle },
     "In Progress": { bg: "bg-primary-50", text: "text-blue-700", border: "border-blue-200", icon: Clock },
     "Resolved": { bg: "bg-green-50", text: "text-green-700", border: "border-green-200", icon: CheckCircle },
@@ -125,7 +126,7 @@ export default function TicketsPage() {
         return () => clearTimeout(timer);
     }, [searchTerm]);
 
-    const exportToExcel = async () => {
+    async function exportToExcel() {
         setExportLoading(true);
         try {
             const response = await fetch("/api/tickets?limit=10000", {
@@ -163,9 +164,9 @@ export default function TicketsPage() {
         } finally {
             setExportLoading(false);
         }
-    };
+    }
 
-    const fetchTickets = async () => {
+    async function fetchTickets() {
         try {
             setLoading(true);
             setError(null);
@@ -195,7 +196,7 @@ export default function TicketsPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     const handleViewDetails = (ticket: Ticket) => {
         setSelectedTicket(ticket);
@@ -220,12 +221,12 @@ export default function TicketsPage() {
         fetchTickets();
     };
 
-    const handleDelete = async (ticket: Ticket) => {
+    async function handleDelete(ticket: Ticket) {
         setConfirmDialogData({ ticket, loading: false });
         setShowConfirmDialog(true);
-    };
+    }
 
-    const confirmDelete = async () => {
+    async function confirmDelete() {
         if (!confirmDialogData.ticket) return;
 
         const ticketId = confirmDialogData.ticket.id;
@@ -250,9 +251,9 @@ export default function TicketsPage() {
             toast.error(err instanceof Error ? err.message : "An error occurred");
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
-    };
+    }
 
-    const handleStatusChange = async (ticket: Ticket, newStatus: string) => {
+    async function handleStatusChange(ticket: Ticket, newStatus: string) {
         try {
             const response = await fetch(`/api/tickets/${ticket.id}`, {
                 method: "PATCH",
@@ -269,7 +270,7 @@ export default function TicketsPage() {
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "An error occurred");
         }
-    };
+    }
 
     const formatDate = (date: string | null) => {
         if (!date) return "No date";

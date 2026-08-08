@@ -292,7 +292,7 @@ export default function RoleModal({ mode, role, onClose, onSuccess }: RoleModalP
 
     const isSystemRole = role?.is_system && mode === "edit";
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         setError(null);
         setLoading(true);
@@ -322,13 +322,13 @@ export default function RoleModal({ mode, role, onClose, onSuccess }: RoleModalP
             }
 
             onSuccess();
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Error saving role:", err);
-            setError(err.message || "Failed to save role");
+            setError(err instanceof Error ? err.message : "Failed to save role");
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     return (
         <div className="fixed inset-0 z-50 overflow-y-auto">

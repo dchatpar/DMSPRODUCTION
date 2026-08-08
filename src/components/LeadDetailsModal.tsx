@@ -17,6 +17,8 @@ import { Button } from "@/src/components/ui/Button";
 import { Badge } from "@/src/components/ui/Badge";
 import { LeadEmailSequencePanel } from "@/src/components/LeadEmailSequencePanel";
 import { AiActionButton } from "@/src/components/ai/AiActionButton";
+import { LeadScoreExplanation } from "@/src/components/LeadScoreExplanation";
+import { AfterHoursPanel } from "@/src/components/AfterHoursPanel";
 import { apiFetch, ApiError } from "@/src/lib/fetch";
 import { toast } from "@/src/lib/toast";
 import {
@@ -41,6 +43,7 @@ interface Lead {
     score?: number | null;
     temperature?: string | null;
     converted_deal_id?: string | null;
+    ai_why?: string | null;
     customer: {
         id: string;
         name: string;
@@ -130,7 +133,7 @@ export default function LeadDetailsModal({
         },
     ];
 
-    const logCall = async () => {
+    async function logCall() {
         setLoggingCall(true);
         try {
             await apiFetch(`/api/leads/${lead.id}/log-call`, {
@@ -148,7 +151,7 @@ export default function LeadDetailsModal({
         } finally {
             setLoggingCall(false);
         }
-    };
+    }
 
     const convertToDeal = async () => {
         if (lead.converted_deal_id) {
@@ -344,6 +347,20 @@ export default function LeadDetailsModal({
                     </PropertyRow>
                 </PropertyList>
 
+                <LeadScoreExplanation
+                    leadId={lead.id}
+                    input={{
+                        source: lead.source,
+                        status: lead.status,
+                        last_engagement: lead.last_engagement,
+                        lead_creation_date: lead.lead_creation_date,
+                        created_at: lead.created_at,
+                        interest_vehicle_id: lead.interest_vehicle_id,
+                        notes: lead.notes,
+                    }}
+                    persistedExplanation={lead.ai_why}
+                />
+
                 <RecordNotes>{lead.notes}</RecordNotes>
                 <ActivityTimeline items={activityItems} title="Activity" />
                 <div className="space-y-2 rounded-lg border border-border p-3">
@@ -388,6 +405,8 @@ export default function LeadDetailsModal({
                     customerEmail={email}
                     canEdit={canEditLead}
                 />
+
+                <AfterHoursPanel leadId={lead.id} canEdit={canEditLead} />
             </div>
         </RecordDrawer>
     );

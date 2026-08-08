@@ -10,8 +10,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json({ error: "Authorization token required" }, { status: 401 });
             }
             throw error;
@@ -45,8 +45,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         if (dbError) throw dbError;
 
         return NextResponse.json({ data: reminder }, { status: 201 });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error creating reminder:", error);
-        return NextResponse.json({ error: error?.message || "Internal server error" }, { status: 500 });
+        return NextResponse.json({ error: error instanceof Error ? error.message : "Internal server error" }, { status: 500 });
     }
 }

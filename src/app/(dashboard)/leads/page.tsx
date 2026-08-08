@@ -41,6 +41,7 @@ import {
     canEdit as canEditResource,
 } from "@/src/lib/permission-middleware";
 import { useDebouncedValue } from "@/src/hooks/useDebouncedValue";
+import { useLocations } from "@/src/hooks/useLocations";
 
 interface Lead {
     id: string;
@@ -117,6 +118,8 @@ export default function LeadsPage() {
     const [sourceFilter, setSourceFilter] = useState("");
     const [temperatureFilter, setTemperatureFilter] = useState("");
     const [assigneeFilter, setAssigneeFilter] = useState("");
+    const [locationFilter, setLocationFilter] = useState("");
+    const { locations } = useLocations();
     const [assignees, setAssignees] = useState<{ value: string; label: string }[]>([]);
     const [showMoreFilters, setShowMoreFilters] = useState(false);
     const [createdAtFrom, setCreatedAtFrom] = useState("");
@@ -160,6 +163,7 @@ export default function LeadsPage() {
             if (debouncedSearch) url += `&q=${encodeURIComponent(debouncedSearch)}`;
             if (createdAtFrom) url += `&created_at_from=${createdAtFrom}`;
             if (createdAtTo) url += `&created_at_to=${createdAtTo}`;
+            if (locationFilter) url += `&location_id=${encodeURIComponent(locationFilter)}`;
             return url;
         },
         [
@@ -170,10 +174,11 @@ export default function LeadsPage() {
             debouncedSearch,
             createdAtFrom,
             createdAtTo,
+            locationFilter,
         ]
     );
 
-    const fetchUserPermissions = async () => {
+    async function fetchUserPermissions() {
         try {
             const response = await fetch("/api/me");
             if (response.ok) {
@@ -200,7 +205,7 @@ export default function LeadsPage() {
         } catch {
             // non-blocking
         }
-    };
+    }
 
     const fetchLeads = useCallback(async () => {
         try {
@@ -252,7 +257,7 @@ export default function LeadsPage() {
 
     useEffect(() => {
         setCurrentPage(1);
-    }, [debouncedSearch, statusFilter, sourceFilter, temperatureFilter, assigneeFilter, createdAtFrom, createdAtTo]);
+    }, [debouncedSearch, statusFilter, sourceFilter, temperatureFilter, assigneeFilter, createdAtFrom, createdAtTo, locationFilter]);
 
     useEffect(() => {
         fetchLeads();
@@ -306,7 +311,7 @@ export default function LeadsPage() {
         }
     };
 
-    const exportToExcel = async () => {
+    async function exportToExcel() {
         setExportLoading(true);
         try {
             const response = await fetch(`/api/leads?limit=10000${buildFilterQuery()}`);
@@ -348,7 +353,7 @@ export default function LeadsPage() {
         } finally {
             setExportLoading(false);
         }
-    };
+    }
 
     const handleViewDetails = (lead: Lead) => {
         setSelectedLead(lead);
@@ -379,7 +384,7 @@ export default function LeadsPage() {
         setShowConfirmDialog(true);
     };
 
-    const confirmDelete = async () => {
+    async function confirmDelete() {
         if (!confirmDialogData.lead) return;
         const leadId = confirmDialogData.lead.id;
         setConfirmDialogData((prev) => ({ ...prev, loading: true }));
@@ -401,7 +406,7 @@ export default function LeadsPage() {
             toast.error(err instanceof Error ? err.message : "An error occurred");
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
-    };
+    }
 
     const getStatusColor = (status: string) => {
         const colors: Record<string, string> = {
@@ -462,7 +467,7 @@ export default function LeadsPage() {
                 <button
                     type="button"
                     onClick={() => handleViewDetails(lead)}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-8 sm:w-8"
                     title="View"
                     aria-label={`View ${lead.customer?.name || "lead"}`}
                 >
@@ -562,6 +567,20 @@ export default function LeadsPage() {
                             ],
                             allLabel: "All scores",
                         },
+                        ...(locations.length > 0
+                            ? [
+                                  {
+                                      id: "location",
+                                      value: locationFilter,
+                                      onChange: setLocationFilter,
+                                      options: locations.map((loc) => ({
+                                          value: loc.id,
+                                          label: loc.name,
+                                      })),
+                                      allLabel: "All locations",
+                                  },
+                              ]
+                            : []),
                         ...(userRole === "Admin" || userRole === "Manager"
                             ? [
                                   {

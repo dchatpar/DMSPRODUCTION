@@ -14,16 +14,20 @@
 // when SOCIAL_CRON_SECRET is set (see /api/social/publish-scheduled).
 // CRM email: same hourly cron also hits /api/email-sequences/send-due
 // (CRM_CRON_SECRET or SOCIAL_CRON_SECRET; Resend must be configured).
+// SMS: same hourly cron hits /api/sms/sequences/send-due (Twilio).
 
 import { SECURITY_HEADERS_MAP } from "./lib/security-headers";
 
 interface OpenNextWorkerModule {
     default: {
-        fetch: (request: Request, env: any, ctx: any) => Promise<Response>;
+        fetch: (request: Request, env: Record<string, unknown>, ctx: WorkerContext) => Promise<Response>;
     };
 }
 
-// @ts-ignore — OpenNext-generated module, no TypeScript declarations
+interface WorkerContext {
+    waitUntil: (promise: Promise<unknown>) => void;
+}
+
 const openNextWorkerPromise: Promise<OpenNextWorkerModule> = import("../.open-next/worker.js");
 
 function applySecurityHeaders(response: Response): Response {
@@ -34,7 +38,7 @@ function applySecurityHeaders(response: Response): Response {
 }
 
 export default {
-    async fetch(request: Request, env: any, ctx: any): Promise<Response> {
+    async fetch(request: Request, env: Record<string, unknown>, ctx: WorkerContext): Promise<Response> {
         const mod = await openNextWorkerPromise;
         const response = await mod.default.fetch(request, env, ctx);
         return applySecurityHeaders(response);
@@ -45,7 +49,7 @@ export default {
      * Social: publish-scheduled when SOCIAL_CRON_SECRET set.
      * CRM: send-due sequences when CRM_CRON_SECRET or SOCIAL_CRON_SECRET set + Resend.
      */
-    async scheduled(_controller: { scheduledTime: number; cron: string }, env: any, ctx: any): Promise<void> {
+    async scheduled(_controller: { scheduledTime: number; cron: string }, env: Record<string, unknown>, ctx: WorkerContext): Promise<void> {
         const socialSecret = (env?.SOCIAL_CRON_SECRET as string | undefined)?.trim();
         const crmSecret =
             (env?.CRM_CRON_SECRET as string | undefined)?.trim() || socialSecret;
@@ -105,6 +109,36 @@ export default {
         } else {
             console.log(
                 "[crm-email-cron] skipped — CRM_CRON_SECRET/SOCIAL_CRON_SECRET unset; use Send next or set secrets"
+            );
+        }
+
+        // SMS: same hourly cron fires /api/sms/sequences/send-due (Twilio).
+        // Uses the same CRM_CRON_SECRET / SOCIAL_CRON_SECRET auth; degrades
+        // cleanly when Twilio secrets are absent (no fake sends).
+        if (crmSecret) {
+            ctx.waitUntil(
+                (async () => {
+                    try {
+                        const mod = await openNextWorkerPromise;
+                        const req = new Request(`${origin}/api/sms/sequences/send-due`, {
+                            method: "POST",
+                            headers: {
+                                "x-crm-cron-secret": crmSecret,
+                                "x-social-cron-secret": crmSecret,
+                                "content-type": "application/json",
+                            },
+                        });
+                        const res = await mod.default.fetch(req, env, ctx);
+                        const text = await res.text();
+                        console.log("[crm-sms-cron]", res.status, text.slice(0, 500));
+                    } catch (err) {
+                        console.error("[crm-sms-cron] failed:", err);
+                    }
+                })()
+            );
+        } else {
+            console.log(
+                "[crm-sms-cron] skipped — CRM_CRON_SECRET/SOCIAL_CRON_SECRET unset; due SMS enrollments stay queued"
             );
         }
     },

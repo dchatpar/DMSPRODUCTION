@@ -38,6 +38,7 @@ import {
 } from "@/src/lib/vehicle-image";
 import { printWindowSticker } from "@/src/lib/window-sticker";
 import { useOverlayDismiss } from "@/src/hooks/useOverlayDismiss";
+import { vehicleJsonLd, vehicleJsonLdHtml } from "@/src/lib/vehicle-jsonld";
 import {
     disclosureDraftWarning,
     isActiveInventoryStatus,
@@ -134,7 +135,7 @@ function InlineImageManager({
     const [error, setError] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-    const persistGallery = async (next: VehicleImageT[]) => {
+    async function persistGallery(next: VehicleImageT[]) {
         const normalized = serializeGallery(
             next.map((img, i) => ({
                 ...img,
@@ -162,9 +163,9 @@ function InlineImageManager({
         } finally {
             setSavingMeta(false);
         }
-    };
+    }
 
-    const handleFiles = async (files: FileList | File[] | null) => {
+    async function handleFiles(files: FileList | File[] | null) {
         if (!files || files.length === 0) return;
         const list = Array.from(files);
         const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -203,9 +204,9 @@ function InlineImageManager({
             setUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = "";
         }
-    };
+    }
 
-    const handleRemove = async (url: string) => {
+    async function handleRemove(url: string) {
         setRemoving(url);
         setError(null);
         try {
@@ -233,9 +234,9 @@ function InlineImageManager({
         } finally {
             setRemoving(null);
         }
-    };
+    }
 
-    const setRole = async (url: string, role: VehicleImageRole | "") => {
+    async function setRole(url: string, role: VehicleImageRole | "") {
         const next = images.map((img) =>
             img.url === url ? { ...img, role: role || null } : img
         );
@@ -245,9 +246,9 @@ function InlineImageManager({
         } catch {
             /* error already set */
         }
-    };
+    }
 
-    const move = async (index: number, dir: -1 | 1) => {
+    async function move(index: number, dir: -1 | 1) {
         const target = index + dir;
         if (target < 0 || target >= images.length) return;
         const next = [...images];
@@ -259,7 +260,7 @@ function InlineImageManager({
         } catch {
             /* error already set */
         }
-    };
+    }
 
     return (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 pb-8">
@@ -451,7 +452,7 @@ export default function VehicleDetailPage() {
     // Fetch the vehicle
     useEffect(() => {
         let cancelled = false;
-        const fetchVehicle = async () => {
+        async function fetchVehicle() {
             try {
                 setLoading(true);
                 setError(null);
@@ -473,16 +474,60 @@ export default function VehicleDetailPage() {
             } finally {
                 if (!cancelled) setLoading(false);
             }
-        };
+        }
         fetchVehicle();
         return () => {
             cancelled = true;
         };
     }, [vin]);
 
+    // schema.org Vehicle JSON-LD so LLM-shoppers can parse this listing.
+    useEffect(() => {
+        if (!vehicle) return;
+        const existing = document.getElementById("vehicle-jsonld");
+        if (existing) existing.remove();
+        const script = document.createElement("script");
+        script.type = "application/ld+json";
+        script.id = "vehicle-jsonld";
+        const maskedVin =
+            vehicle.vin && vehicle.vin.length > 8
+                ? `${vehicle.vin.slice(0, 4)}…${vehicle.vin.slice(-4)}`
+                : vehicle.vin || null;
+        script.textContent = vehicleJsonLdHtml(
+            vehicleJsonLd(
+                {
+                    year: vehicle.year,
+                    make: vehicle.make,
+                    model: vehicle.model,
+                    trim: vehicle.trim,
+                    odometer: vehicle.odometer,
+                    condition: vehicle.condition,
+                    exterior_color: vehicle.exterior_color,
+                    interior_color: vehicle.interior_color,
+                    fuel_type: vehicle.fuel_type,
+                    transmission: vehicle.transmission,
+                    drivetrain: vehicle.drivetrain,
+                    body_style: vehicle.body_style,
+                    retail_price: vehicle.retail_price,
+                    special_price: vehicle.special_price,
+                    photos: gallery.map((g) => g.url),
+                    description: vehicle.description,
+                    features: vehicle.features,
+                    vin_masked: maskedVin,
+                    stock_number: vehicle.stock_number,
+                },
+                { priceCurrency: "CAD", url: `/inventory/${encodeURIComponent(vehicle.vin)}` }
+            )
+        );
+        document.head.appendChild(script);
+        return () => {
+            script.remove();
+        };
+    }, [vehicle, gallery]);
+
     // Fetch user permissions
     useEffect(() => {
-        const fetchPerms = async () => {
+        async function fetchPerms() {
             try {
                 const res = await fetch("/api/me", {
                 });
@@ -494,7 +539,7 @@ export default function VehicleDetailPage() {
             } catch {
                 // ignore
             }
-        };
+        }
         fetchPerms();
     }, []);
 
@@ -545,7 +590,7 @@ export default function VehicleDetailPage() {
         }
     }, [currentIndex]);
 
-    const handleDelete = async () => {
+    async function handleDelete() {
         if (!vehicle) return;
         setDeleting(true);
         try {
@@ -558,9 +603,9 @@ export default function VehicleDetailPage() {
             toast.error(e instanceof Error ? e.message : "Failed to delete");
             setDeleting(false);
         }
-    };
+    }
 
-    const saveDisclosure = async () => {
+    async function saveDisclosure() {
         if (!vehicle || !canEdit) return;
         const warn = disclosureDraftWarning({
             status: vehicle.status,
@@ -605,7 +650,7 @@ export default function VehicleDetailPage() {
         } finally {
             setSavingDisclosure(false);
         }
-    };
+    }
 
     // Group counts by role for the filter chips
     const roleCounts = gallery.reduce<Record<string, number>>((acc, g) => {
@@ -678,7 +723,7 @@ export default function VehicleDetailPage() {
                                 const url = window.location.href;
                                 const shareText = `${vehicle.year} ${vehicle.make} ${vehicle.model}`;
 
-                                const copyWithFallback = async (text: string) => {
+                                async function copyWithFallback(text: string) {
                                     if (navigator.clipboard?.writeText) {
                                         await navigator.clipboard.writeText(text);
                                         return;
@@ -693,7 +738,7 @@ export default function VehicleDetailPage() {
                                     const ok = document.execCommand("copy");
                                     document.body.removeChild(ta);
                                     if (!ok) throw new Error("Copy failed");
-                                };
+                                }
 
                                 // Prefer clipboard + toast for reliable feedback.
                                 // Use Web Share only when available; ignore user cancel.

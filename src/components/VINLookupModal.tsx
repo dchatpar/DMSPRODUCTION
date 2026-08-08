@@ -68,7 +68,7 @@ export default function VINLookupModal({
         return cleaned.length === 17;
     };
 
-    const lookupVIN = async () => {
+    async function lookupVIN() {
         if (!vin.trim()) {
             setError("Please enter a VIN");
             return;
@@ -118,7 +118,7 @@ export default function VINLookupModal({
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     return (
         <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -320,7 +320,7 @@ export default function VINLookupModal({
                                     ) : (
                                         <div className="text-center py-4 text-gray-500 text-sm">
                                             <Info className="w-5 h-5 mx-auto mb-2 text-gray-400" />
-                                            Click "Get Carfax Report" to open CARFAX login page
+                                            Click &quot;Get Carfax Report&quot; to open CARFAX login page
                                         </div>
                                     )}
                                 </div>

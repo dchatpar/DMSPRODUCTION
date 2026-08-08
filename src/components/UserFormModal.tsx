@@ -320,7 +320,7 @@ export default function UserFormModal({
         }
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         setLoading(true);
         setError(null);
@@ -368,7 +368,7 @@ export default function UserFormModal({
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     const getRoleIcon = (role: string) => {
         switch (role) {

@@ -6,6 +6,7 @@ import { getFacebookEnv } from "@/src/lib/social/facebook";
 import { getCarfaxEnv } from "@/src/lib/carfax";
 import { isFlashAiConfigured } from "@/src/lib/ai/llm";
 import { AI_NOT_CONFIGURED_MESSAGE } from "@/src/lib/ai/guard";
+import { isTwilioConfigured } from "@/src/lib/sms/config";
 import { supabaseAdmin } from "@/src/lib/supabase-admin";
 
 type IntegrationStatus = {
@@ -86,7 +87,89 @@ export async function GET(req: NextRequest) {
               ? "live"
               : "partial";
 
+        const twilioOk = isTwilioConfigured();
+        const missingTwilio = [
+            ...(!process.env.TWILIO_ACCOUNT_SID ? ["TWILIO_ACCOUNT_SID"] : []),
+            ...(!process.env.TWILIO_AUTH_TOKEN ? ["TWILIO_AUTH_TOKEN"] : []),
+            ...(!process.env.TWILIO_FROM_NUMBER ? ["TWILIO_FROM_NUMBER"] : []),
+        ];
+
+        let webhookCount = 0;
+        let apiTokenCount = 0;
+        let smsFromNumber: string | null = null;
+        let quietHoursEnabled = false;
+        if (dealershipId) {
+            const { data: dealer } = await supabaseAdmin
+                .from("dealerships")
+                .select("settings")
+                .eq("id", dealershipId)
+                .maybeSingle();
+            const settings = (dealer?.settings || {}) as Record<string, unknown>;
+            if (Array.isArray(settings.webhooks)) webhookCount = settings.webhooks.length;
+            if (Array.isArray(settings.api_tokens)) apiTokenCount = settings.api_tokens.length;
+            smsFromNumber =
+                typeof settings.sms_from_number === "string" && settings.sms_from_number.trim()
+                    ? settings.sms_from_number
+                    : null;
+            const qh =
+                typeof settings.sms_quiet_hours === "object" && settings.sms_quiet_hours !== null
+                    ? (settings.sms_quiet_hours as Record<string, unknown>)
+                    : {};
+            quietHoursEnabled = qh.enabled === true;
+        }
+
         const integrations: IntegrationStatus[] = [
+            {
+                id: "sms_twilio",
+                name: "SMS / Texting (Twilio)",
+                description:
+                    "Real SMS sender behind CASL/TCPA consent — quiet hours, real-time STOP opt-out, stage-triggered follow-up.",
+                configured: twilioOk,
+                status: twilioOk ? "live" : "missing_env",
+                missing: missingTwilio,
+                notes: twilioOk
+                    ? `Twilio configured${smsFromNumber ? ` (from ${smsFromNumber})` : ""}. Sends are consent + quiet-hours gated and logged honestly.${quietHoursEnabled ? " Quiet hours on." : ""}`
+                    : "Not configured — add via wrangler when ready. Consent checks still run; no fake Sent.",
+            },
+            {
+                id: "open_api",
+                name: "Open API (read)",
+                description:
+                    "Public read API for inventory / leads / deals scoped by API token (ffapi_…).",
+                configured: true,
+                status: apiTokenCount > 0 ? "live" : "url_only",
+                missing: [],
+                href: "/settings/integrations",
+                notes:
+                    apiTokenCount > 0
+                        ? `${apiTokenCount} token${apiTokenCount === 1 ? "" : "s"} active. GET /api/external/v1/{inventory|leads|deals} with Authorization: Bearer <token>.`
+                        : "Create an API token below to expose read-only dealership data. Nothing is exposed until you do.",
+            },
+            {
+                id: "webhooks",
+                name: "Webhooks",
+                description:
+                    "Event delivery for deal.created, lead.created, inventory.updated, payment.received.",
+                configured: true,
+                status: webhookCount > 0 ? "live" : "url_only",
+                missing: [],
+                href: "/settings/integrations",
+                notes:
+                    webhookCount > 0
+                        ? `${webhookCount} endpoint${webhookCount === 1 ? "" : "s"} configured. Payloads signed with X-FF-Signature (HMAC-SHA256); deliveries logged.`
+                        : "Add a webhook endpoint below to receive events. Nothing is delivered until you do.",
+            },
+            {
+                id: "data_export",
+                name: "Full data export",
+                description:
+                    "One-click JSON + XLSX export of every dealership table — your data, always.",
+                configured: true,
+                status: "url_only",
+                missing: [],
+                href: "/settings/integrations",
+                notes: "Download JSON or Excel from the Export card below (Admin/Manager).",
+            },
             {
                 id: "flash_ai",
                 name: "Flash AI",
@@ -181,8 +264,21 @@ export async function GET(req: NextRequest) {
 
         return NextResponse.json({
             data: {
+                dealership_id: auth.profile.dealership_id,
                 integrations,
                 email_from_set: Boolean(process.env.EMAIL_FROM),
+                sms: {
+                    configured: twilioOk,
+                    missing: missingTwilio,
+                    from_number: smsFromNumber,
+                    quiet_hours_enabled: quietHoursEnabled,
+                },
+                webhooks: {
+                    count: webhookCount,
+                },
+                api_tokens: {
+                    count: apiTokenCount,
+                },
                 secrets_present: {
                     RESEND_API_KEY: Boolean(process.env.RESEND_API_KEY),
                     EMAIL_FROM: Boolean(process.env.EMAIL_FROM),
@@ -200,6 +296,15 @@ export async function GET(req: NextRequest) {
                     CARFAX_API_KEY: Boolean(process.env.CARFAX_API_KEY),
                     CARFAX_API_URL: Boolean(process.env.CARFAX_API_URL),
                     FLASH_AI_SECRET: Boolean(process.env.MINIMAX_API_KEY),
+                    TWILIO_ACCOUNT_SID: Boolean(
+                        process.env.TWILIO_ACCOUNT_SID
+                    ),
+                    TWILIO_AUTH_TOKEN: Boolean(
+                        process.env.TWILIO_AUTH_TOKEN
+                    ),
+                    TWILIO_FROM_NUMBER: Boolean(
+                        process.env.TWILIO_FROM_NUMBER
+                    ),
                 },
             },
         });

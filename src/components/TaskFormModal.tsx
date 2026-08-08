@@ -148,7 +148,7 @@ export default function TaskFormModal({ mode, task, users = [], onClose, onSucce
             setLinks([]);
             console.log("task.task_links:", JSON.stringify(task.task_links, null, 2));
             if (task.task_links && task.task_links.length > 0) {
-                const existingLinks: TaskLink[] = task.task_links.map((link: any) => ({
+                const existingLinks: TaskLink[] = task.task_links.map((link) => ({
                     link_type: link.link_type,
                     linked_id: link.linked_id,
                     linked_label: `${link.link_type}: ${link.linked_id.slice(0, 8)}...`
@@ -161,30 +161,16 @@ export default function TaskFormModal({ mode, task, users = [], onClose, onSucce
         }
     }, [task]);
 
-    // Fetch all data when modal opens (for dropdowns and link labels)
-    useEffect(() => {
-        const loadData = async () => {
-            await fetchAllLinkData();
-        };
-        loadData();
-    }, []); // Re-run when task changes
 
-    // Fetch data when link type changes
-    useEffect(() => {
-        if (showLinkForm) {
-            fetchLinkOptions();
-        }
-    }, [newLinkType, showLinkForm]);
-
-    const fetchAllLinkData = async () => {
+    async function fetchAllLinkData() {
         try {
             const [custRes, leadRes, vehRes, dealRes, invRes, tdRes] = await Promise.all([
-                apiFetch<any>("/api/customers?limit=100"),
-                apiFetch<any>("/api/leads?limit=100"),
-                apiFetch<any>("/api/vehicles?limit=100"),
-                apiFetch<any>("/api/deals?limit=100"),
-                apiFetch<any>("/api/invoices?limit=100"),
-                apiFetch<any>("/api/test-drives?limit=100"),
+                apiFetch<{ data: Customer[] }>("/api/customers?limit=100"),
+                apiFetch<{ data: Lead[] }>("/api/leads?limit=100"),
+                apiFetch<{ data: Vehicle[] }>("/api/vehicles?limit=100"),
+                apiFetch<{ data: Deal[] }>("/api/deals?limit=100"),
+                apiFetch<{ data: Invoice[] }>("/api/invoices?limit=100"),
+                apiFetch<{ data: TestDrive[] }>("/api/test-drives?limit=100"),
             ]);
 
             setCustomers(custRes.data || []);
@@ -204,35 +190,35 @@ export default function TaskFormModal({ mode, task, users = [], onClose, onSucce
         } catch (err) {
             console.error("Failed to fetch link data:", err);
         }
-    };
+    }
 
-    const fetchLinkOptions = async () => {
+    async function fetchLinkOptions() {
         setLoadingOptions(true);
 
         try {
             switch (newLinkType) {
                 case "customer":
-                    const custRes = await apiFetch<any>("/api/customers?limit=100");
+                    const custRes = await apiFetch<{ data: Customer[] }>("/api/customers?limit=100");
                     setCustomers(custRes.data || []);
                     break;
                 case "lead":
-                    const leadRes = await apiFetch<any>("/api/leads?limit=100");
+                    const leadRes = await apiFetch<{ data: Lead[] }>("/api/leads?limit=100");
                     setLeads(leadRes.data || []);
                     break;
                 case "vehicle":
-                    const vehRes = await apiFetch<any>("/api/vehicles?limit=100");
+                    const vehRes = await apiFetch<{ data: Vehicle[] }>("/api/vehicles?limit=100");
                     setVehicles(vehRes.data || []);
                     break;
                 case "deal":
-                    const dealRes = await apiFetch<any>("/api/deals?limit=100");
+                    const dealRes = await apiFetch<{ data: Deal[] }>("/api/deals?limit=100");
                     setDeals(dealRes.data || []);
                     break;
                 case "invoice":
-                    const invRes = await apiFetch<any>("/api/invoices?limit=100");
+                    const invRes = await apiFetch<{ data: Invoice[] }>("/api/invoices?limit=100");
                     setInvoices(invRes.data || []);
                     break;
                 case "test_drive":
-                    const tdRes = await apiFetch<any>("/api/test-drives?limit=100");
+                    const tdRes = await apiFetch<{ data: TestDrive[] }>("/api/test-drives?limit=100");
                     setTestDrives(tdRes.data || []);
                     break;
             }
@@ -241,7 +227,22 @@ export default function TaskFormModal({ mode, task, users = [], onClose, onSucce
         } finally {
             setLoadingOptions(false);
         }
-    };
+    }
+    // Fetch all data when modal opens (for dropdowns and link labels)
+    useEffect(() => {
+        async function loadData() {
+            await fetchAllLinkData();
+        }
+        loadData();
+    }, []); // Re-run when task changes
+
+    // Fetch data when link type changes
+    useEffect(() => {
+        if (showLinkForm) {
+            fetchLinkOptions();
+        }
+    }, [newLinkType, showLinkForm]);
+
 
     const getLinkLabel = (type: string, id: string): string => {
         switch (type) {
@@ -274,7 +275,7 @@ export default function TaskFormModal({ mode, task, users = [], onClose, onSucce
         }
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
 
         if (!formData.title.trim()) {
@@ -286,7 +287,7 @@ export default function TaskFormModal({ mode, task, users = [], onClose, onSucce
         setError(null);
 
         try {
-            const payload: any = {
+            const payload: Record<string, unknown> = {
                 title: formData.title.trim(),
                 description: formData.description.trim() || null,
                 assigned_to: formData.assigned_to || null,
@@ -319,7 +320,7 @@ export default function TaskFormModal({ mode, task, users = [], onClose, onSucce
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     const addTag = () => {
         if (newTag.trim() && !tags.includes(newTag.trim())) {

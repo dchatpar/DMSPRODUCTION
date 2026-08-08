@@ -98,6 +98,44 @@ interface DashboardData {
 }
 interface ChartData { name: string; value: number }
 
+interface DashboardFollowUp {
+    id: string;
+    subject?: string | null;
+    status?: string | null;
+    follow_up_date?: string | null;
+    priority?: string | null;
+    customer?: { name?: string } | null;
+}
+
+interface DashboardTask {
+    id: string;
+    title?: string | null;
+    description?: string | null;
+    due_date?: string | null;
+    status?: string | null;
+}
+
+interface DashboardVehicle {
+    id?: string;
+    status?: string | null;
+    created_at?: string | null;
+    vin?: string | null;
+    year?: string | number | null;
+    make?: string | null;
+    model?: string | null;
+    retail_price?: number | null;
+}
+
+interface DashboardExpense {
+    id?: string;
+    category?: string | null;
+}
+
+interface DashboardAnalytics {
+    dealerships?: { total?: number };
+    users?: { total?: number };
+}
+
 // ── Today item ───────────────────────────────────────────────────────
 function TodayItem({
     icon: Icon,
@@ -150,9 +188,9 @@ export default function DashboardPage() {
     const [salesStatusData, setSalesStatusData] = useState<ChartData[]>([]);
     const [expensesData, setExpensesData] = useState<ChartData[]>([]);
     const [topVehicles, setTopVehicles] = useState<{ name: string; price: number; days: number; href?: string }[]>([]);
-    const [upcomingFollowUps, setUpcomingFollowUps] = useState<any[]>([]);
+    const [upcomingFollowUps, setUpcomingFollowUps] = useState<DashboardFollowUp[]>([]);
     const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-    const [myTasks, setMyTasks] = useState<any[]>([]);
+    const [myTasks, setMyTasks] = useState<DashboardTask[]>([]);
     const [myLeadCount, setMyLeadCount] = useState(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -170,7 +208,7 @@ export default function DashboardPage() {
                 const userRole = profile?.role;
 
                 if (isPlatformAdmin) {
-                    const analytics = await apiFetch<any>("/api/platform/analytics", { silent: true });
+                    const analytics = await apiFetch<DashboardAnalytics>("/api/platform/analytics", { silent: true });
                     if (cancelled) return;
                     setData({
                         stats: {
@@ -188,9 +226,9 @@ export default function DashboardPage() {
                     });
                 } else if (userRole === "Salesperson" || userRole === "Staff") {
                     const [tasksRes, leadsRes] = await Promise.all([
-                        apiFetch<{ data: any[] }>("/api/tasks?my_tasks=true&limit=20", { silent: true }),
+                        apiFetch<{ data: DashboardTask[] }>("/api/tasks?my_tasks=true&limit=20", { silent: true }),
                         // Salesperson/Staff leads API auto-scopes to assigned_to
-                        apiFetch<{ data: any[]; count?: number }>("/api/leads?limit=1", { silent: true }).catch(() => ({ data: [] as any[] })),
+                        apiFetch<{ data: RecentLead[]; count?: number }>("/api/leads?limit=1", { silent: true }).catch(() => ({ data: [] as RecentLead[] })),
                     ]);
                     if (cancelled) return;
                     setMyTasks(tasksRes.data ?? []);
@@ -202,11 +240,11 @@ export default function DashboardPage() {
                 } else {
                     const [dash, leads, vehicles, deals, expenses, followUps] = await Promise.all([
                         apiFetch<DashboardData>("/api/dashboard", { silent: true }),
-                        apiFetch<{ data: any[] }>("/api/leads?limit=1000", { silent: true }),
-                        apiFetch<{ data: any[] }>("/api/vehicles?limit=1000", { silent: true }),
-                        apiFetch<{ data: any[] }>("/api/deals?limit=1000", { silent: true }),
-                        apiFetch<{ data: any[] }>("/api/expenses?limit=1000", { silent: true }),
-                        apiFetch<{ data: any[] }>("/api/follow-ups?limit=20", { silent: true }).catch(() => ({ data: [] })),
+                        apiFetch<{ data: RecentLead[] }>("/api/leads?limit=1000", { silent: true }),
+                        apiFetch<{ data: DashboardVehicle[] }>("/api/vehicles?limit=1000", { silent: true }),
+                        apiFetch<{ data: RecentSale[] }>("/api/deals?limit=1000", { silent: true }),
+                        apiFetch<{ data: DashboardExpense[] }>("/api/expenses?limit=1000", { silent: true }),
+                        apiFetch<{ data: DashboardFollowUp[] }>("/api/follow-ups?limit=20", { silent: true }).catch(() => ({ data: [] })),
                     ]);
                     if (cancelled) return;
                     // /api/dashboard returns stats at the TOP level (no { data } wrapper)
@@ -220,7 +258,7 @@ export default function DashboardPage() {
                             totalSales: d?.stats?.totalSales ?? deals.data?.length ?? 0,
                             totalRevenue: d?.stats?.totalRevenue ?? 0,
                             totalInvoices: d?.stats?.totalInvoices ?? 0,
-                            activeVehicles: d?.stats?.activeVehicles ?? vehicleRows.filter((v: any) => v.status === "Active").length ?? 0,
+                            activeVehicles: d?.stats?.activeVehicles ?? vehicleRows.filter((v) => v.status === "Active").length ?? 0,
                             pendingInvoices: d?.stats?.pendingInvoices ?? 0,
                         },
                         changes: d?.changes ?? { vehicles: 0, customers: 0, leads: 0, sales: 0, invoices: 0, activeVehicles: 0 },
@@ -236,12 +274,12 @@ export default function DashboardPage() {
                     setTopVehicles(buildTopVehicles(vehicleRows));
                     setUpcomingFollowUps(
                         (followUps.data ?? [])
-                            .filter((f: any) => (f.status || "").toLowerCase() !== "completed")
+                            .filter((f) => (f.status || "").toLowerCase() !== "completed")
                             .slice(0, 5)
                     );
                 }
-            } catch (e: any) {
-                if (!cancelled) setError(e?.message || "Failed to load dashboard");
+            } catch (e: unknown) {
+                if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load dashboard");
             } finally {
                 if (!cancelled) setLoading(false);
             }
@@ -334,7 +372,7 @@ function ManagerDashboard({
     salesStatusData: ChartData[];
     expensesData: ChartData[];
     topVehicles: { name: string; price: number; days: number; href?: string }[];
-    upcomingFollowUps: any[];
+    upcomingFollowUps: DashboardFollowUp[];
 }) {
     const router = useRouter();
     const { stats, changes, recentSales, recentLeads } = data;
@@ -638,7 +676,7 @@ function ManagerDashboard({
                             <EmptyState kind="first-use" title="No follow-ups" description="Scheduled follow-ups show here." action={{ label: "Open follow-ups", href: "/follow-ups" }} className="py-8" />
                         ) : (
                             <ul className="divide-y divide-border">
-                                {upcomingFollowUps.map((fu: any) => (
+                                {upcomingFollowUps.map((fu) => (
                                     <li key={fu.id} className="first:pt-0 last:pb-0">
                                         <Link
                                             href="/follow-ups"
@@ -729,12 +767,12 @@ function PersonalDashboard({
     myLeadCount,
 }: {
     userProfile: UserProfile | null;
-    myTasks: any[];
+    myTasks: DashboardTask[];
     myLeadCount: number;
 }) {
     const router = useRouter();
-    const pendingTasks = myTasks.filter((t: any) => t.status !== "Completed" && t.status !== "Cancelled");
-    const completedTasks = myTasks.filter((t: any) => t.status === "Completed");
+    const pendingTasks = myTasks.filter((t) => t.status !== "Completed" && t.status !== "Cancelled");
+    const completedTasks = myTasks.filter((t) => t.status === "Completed");
     const firstName = userProfile?.full_name?.split(" ")[0] ?? "there";
 
     return (
@@ -765,7 +803,7 @@ function PersonalDashboard({
                         <EmptyState kind="first-use" title="All caught up" description="No pending tasks." className="py-8" />
                     ) : (
                         <ul className="divide-y divide-border">
-                            {pendingTasks.slice(0, 10).map((task: any) => (
+                            {pendingTasks.slice(0, 10).map((task) => (
                                 <li key={task.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
                                     <Avatar name={task.title} size="md" />
                                     <div className="min-w-0 flex-1">
@@ -859,7 +897,7 @@ function ChartCard({ title, subtitle, children }: { title: string; subtitle?: st
 }
 
 // ── Data aggregators ────────────────────────────────────────────────
-function buildLeadsSourceData(leads: any[]): ChartData[] {
+function buildLeadsSourceData(leads: Array<{ source?: string | null }>): ChartData[] {
     const counts: Record<string, number> = {};
     for (const lead of leads) {
         const s = lead.source || "Unknown";
@@ -870,7 +908,7 @@ function buildLeadsSourceData(leads: any[]): ChartData[] {
         .sort((a, b) => b.value - a.value)
         .slice(0, 6);
 }
-function buildInventoryData(vehicles: any[]): ChartData[] {
+function buildInventoryData(vehicles: Array<{ status?: string | null }>): ChartData[] {
     const counts: Record<string, number> = {};
     for (const v of vehicles) {
         const s = v.status || "Unknown";
@@ -878,7 +916,7 @@ function buildInventoryData(vehicles: any[]): ChartData[] {
     }
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
 }
-function buildSalesStatusData(deals: any[]): ChartData[] {
+function buildSalesStatusData(deals: Array<{ deal_status?: string | null; status?: string | null }>): ChartData[] {
     const counts: Record<string, number> = {};
     for (const d of deals) {
         const s = d.deal_status || d.status || "Unknown";
@@ -886,7 +924,7 @@ function buildSalesStatusData(deals: any[]): ChartData[] {
     }
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
 }
-function buildExpensesData(expenses: any[]): ChartData[] {
+function buildExpensesData(expenses: Array<{ category?: string | null }>): ChartData[] {
     const counts: Record<string, number> = {};
     for (const e of expenses) {
         const c = e.category || "Other";
@@ -898,7 +936,17 @@ function buildExpensesData(expenses: any[]): ChartData[] {
         .slice(0, 6);
 }
 
-function buildTopVehicles(vehicles: any[]): { name: string; price: number; days: number; href?: string }[] {
+function buildTopVehicles(
+    vehicles: Array<{
+        status?: string | null;
+        created_at?: string | null;
+        vin?: string | null;
+        year?: string | number | null;
+        make?: string | null;
+        model?: string | null;
+        retail_price?: number | null;
+    }>
+): { name: string; price: number; days: number; href?: string }[] {
     const now = Date.now();
     return vehicles
         .filter((v) => (v.status || "") === "Active")

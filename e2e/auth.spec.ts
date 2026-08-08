@@ -68,7 +68,11 @@ test.describe("Auth journeys", () => {
         await expect(page).not.toHaveURL(/\/login/);
         // Sanity: shell or dashboard content present
         await expect(
-            page.locator("h1").first().or(page.getByRole("navigation", { name: /main/i }))
+            page
+                .locator("h1")
+                .first()
+                .or(page.getByRole("navigation", { name: /main/i }))
+                .first()
         ).toBeVisible({ timeout: 20_000 });
         void e2eEmail;
     });

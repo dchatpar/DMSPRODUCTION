@@ -22,6 +22,7 @@ import {
     assertDamageDisclosureForPublish,
     mergeDamageDisclosureState,
 } from "@/src/lib/mvda-damage";
+import { emitDealershipEvent } from "@/src/lib/api/webhooks";
 
 const UUID_RE =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -108,10 +109,10 @@ export async function GET(
             .single();
 
         return NextResponse.json({ data: full });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error fetching vehicle:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -153,7 +154,7 @@ export async function PUT(
 
         // Whitelist the update payload and block dealership_id changes
         const safePayload = pickAllowed(payload, VEHICLE_ALLOWED_FIELDS);
-        delete (safePayload as any).dealership_id;
+        delete (safePayload as { dealership_id?: unknown }).dealership_id;
 
         if (typeof (safePayload as { features?: unknown }).features === "string") {
             const raw = (safePayload as { features: string }).features;
@@ -189,7 +190,7 @@ export async function PUT(
 
         // Per-field permission gates run AFTER the 404 check above. P1-3.
         const userRole = auth.profile.role;
-        const userPerms = (auth.profile as any).user_permissions || [];
+        const userPerms = auth.profile?.user_permissions || [];
         const isPlatformAdmin = auth.profile.is_platform_admin;
 
         const canManagePricing = isPlatformAdmin ||
@@ -241,11 +242,27 @@ export async function PUT(
             throw dbError;
         }
 
+        // Webhook dispatch (fire-and-forget; failures never fail the write).
+        void emitDealershipEvent({
+            dealershipId: auth.dealership_id,
+            event: "inventory.updated",
+            payload: {
+                vehicle_id: data.id,
+                vin: data.vin,
+                year: data.year,
+                make: data.make,
+                model: data.model,
+                status: data.status,
+            },
+        }).catch((err: unknown) =>
+            console.error("inventory.updated webhook dispatch failed:", err)
+        );
+
         return NextResponse.json({ data });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error updating vehicle:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -287,7 +304,7 @@ export async function PATCH(
         // caller can't sneak in `dealership_id` or `user_id` and have it
         // pass through to the UPDATE.
         const safePayload = pickAllowed(payload, VEHICLE_ALLOWED_FIELDS);
-        delete (safePayload as any).dealership_id;
+        delete (safePayload as { dealership_id?: unknown }).dealership_id;
 
         if (typeof (safePayload as { features?: unknown }).features === "string") {
             const raw = (safePayload as { features: string }).features;
@@ -323,7 +340,7 @@ export async function PATCH(
 
         // Per-field permission gates run AFTER the 404 check (P1-3).
         const userRole = auth.profile.role;
-        const userPerms = (auth.profile as any).user_permissions || [];
+        const userPerms = auth.profile?.user_permissions || [];
         const isPlatformAdmin = auth.profile.is_platform_admin;
 
         const canManagePricing = isPlatformAdmin ||
@@ -375,11 +392,27 @@ export async function PATCH(
             throw dbError;
         }
 
+        // Webhook dispatch (fire-and-forget; failures never fail the write).
+        void emitDealershipEvent({
+            dealershipId: auth.dealership_id,
+            event: "inventory.updated",
+            payload: {
+                vehicle_id: data.id,
+                vin: data.vin,
+                year: data.year,
+                make: data.make,
+                model: data.model,
+                status: data.status,
+            },
+        }).catch((err: unknown) =>
+            console.error("inventory.updated webhook dispatch failed:", err)
+        );
+
         return NextResponse.json({ data });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error updating vehicle:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -435,10 +468,10 @@ export async function DELETE(
             success: true,
             message: "Vehicle deleted successfully"
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error deleting vehicle:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }

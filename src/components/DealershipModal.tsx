@@ -78,7 +78,7 @@ export default function DealershipModal({ mode, dealership, onClose, onSuccess }
         }
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         setError(null);
         setLoading(true);
@@ -166,13 +166,13 @@ export default function DealershipModal({ mode, dealership, onClose, onSuccess }
             }
 
             onSuccess();
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Error saving dealership:", err);
-            setError(err.message || "Failed to save dealership");
+            setError(err instanceof Error ? err.message : "Failed to save dealership");
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     return (
         <div className="fixed inset-0 z-50 overflow-y-auto">

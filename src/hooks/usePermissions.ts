@@ -20,7 +20,7 @@ export function usePermissions(): UsePermissionsResult {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const fetchPermissions = async () => {
+    async function fetchPermissions() {
       try {
         const response = await fetch("/api/me");
         if (response.ok) {
@@ -34,7 +34,7 @@ export function usePermissions(): UsePermissionsResult {
       } finally {
         setIsLoading(false);
       }
-    };
+    }
 
     fetchPermissions();
   }, []);

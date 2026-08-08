@@ -69,10 +69,10 @@ export async function GET(
             .single();
 
         return NextResponse.json({ data: full });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error fetching customer:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -179,10 +179,10 @@ export async function PUT(
         }
 
         return NextResponse.json({ data });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error updating customer:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -279,10 +279,10 @@ export async function PATCH(
         }
 
         return NextResponse.json({ data });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error updating customer:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -327,7 +327,7 @@ export async function DELETE(
 
         // Permission gate after ownership.
         const userRole = auth.profile.role;
-        const userPerms = (auth.profile as any).user_permissions || [];
+        const userPerms = auth.profile?.user_permissions || [];
         const isPlatformAdmin = auth.profile.is_platform_admin;
 
         const canDelete = isPlatformAdmin ||
@@ -397,10 +397,10 @@ export async function DELETE(
             success: true,
             message: "Customer deleted successfully"
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error deleting customer:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }

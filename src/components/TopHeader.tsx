@@ -177,7 +177,7 @@ export function TopHeader() {
         return () => document.removeEventListener("mousedown", onDoc);
     }, []);
 
-    const handleLogout = async () => {
+    async function handleLogout() {
         if (logoutLoading) return;
         setLogoutLoading(true);
         try {
@@ -192,7 +192,7 @@ export function TopHeader() {
             );
             setLogoutLoading(false);
         }
-    };
+    }
 
     return (
         <>

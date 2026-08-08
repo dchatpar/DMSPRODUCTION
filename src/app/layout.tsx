@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ApiErrorBridge } from "@/src/components/ApiErrorBridge";
 import { ESBUILD_NAME_HELPER } from "@/src/components/ThemeProvider";
@@ -18,12 +18,31 @@ const geistMono = Geist_Mono({
     display: "swap",
 });
 
+export const viewport: Viewport = {
+    width: "device-width",
+    initialScale: 1,
+    themeColor: [
+        { media: "(prefers-color-scheme: light)", color: "#2563eb" },
+        { media: "(prefers-color-scheme: dark)", color: "#0f172a" },
+    ],
+};
+
 export const metadata: Metadata = {
     title: {
         default: "FlashFender",
         template: "%s · FlashFender",
     },
     description: "FlashFender Dealer Management System",
+    manifest: "/manifest.webmanifest",
+    applicationName: "FlashFender",
+    appleWebApp: {
+        capable: true,
+        title: "FlashFender",
+        statusBarStyle: "default",
+    },
+    formatDetection: {
+        telephone: false,
+    },
     icons: {
         icon: [
             { url: "/favicon.png", sizes: "32x32", type: "image/png" },

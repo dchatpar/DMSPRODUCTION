@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
     ArrowLeft,
     Calculator,
     Car,
+    CreditCard,
     Edit,
     FileSignature,
     FileText,
@@ -24,7 +26,7 @@ import {
 import { ActivityTimeline } from "@/src/components/ui/ActivityTimeline";
 import { StatusBadge } from "@/src/components/ui/StatusBadge";
 import { RelationChip } from "@/src/components/ui/RelationChip";
-import { apiFetch } from "@/src/lib/fetch";
+import { apiFetch, ApiError } from "@/src/lib/fetch";
 import { firstImageUrl } from "@/src/lib/vehicle-image";
 import { toast } from "@/src/lib/toast";
 import { formatCurrency } from "@/src/lib/utils";
@@ -37,6 +39,9 @@ interface Deal {
     finance_term: number | null;
     interest_rate: number | null;
     down_payment: number;
+    deposit_amount?: number | null;
+    deposit_paid?: number | null;
+    payment_status?: string | null;
     trade_in_value?: number | null;
     sale_price: number;
     salesperson_id: string | null;
@@ -126,7 +131,7 @@ export default function DealDetailPage() {
         "Cancelled",
     ] as const;
 
-    const load = async () => {
+    async function load() {
         if (!id) return;
         try {
             setLoading(true);
@@ -162,14 +167,14 @@ export default function DealDetailPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     useEffect(() => {
         void load();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id]);
 
-    const openBillOfSale = async () => {
+    async function openBillOfSale() {
         if (!deal) return;
         setBosLoading(true);
         try {
@@ -193,9 +198,9 @@ export default function DealDetailPage() {
         } finally {
             setBosLoading(false);
         }
-    };
+    }
 
-    const setDealStatus = async (next: string) => {
+    async function setDealStatus(next: string) {
         if (!deal || next === deal.deal_status || statusSaving) return;
         setStatusSaving(true);
         const prev = deal.deal_status;
@@ -215,7 +220,45 @@ export default function DealDetailPage() {
         } finally {
             setStatusSaving(false);
         }
-    };
+    }
+
+    /** Built-in payments: deposit capture via hosted Stripe checkout. */
+    async function handleCollectDeposit() {
+        if (!deal) return;
+        try {
+            const res = await apiFetch<{ data?: { url?: string } }>(
+                "/api/payments/checkout",
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        reference_type: "deposit",
+                        reference_id: deal.id,
+                        success_path: `/deals/${deal.id}`,
+                        cancel_path: `/deals/${deal.id}`,
+                    }),
+                }
+            );
+            if (!res?.data?.url) {
+                throw new Error("Checkout returned no URL");
+            }
+            window.location.href = res.data.url;
+        } catch (err) {
+            if (
+                err instanceof ApiError &&
+                ((err.data as { code?: string } | null)?.code ===
+                    "PAYMENTS_NOT_CONFIGURED" ||
+                    err.status === 409)
+            ) {
+                toast.error(
+                    "Online payments are not configured yet — no charge was made."
+                );
+                return;
+            }
+            toast.error(
+                err instanceof Error ? err.message : "Could not start payment"
+            );
+        }
+    }
 
     const vehicleTitle = deal?.vehicle
         ? `${deal.vehicle.year} ${deal.vehicle.make} ${deal.vehicle.model}`
@@ -349,6 +392,22 @@ export default function DealDetailPage() {
                     >
                         Desk F&I
                     </Button>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void handleCollectDeposit()}
+                        leftIcon={<CreditCard className="h-3.5 w-3.5" />}
+                    >
+                        Collect deposit
+                    </Button>
+                    <Link
+                        href={`/finance/credit/new?customer_id=${deal.customer_id || ""}&vehicle_id=${deal.vehicle_id || ""}`}
+                        aria-label="Open credit application for this deal"
+                    >
+                        <Button variant="outline" size="sm">
+                            Credit Application
+                        </Button>
+                    </Link>
                 </div>
             }
         >
@@ -489,6 +548,56 @@ export default function DealDetailPage() {
                 </div>
 
                 <div className="space-y-4">
+                    <div className="rounded-xl border border-border bg-card p-4">
+                        <h3 className="mb-3 text-sm font-medium text-muted-foreground">
+                            Payment
+                        </h3>
+                        <div className="space-y-2 text-sm">
+                            <div className="flex items-center justify-between">
+                                <span className="text-muted-foreground">Status</span>
+                                <span className="font-medium text-foreground">
+                                    {deal.payment_status || "Unpaid"}
+                                </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <span className="text-muted-foreground">Deposit amount</span>
+                                <span className="text-foreground">
+                                    {formatCurrency(deal.deposit_amount || 0)}
+                                </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <span className="text-muted-foreground">Deposit paid</span>
+                                <span className="text-foreground">
+                                    {formatCurrency(deal.deposit_paid || 0)}
+                                </span>
+                            </div>
+                            <div className="flex items-center justify-between border-t border-border pt-2">
+                                <span className="text-muted-foreground">Deposit balance</span>
+                                <span className="font-semibold text-foreground">
+                                    {formatCurrency(
+                                        Math.max(
+                                            0,
+                                            (deal.deposit_amount || 0) -
+                                                (deal.deposit_paid || 0)
+                                        )
+                                    )}
+                                </span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => void handleCollectDeposit()}
+                                className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-600"
+                            >
+                                <CreditCard className="h-4 w-4" />
+                                Collect deposit
+                            </button>
+                            <p className="text-[11px] text-muted-foreground">
+                                Hosted Stripe checkout. When payments are not
+                                configured, no charge is made.
+                            </p>
+                        </div>
+                    </div>
+
                     <ActivityTimeline
                         title="Activity"
                         items={[

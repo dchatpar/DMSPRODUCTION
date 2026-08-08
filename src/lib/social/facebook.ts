@@ -130,7 +130,7 @@ async function graphGet<T>(path: string, params: Record<string, string>): Promis
     const res = await fetch(url.toString(), { method: "GET" });
     const json = (await res.json()) as T & GraphErrorBody;
     if (!res.ok || json.error) {
-        throw new Error(json.error?.message || `Graph GET ${path} failed (${res.status})`);
+        throw new Error(json.error instanceof Error ? json.error.message : `Graph GET ${path} failed (${res.status})`);
     }
     return json;
 }
@@ -147,7 +147,7 @@ async function graphPost<T>(
     });
     const json = (await res.json()) as T & GraphErrorBody;
     if (!res.ok || json.error) {
-        throw new Error(json.error?.message || `Graph POST ${path} failed (${res.status})`);
+        throw new Error(json.error instanceof Error ? json.error.message : `Graph POST ${path} failed (${res.status})`);
     }
     return json;
 }

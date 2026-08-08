@@ -102,7 +102,7 @@ export default function CustomerFormModal({
     });
 
     useEffect(() => {
-        const fetchData = async () => {
+        async function fetchData() {
             try {
                 const meResponse = await fetch("/api/me");
                 if (meResponse.ok) {
@@ -120,7 +120,7 @@ export default function CustomerFormModal({
             } catch (err) {
                 console.error("Error fetching data:", err);
             }
-        };
+        }
 
         void fetchData();
 
@@ -143,7 +143,7 @@ export default function CustomerFormModal({
         }
     }, [mode, customer, defaultName, form]);
 
-    const onSubmit = async (formData: CustomerFormValues) => {
+    async function onSubmit(formData: CustomerFormValues) {
         setLoading(true);
         setError(null);
 
@@ -189,7 +189,7 @@ export default function CustomerFormModal({
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     const inputClass =
         "w-full pl-10 pr-4 py-2.5 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent bg-card text-foreground";

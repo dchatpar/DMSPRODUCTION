@@ -9,8 +9,8 @@ export async function GET(req: NextRequest) {
 
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -112,32 +112,32 @@ export async function GET(req: NextRequest) {
         // Manually fetch related data to avoid schema cache issues
         const [customersData, leadsData, vehiclesData, usersData] = await Promise.all([
             testDrives?.length > 0
-                ? supabase.from("customers").select("id, name, email, phone").in("id", [...new Set((testDrives || []).map((td: any) => td.customer_id).filter(Boolean))])
+                ? supabase.from("customers").select("id, name, email, phone").in("id", [...new Set((testDrives || []).map((td) => td.customer_id).filter(Boolean))])
                 : { data: [] },
             testDrives?.length > 0
-                ? supabase.from("leads").select("id, source, status").in("id", [...new Set((testDrives || []).map((td: any) => td.lead_id).filter(Boolean))])
+                ? supabase.from("leads").select("id, source, status").in("id", [...new Set((testDrives || []).map((td) => td.lead_id).filter(Boolean))])
                 : { data: [] },
             testDrives?.length > 0
-                ? supabase.from("vehicles").select("id, make, model, year, vin, stock_number").in("id", [...new Set((testDrives || []).map((td: any) => td.vehicle_id).filter(Boolean))])
+                ? supabase.from("vehicles").select("id, make, model, year, vin, stock_number").in("id", [...new Set((testDrives || []).map((td) => td.vehicle_id).filter(Boolean))])
                 : { data: [] },
             testDrives?.length > 0
-                ? supabase.from("users").select("id, full_name, email").in("id", [...new Set((testDrives || []).map((td: any) => td.user_id).filter(Boolean))])
+                ? supabase.from("users").select("id, full_name, email").in("id", [...new Set((testDrives || []).map((td) => td.user_id).filter(Boolean))])
                 : { data: [] },
         ]);
 
-        const customerMap: Record<string, any> = {};
-        (customersData.data || []).forEach((c: any) => { customerMap[c.id] = c; });
+        const customerMap: Record<string, unknown> = {};
+        (customersData.data || []).forEach((c) => { customerMap[c.id] = c; });
 
-        const leadMap: Record<string, any> = {};
-        (leadsData.data || []).forEach((l: any) => { leadMap[l.id] = l; });
+        const leadMap: Record<string, unknown> = {};
+        (leadsData.data || []).forEach((l) => { leadMap[l.id] = l; });
 
-        const vehicleMap: Record<string, any> = {};
-        (vehiclesData.data || []).forEach((v: any) => { vehicleMap[v.id] = v; });
+        const vehicleMap: Record<string, unknown> = {};
+        (vehiclesData.data || []).forEach((v) => { vehicleMap[v.id] = v; });
 
-        const userMap: Record<string, any> = {};
-        (usersData.data || []).forEach((u: any) => { userMap[u.id] = u; });
+        const userMap: Record<string, unknown> = {};
+        (usersData.data || []).forEach((u) => { userMap[u.id] = u; });
 
-        const enrichedData = (testDrives || []).map((td: any) => ({
+        const enrichedData = (testDrives || []).map((td) => ({
             ...td,
             customer: td.customer_id ? customerMap[td.customer_id] || null : null,
             lead: td.lead_id ? leadMap[td.lead_id] || null : null,
@@ -151,10 +151,10 @@ export async function GET(req: NextRequest) {
             limit,
             offset,
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error fetching test drives:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -167,8 +167,8 @@ export async function POST(req: NextRequest) {
 
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -295,10 +295,10 @@ export async function POST(req: NextRequest) {
         };
 
         return NextResponse.json({ data: enrichedTestDrive }, { status: 201 });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error creating test drive:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }

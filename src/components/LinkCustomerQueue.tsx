@@ -96,7 +96,7 @@ export default function LinkCustomerQueue({
         {}
     );
 
-    const load = async () => {
+    async function load() {
         setLoading(true);
         try {
             const [dealsRes, customersRes] = await Promise.all([
@@ -117,7 +117,7 @@ export default function LinkCustomerQueue({
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     useEffect(() => {
         if (open) void load();
@@ -139,7 +139,7 @@ export default function LinkCustomerQueue({
         [deals]
     );
 
-    const linkDeal = async (dealId: string, customerId?: string) => {
+    async function linkDeal(dealId: string, customerId?: string) {
         const cid = customerId || selected[dealId];
         if (!cid) {
             toast.error("Select a customer first");
@@ -159,7 +159,7 @@ export default function LinkCustomerQueue({
         } finally {
             setLinkingId(null);
         }
-    };
+    }
 
     const leaveCashBlank = (dealId: string) => {
         setDismissedCash((prev) => ({ ...prev, [dealId]: true }));

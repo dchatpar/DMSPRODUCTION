@@ -75,7 +75,7 @@ export default function TicketDetailsModal({
     const canEdit = userRole === "Admin" || userPermissions.includes("tickets:write");
     const canDelete = userRole === "Admin" || userPermissions.includes("tickets:delete");
 
-    const handleDelete = async () => {
+    async function handleDelete() {
         setDeleting(true);
         try {
             const response = await fetch(`/api/tickets/${ticket.id}`, {
@@ -89,7 +89,7 @@ export default function TicketDetailsModal({
         } finally {
             setDeleting(false);
         }
-    };
+    }
 
     return (
         <>

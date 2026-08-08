@@ -16,8 +16,9 @@
 //   3. For protected routes, redirect unauthenticated users to /login with
 //      a `?next=` param so they can return to where they were.
 //
-// Public routes (login, signup, /api/auth/*, static assets) are skipped so
-// the redirect never loops.
+// Public routes (login, register, /api/auth/*, static assets) are skipped so
+// the redirect never loops. Legacy signup bookmarks redirect to register via
+// next.config (no real page at the old path).
 //
 // We do NOT do any business-logic authorization here — that's the job of
 // `getCurrentUser()` in each API route. This file only refreshes session.
@@ -27,7 +28,6 @@ import { createServerClient } from "@supabase/ssr";
 
 const PUBLIC_PATHS = [
     "/login",
-    "/signup",
     "/register",
     "/verify-email",
     "/forgot-password",
@@ -62,6 +62,8 @@ function isMutatingApi(pathname: string, method: string): boolean {
     if (pathname.startsWith("/api/webhooks")) return false;
     if (pathname.startsWith("/api/health")) return false;
     if (pathname.startsWith("/api/vehicles/public")) return false;
+    // Allow Exit even when the impersonated dealership is trial soft-locked
+    if (pathname === "/api/platform/impersonate/exit") return false;
     return true;
 }
 

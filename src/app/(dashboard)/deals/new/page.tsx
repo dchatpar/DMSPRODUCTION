@@ -206,7 +206,7 @@ function NewDealWizardInner() {
         }
     };
 
-    const submit = async () => {
+    async function submit() {
         if (!form.vehicle_id || form.sale_price <= 0) {
             toast.error("Vehicle and sale price are required");
             return;
@@ -278,7 +278,7 @@ function NewDealWizardInner() {
         } finally {
             setSaving(false);
         }
-    };
+    }
 
     if (loading) {
         return (

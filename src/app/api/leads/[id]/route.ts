@@ -26,8 +26,8 @@ export async function GET(
         let supabase;
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -36,7 +36,7 @@ export async function GET(
             throw error;
         }
 
-        const userPerms = (auth.profile as any).user_permissions || [];
+        const userPerms = auth.profile?.user_permissions || [];
         const isAdminOrManager = auth.profile.is_platform_admin ||
             auth.profile.role === "Admin" ||
             auth.profile.role === "Manager";
@@ -85,10 +85,10 @@ export async function GET(
             .single();
 
         return NextResponse.json({ data: fullLead });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error fetching lead:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -111,8 +111,8 @@ export async function PUT(
         let supabase;
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -175,7 +175,7 @@ export async function PUT(
 
         // Whitelist + block dealership_id changes; always update last_engagement/updated_at
         const safePayload = pickAllowed(payload, LEAD_ALLOWED_FIELDS);
-        delete (safePayload as any).dealership_id;
+        delete (safePayload as { dealership_id?: unknown }).dealership_id;
 
         const updateData = {
             ...safePayload,
@@ -207,10 +207,10 @@ export async function PUT(
         }
 
         return NextResponse.json({ data });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error updating lead:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -233,8 +233,8 @@ export async function PATCH(
         let supabase;
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -244,7 +244,7 @@ export async function PATCH(
         }
 
         const userRole = auth.profile.role;
-        const userPermissions = (auth.profile as any).user_permissions || [];
+        const userPermissions = auth.profile?.user_permissions || [];
         const isPlatformAdmin = auth.profile.is_platform_admin;
         const canAssign = isPlatformAdmin || userRole === "Admin" || userRole === "Manager" || userPermissions.includes("leads:assign");
 
@@ -283,7 +283,7 @@ export async function PATCH(
 
         // Whitelist the update payload and block dealership_id changes
         const safePayload = pickAllowed(payload, LEAD_ALLOWED_FIELDS);
-        delete (safePayload as any).dealership_id;
+        delete (safePayload as { dealership_id?: unknown }).dealership_id;
 
         if (Object.keys(safePayload).length === 0) {
             return NextResponse.json(
@@ -354,10 +354,10 @@ export async function PATCH(
         }
 
         return NextResponse.json({ data });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error updating lead:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -380,8 +380,8 @@ export async function DELETE(
         let supabase;
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -391,7 +391,7 @@ export async function DELETE(
         }
 
         const userRole = auth.profile.role;
-        const userPerms = (auth.profile as any).user_permissions || [];
+        const userPerms = auth.profile?.user_permissions || [];
         const isPlatformAdmin = auth.profile.is_platform_admin;
 
         // Check leads:delete permission
@@ -449,10 +449,10 @@ export async function DELETE(
             success: true,
             message: "Lead deleted successfully"
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error deleting lead:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }

@@ -36,8 +36,8 @@ export async function GET(
         try {
             const picked = pickSupabaseClient(req, auth.profile);
             supabase = picked.supabase;
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -91,10 +91,10 @@ export async function GET(
         }
 
         return NextResponse.json({ data });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error fetching deal:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -118,8 +118,8 @@ export async function PUT(
         try {
             const picked = pickSupabaseClient(req, auth.profile);
             supabase = picked.supabase;
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -173,9 +173,9 @@ export async function PUT(
 
         // Whitelist + block dealership_id changes; preserve legacy field mapping
         const safePayload = pickAllowed(payload, DEAL_ALLOWED_FIELDS);
-        delete (safePayload as any).dealership_id;
+        delete (safePayload as { dealership_id?: unknown }).dealership_id;
 
-        const updateData: any = {
+        const updateData: Record<string, unknown> = {
             ...safePayload,
             deal_status: payload.deal_status,
             interest_rate: payload.interest_rate,
@@ -225,10 +225,10 @@ export async function PUT(
         }
 
         return NextResponse.json({ data });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error updating deal:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -252,8 +252,8 @@ export async function PATCH(
         try {
             const picked = pickSupabaseClient(req, auth.profile);
             supabase = picked.supabase;
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -299,7 +299,7 @@ export async function PATCH(
         // P1-3: perm gates now run AFTER ownership/404, so a non-existent
         // deal returns 404 regardless of the caller's perms.
         const userRole = auth.profile.role;
-        const userPerms = (auth.profile as any).user_permissions || [];
+        const userPerms = auth.profile?.user_permissions || [];
         const isPlatformAdmin = auth.profile.is_platform_admin;
 
         if (payload.deal_status === "Paid Off") {
@@ -331,7 +331,7 @@ export async function PATCH(
 
         // Whitelist + block dealership_id changes; map to the real column names
         const safePayload = pickAllowed(payload, DEAL_ALLOWED_FIELDS);
-        delete (safePayload as any).dealership_id;
+        delete (safePayload as { dealership_id?: unknown }).dealership_id;
         // `status` / `deal_status` both map to DB column `deal_status` (kanban sends deal_status)
         const updateData: Record<string, unknown> = { ...safePayload };
         if (updateData.status !== undefined) {
@@ -389,10 +389,10 @@ export async function PATCH(
         }
 
         return NextResponse.json({ data });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error updating deal:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -416,8 +416,8 @@ export async function DELETE(
         try {
             const picked = pickSupabaseClient(req, auth.profile);
             supabase = picked.supabase;
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -475,10 +475,10 @@ export async function DELETE(
             success: true,
             message: "Deal deleted successfully"
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error deleting deal:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }

@@ -14,8 +14,8 @@ export async function GET(req: NextRequest) {
 
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
 
         // Fetch payments for each bill of sale
         if (data && data.length > 0) {
-            const billIds = data.map((b: any) => b.id);
+            const billIds = data.map((b) => b.id);
             const { data: payments, error: paymentsError } = await supabase
                 .from("bill_of_sale_payments")
                 .select("*")
@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
             if (paymentsError) throw paymentsError;
 
             // Attach payments to each bill
-            const paymentsByBill = (payments || []).reduce((acc: any, payment: any) => {
+            const paymentsByBill = (payments || []).reduce((acc, payment) => {
                 if (!acc[payment.bill_of_sale_id]) {
                     acc[payment.bill_of_sale_id] = [];
                 }
@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
                 return acc;
             }, {});
 
-            data.forEach((bill: any) => {
+            data.forEach((bill) => {
                 bill.payments = paymentsByBill[bill.id] || [];
             });
         }
@@ -90,10 +90,10 @@ export async function GET(req: NextRequest) {
             limit,
             offset,
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error fetching bills of sale:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -106,8 +106,8 @@ export async function POST(req: NextRequest) {
 
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -158,7 +158,12 @@ export async function POST(req: NextRequest) {
         const payload = await req.json();
 
         // Extract payments before insert
-        const payments = payload.payments || [];
+        const payments = (payload.payments || []) as Array<{
+            payment_name: string;
+            payment_type: string;
+            amount: number;
+            payment_date: string;
+        }>;
         const customerName =
             payload.buyer_name ||
             payload.customer?.name ||
@@ -206,7 +211,7 @@ export async function POST(req: NextRequest) {
 
         // Insert payments if provided
         if (payments.length > 0) {
-            const paymentInserts = payments.map((p: any) => ({
+            const paymentInserts = payments.map((p) => ({
                 ...p,
                 bill_of_sale_id: data.id,
                 dealership_id: currentUser.dealership_id,
@@ -229,10 +234,10 @@ export async function POST(req: NextRequest) {
         }
 
         return NextResponse.json({ data }, { status: 201 });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error creating bill of sale:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }

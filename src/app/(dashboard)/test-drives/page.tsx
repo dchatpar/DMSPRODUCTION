@@ -144,7 +144,7 @@ export default function TestDrivesPage() {
         fetchUserPermissions();
     }, [currentPage, statusFilter, searchTerm, scheduledDateFrom, scheduledDateTo, vehicleFilter]);
 
-    const fetchUserPermissions = async () => {
+    async function fetchUserPermissions() {
         try {
             const response = await fetch("/api/me", {
             });
@@ -156,9 +156,9 @@ export default function TestDrivesPage() {
         } catch (error) {
             console.error("Error fetching user permissions:", error);
         }
-    };
+    }
 
-    const fetchTestDrives = async () => {
+    async function fetchTestDrives() {
         try {
             setLoading(true);
             setError(null);
@@ -188,7 +188,7 @@ export default function TestDrivesPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     const toCsv = (rows: Record<string, string>[]) => {
         const cols = Object.keys(rows[0] || {});
@@ -205,7 +205,7 @@ export default function TestDrivesPage() {
         }
     };
 
-    const exportToExcel = async () => {
+    async function exportToExcel() {
         setExportLoading(true);
         try {
 
@@ -217,14 +217,14 @@ export default function TestDrivesPage() {
                 throw new Error(errorData.error || `Failed to fetch test drives (${response.status})`);
             }
 
-            const data = await response.json();
+            const data = (await response.json()) as { data: TestDrive[] };
             const exportData = data.data || [];
 
             if (exportData.length === 0) {
                 throw new Error("No test drives found to export");
             }
 
-            const worksheetData = exportData.map((td: any) => ({
+            const worksheetData = exportData.map((td) => ({
                 "Customer": td.customer?.name || "Unknown",
                 "Email": td.customer?.email || "",
                 "Phone": td.customer?.phone || "",
@@ -264,7 +264,7 @@ export default function TestDrivesPage() {
         } finally {
             setExportLoading(false);
         }
-    };
+    }
 
     const handleViewDetails = (testDrive: TestDrive) => {
         setSelectedTestDrive(testDrive);
@@ -289,12 +289,12 @@ export default function TestDrivesPage() {
         fetchTestDrives();
     };
 
-    const handleDelete = async (testDrive: TestDrive) => {
+    async function handleDelete(testDrive: TestDrive) {
         setConfirmDialogData({ testDrive, loading: false });
         setShowConfirmDialog(true);
-    };
+    }
 
-    const confirmDelete = async () => {
+    async function confirmDelete() {
         if (!confirmDialogData.testDrive) return;
 
         const testDriveId = confirmDialogData.testDrive.id;
@@ -324,7 +324,7 @@ export default function TestDrivesPage() {
             toast.error(err instanceof Error ? err.message : "An error occurred");
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
-    };
+    }
 
     const getStatusColor = (status: string) => {
         const colors: Record<string, string> = {

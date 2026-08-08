@@ -48,6 +48,12 @@ interface Purchase {
     vehicle_id: string | null;
     vehicle: VehicleRef | null;
     created_at: string;
+    location_id?: string | null;
+    source_kind?: string | null;
+    auction_venue?: string | null;
+    auction_lot_number?: string | null;
+    auction_sale_date?: string | null;
+    comp_notes?: string | null;
 }
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -71,6 +77,12 @@ const emptyForm = {
     odometer: "",
     exterior_color: "",
     stock_number: "",
+    // Auction / wholesale sourcing (honest record-keeping)
+    source_kind: "",
+    auction_venue: "",
+    auction_lot_number: "",
+    auction_sale_date: "",
+    comp_notes: "",
 };
 
 type FormState = typeof emptyForm;
@@ -137,12 +149,17 @@ export default function PurchasesPage() {
             title_number: p.title_number || "",
             notes: p.notes || "",
             create_vehicle: false,
+            source_kind: p.source_kind || "",
+            auction_venue: p.auction_venue || "",
+            auction_lot_number: p.auction_lot_number || "",
+            auction_sale_date: p.auction_sale_date?.slice(0, 10) || "",
+            comp_notes: p.comp_notes || "",
         });
         setFormError(null);
         setShowForm(true);
     };
 
-    const onSave = async () => {
+    async function onSave() {
         setFormError(null);
         if (!form.seller_name.trim()) {
             setFormError("Seller name is required");
@@ -179,6 +196,11 @@ export default function PurchasesPage() {
                         title_received: form.title_received,
                         title_number: form.title_number.trim() || null,
                         notes: form.notes.trim() || null,
+                        source_kind: form.source_kind || null,
+                        auction_venue: form.auction_venue.trim() || null,
+                        auction_lot_number: form.auction_lot_number.trim() || null,
+                        auction_sale_date: form.auction_sale_date || null,
+                        comp_notes: form.comp_notes.trim() || null,
                     },
                 });
                 toast.success("Purchase updated");
@@ -194,6 +216,11 @@ export default function PurchasesPage() {
                     title_number: form.title_number.trim() || null,
                     notes: form.notes.trim() || null,
                     create_vehicle: form.create_vehicle,
+                    source_kind: form.source_kind || null,
+                    auction_venue: form.auction_venue.trim() || null,
+                    auction_lot_number: form.auction_lot_number.trim() || null,
+                    auction_sale_date: form.auction_sale_date || null,
+                    comp_notes: form.comp_notes.trim() || null,
                 };
                 if (form.create_vehicle) {
                     payload.vehicle = {
@@ -220,9 +247,9 @@ export default function PurchasesPage() {
         } finally {
             setSaving(false);
         }
-    };
+    }
 
-    const confirmDelete = async () => {
+    async function confirmDelete() {
         if (!deleteTarget) return;
         setDeleting(true);
         try {
@@ -237,7 +264,7 @@ export default function PurchasesPage() {
         } finally {
             setDeleting(false);
         }
-    };
+    }
 
     const money = (n: number) =>
         new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }).format(n);
@@ -333,6 +360,20 @@ export default function PurchasesPage() {
                                         <div className="font-medium text-gray-900">{p.seller_name}</div>
                                         {p.seller_phone && (
                                             <div className="text-xs text-gray-500">{p.seller_phone}</div>
+                                        )}
+                                        {p.source_kind && (
+                                            <div className="mt-0.5 text-[11px] text-blue-600">
+                                                {p.source_kind === "auction"
+                                                    ? [
+                                                          p.auction_venue,
+                                                          p.auction_lot_number
+                                                              ? `Lot #${p.auction_lot_number}`
+                                                              : null,
+                                                      ]
+                                                          .filter(Boolean)
+                                                          .join(" · ")
+                                                    : p.source_kind}
+                                            </div>
                                         )}
                                     </td>
                                     <td className="px-4 py-3">
@@ -503,6 +544,75 @@ export default function PurchasesPage() {
                                     rows={2}
                                     value={form.notes}
                                     onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                                />
+                            </label>
+                        </div>
+                    </section>
+
+                    <section className="space-y-4 rounded-lg border border-gray-200 bg-gray-50/60 p-4">
+                        <div>
+                            <h3 className="text-sm font-semibold text-gray-900">
+                                Auction / wholesale sourcing
+                            </h3>
+                            <p className="mt-0.5 text-xs text-gray-500">
+                                Where this unit was sourced. Record-keeping only — no market-value
+                                claims and no auto-bidding.
+                            </p>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                            <label className="block space-y-1">
+                                <span className="text-xs font-medium text-gray-600">Source kind</span>
+                                <select
+                                    className="h-9 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm"
+                                    value={form.source_kind}
+                                    onChange={(e) => setForm({ ...form, source_kind: e.target.value })}
+                                >
+                                    <option value="">Not specified</option>
+                                    <option value="public">Public seller</option>
+                                    <option value="auction">Auction</option>
+                                    <option value="wholesale">Wholesale</option>
+                                    <option value="trade">Trade-in</option>
+                                    <option value="other">Other</option>
+                                </select>
+                            </label>
+                            <label className="block space-y-1">
+                                <span className="text-xs font-medium text-gray-600">Auction venue</span>
+                                <Input
+                                    value={form.auction_venue}
+                                    onChange={(e) => setForm({ ...form, auction_venue: e.target.value })}
+                                    placeholder="e.g. ADESA Toronto"
+                                />
+                            </label>
+                            <label className="block space-y-1">
+                                <span className="text-xs font-medium text-gray-600">Lot number</span>
+                                <Input
+                                    value={form.auction_lot_number}
+                                    onChange={(e) =>
+                                        setForm({ ...form, auction_lot_number: e.target.value })
+                                    }
+                                    placeholder="e.g. 4821"
+                                />
+                            </label>
+                            <label className="block space-y-1">
+                                <span className="text-xs font-medium text-gray-600">Sale date</span>
+                                <Input
+                                    type="date"
+                                    value={form.auction_sale_date}
+                                    onChange={(e) =>
+                                        setForm({ ...form, auction_sale_date: e.target.value })
+                                    }
+                                />
+                            </label>
+                            <label className="block space-y-1 sm:col-span-2">
+                                <span className="text-xs font-medium text-gray-600">
+                                    Comp notes (desk)
+                                </span>
+                                <textarea
+                                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                                    rows={2}
+                                    value={form.comp_notes}
+                                    onChange={(e) => setForm({ ...form, comp_notes: e.target.value })}
+                                    placeholder="Comparable condition notes from the desk. Not a market-data source."
                                 />
                             </label>
                         </div>

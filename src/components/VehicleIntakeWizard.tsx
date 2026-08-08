@@ -594,7 +594,7 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
         return null;
     };
 
-    const persistGallery = async (images: VehicleImage[]) => {
+    async function persistGallery(images: VehicleImage[]) {
         const serialized = serializeGallery(
             images.map((img, i) => ({ ...img, sort_order: i }))
         );
@@ -613,7 +613,7 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
                 (body as { error?: string }).error || `Failed to save gallery (${res.status})`
             );
         }
-    };
+    }
 
     const saveDraft = async (): Promise<boolean> => {
         const identityError = validateIdentity();
@@ -684,7 +684,7 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
         }
     };
 
-    const saveFull = async (andExit: boolean) => {
+    async function saveFull(andExit: boolean) {
         try {
             assertDamageDisclosureForPublish({
                 status: form.status,
@@ -739,9 +739,9 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
         } finally {
             setSaving(false);
         }
-    };
+    }
 
-    const goNext = async () => {
+    async function goNext() {
         if (step.id === "basic") {
             const ok = await saveDraft();
             if (!ok) return;
@@ -773,7 +773,7 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
         } else {
             await saveFull(true);
         }
-    };
+    }
 
     const goBack = () => {
         if (stepIndex === 0) {
@@ -783,7 +783,7 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
         setStepIndex((i) => i - 1);
     };
 
-    const handleUpload = async (files: FileList | null) => {
+    async function handleUpload(files: FileList | null) {
         if (!files?.length) return;
         if (!draftSaved || !form.vin) {
             toast.error("Save the draft first so photos can attach to this VIN");
@@ -849,9 +849,9 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
             setUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = "";
         }
-    };
+    }
 
-    const handleDragEnd = async (event: DragEndEvent) => {
+    async function handleDragEnd(event: DragEndEvent) {
         const { active, over } = event;
         if (!over || active.id === over.id) return;
         const images = [...gallery];
@@ -867,9 +867,9 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "Could not reorder photos");
         }
-    };
+    }
 
-    const setCover = async (url: string) => {
+    async function setCover(url: string) {
         const next = gallery.map((img) => ({
             ...img,
             is_cover: img.url === url,
@@ -879,9 +879,9 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "Could not set cover");
         }
-    };
+    }
 
-    const removeImage = async (url: string) => {
+    async function removeImage(url: string) {
         try {
             const remaining = gallery.filter((g) => g.url !== url);
             const cleaned = remaining.map((img, i) => ({
@@ -902,9 +902,9 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "Could not remove photo");
         }
-    };
+    }
 
-    const setRole = async (url: string, role: VehicleImageRole | "") => {
+    async function setRole(url: string, role: VehicleImageRole | "") {
         const next = gallery.map((img) =>
             img.url === url ? { ...img, role: role || null } : img
         );
@@ -913,7 +913,7 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "Could not update photo role");
         }
-    };
+    }
 
     const toggleFeature = (feat: string) => {
         setForm((prev) => {
@@ -943,7 +943,7 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
         patchField("description", text);
     };
 
-    const handleCarfaxUpload = async (file: File | undefined) => {
+    async function handleCarfaxUpload(file: File | undefined) {
         if (!file) return;
         if (file.type !== "application/pdf") {
             toast.error("CARFAX must be a PDF");
@@ -972,7 +972,7 @@ export default function VehicleIntakeWizard({ mode, vin: vinParam }: VehicleInta
             setUploadingCarfax(false);
             if (carfaxInputRef.current) carfaxInputRef.current.value = "";
         }
-    };
+    }
 
     const rolesPresent = new Set(gallery.map((g) => g.role).filter(Boolean));
 

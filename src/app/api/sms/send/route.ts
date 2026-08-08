@@ -5,10 +5,19 @@ import {
     requireDealershipAccess,
 } from "@/src/lib/auth-helpers";
 import { assertSmsConsent, SmsConsentError } from "@/src/lib/sms-consent";
+import { sendSmsMessage } from "@/src/lib/sms/provider";
+import { SMS_NOT_CONFIGURED_MESSAGE } from "@/src/lib/sms/config";
 
 /**
- * Stub SMS send endpoint — enforces CASL sms_consent + dealership ownership
- * before any future Twilio path. Does not send messages (honest 501).
+ * SMS send endpoint — real provider path (Twilio) behind CASL sms_consent,
+ * dealership ownership, and quiet-hours enforcement.
+ *
+ * Honest behavior:
+ *  - Consent missing        → 403 SMS_CONSENT_REQUIRED
+ *  - Quiet hours            → 409 SMS_QUIET_HOURS (recorded blocked)
+ *  - Provider not configured → 501 SMS_NOT_CONFIGURED (nothing sent)
+ *  - Provider failure       → 502 SMS_SEND_FAILED (recorded failed)
+ *  - Real send              → 200 with provider SID (recorded sent)
  */
 export async function POST(req: NextRequest) {
     try {
@@ -25,6 +34,18 @@ export async function POST(req: NextRequest) {
         if (!customerId) {
             return NextResponse.json({ error: "customer_id is required" }, { status: 400 });
         }
+        const message = typeof body.message === "string" ? body.message.trim() : "";
+        if (!message) {
+            return NextResponse.json({ error: "message is required" }, { status: 400 });
+        }
+        if (message.length > 1600) {
+            return NextResponse.json(
+                { error: "message exceeds 1600 characters" },
+                { status: 400 }
+            );
+        }
+        const marketing = body.marketing !== false;
+        const ignoreQuietHours = body.ignore_quiet_hours === true;
 
         const { supabase } = pickSupabaseClient(req, auth.profile);
         const { data: customer, error } = await supabase
@@ -52,24 +73,68 @@ export async function POST(req: NextRequest) {
         } catch (e) {
             const msg = e instanceof SmsConsentError ? e.message : "SMS consent required";
             return NextResponse.json(
-                { error: msg, code: "SMS_CONSENT_REQUIRED" },
+                { error: msg, code: "SMS_CONSENT_REQUIRED", sent: false },
                 { status: 403 }
             );
         }
 
-        return NextResponse.json(
-            {
-                error:
-                    "SMS sending is not configured yet. Consent check passed; no message was sent.",
-                code: "SMS_NOT_CONFIGURED",
+        const result = await sendSmsMessage(supabase, {
+            dealershipId: auth.dealership_id,
+            customer,
+            body: message,
+            marketing,
+            ignoreQuietHours,
+            recordBlocked: true,
+            source: "api-send",
+        });
+
+        if (result.ok) {
+            return NextResponse.json({
+                data: {
+                    sms_message_id: result.smsMessageId,
+                    provider_sid: result.providerSid,
+                },
+                sent: true,
                 consented: true,
-                sent: false,
-            },
-            { status: 501 }
-        );
+            });
+        }
+
+        switch (result.code) {
+            case "QUIET_HOURS":
+                return NextResponse.json(
+                    {
+                        error: result.error,
+                        code: "SMS_QUIET_HOURS",
+                        sent: false,
+                        blocked: true,
+                        sms_message_id: result.smsMessageId,
+                    },
+                    { status: 409 }
+                );
+            case "NOT_CONFIGURED":
+                return NextResponse.json(
+                    {
+                        error: SMS_NOT_CONFIGURED_MESSAGE,
+                        code: "SMS_NOT_CONFIGURED",
+                        consented: true,
+                        sent: false,
+                    },
+                    { status: 501 }
+                );
+            default:
+                return NextResponse.json(
+                    {
+                        error: result.error,
+                        code: "SMS_SEND_FAILED",
+                        sent: false,
+                        sms_message_id: result.smsMessageId,
+                    },
+                    { status: 502 }
+                );
+        }
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : "Internal server error";
-        console.error("SMS stub error:", message);
+        console.error("SMS send error:", message);
         return NextResponse.json({ error: message }, { status: 500 });
     }
 }

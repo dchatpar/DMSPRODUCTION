@@ -9,11 +9,11 @@ import { shouldScopeToAssigned } from "@/src/lib/permission-middleware";
 type DateFilter = { start: string; end: string } | null;
 type SupabaseClient = ReturnType<typeof pickSupabaseClient>["supabase"];
 
-function applyDealershipScope(
-    query: any,
+function applyDealershipScope<TQuery extends { eq: (column: string, value: unknown) => TQuery }>(
+    query: TQuery,
     dealershipId: string | null,
     _isPlatformAdmin: boolean
-) {
+): TQuery {
     // Defense-in-depth on top of RLS. Platform admins without a dealership_id
     // remain unscoped (admin client). Everyone else with a dealership_id is scoped.
     if (dealershipId) {
@@ -23,7 +23,10 @@ function applyDealershipScope(
 }
 
 /** Salesperson/Staff: only their own deals (matches /api/deals). */
-function applySalespersonScope(query: any, assignedUserId: string | null) {
+function applySalespersonScope<TQuery extends { eq: (column: string, value: unknown) => TQuery }>(
+    query: TQuery,
+    assignedUserId: string | null
+): TQuery {
     if (assignedUserId) {
         return query.eq("salesperson_id", assignedUserId);
     }
@@ -38,7 +41,7 @@ function dateOnly(iso: string): string {
  * Date window on sales_deals: prefer deal_date; if null, fall back to created_at.
  * Prevents Closed Hillz rows with missing deal_date from vanishing in reports.
  */
-function applyDealDateRange(query: any, startDay: string, endDay: string) {
+function applyDealDateRange<TQuery extends { or: (filter: string) => TQuery }>(query: TQuery, startDay: string, endDay: string): TQuery {
     const startIso = `${startDay}T00:00:00.000Z`;
     const endIso = `${endDay}T23:59:59.999Z`;
     return query.or(
@@ -620,7 +623,7 @@ async function getSalespersonReport(
         data: {
             summary: totals,
             bySalesperson: rows,
-            note: "Commission uses deal commission_amount/rate when set; otherwise estimates 25% of front-end gross.",
+            note: "Commission uses deal commission_amount/rate when set; otherwise estimates 25% of front-end gross. Not payroll.",
         },
     });
 }

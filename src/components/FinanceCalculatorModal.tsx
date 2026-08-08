@@ -72,10 +72,6 @@ export default function FinanceCalculatorModal({
         financed_amount: number;
     } | null>(null);
 
-    useEffect(() => {
-        calculatePayment();
-    }, [formData]);
-
     const calculatePayment = () => {
         const {
             sale_price,
@@ -128,6 +124,10 @@ export default function FinanceCalculatorModal({
         });
     };
 
+    useEffect(() => {
+        calculatePayment();
+    }, [formData]);
+
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setFormData((prev) => ({
@@ -136,7 +136,7 @@ export default function FinanceCalculatorModal({
         }));
     };
 
-    const handleSave = async () => {
+    async function handleSave() {
         if (!result) return;
 
         setSaving(true);
@@ -169,7 +169,7 @@ export default function FinanceCalculatorModal({
         } finally {
             setSaving(false);
         }
-    };
+    }
 
     const formatCurrency = (value: number) => {
         return new Intl.NumberFormat("en-CA", {
@@ -358,10 +358,10 @@ export default function FinanceCalculatorModal({
                                         Payment Frequency
                                     </label>
                                     <div className="grid grid-cols-3 gap-2">
-                                        {["monthly", "biweekly", "weekly"].map((type) => (
+                                        {(["monthly", "biweekly", "weekly"] as const).map((type) => (
                                             <button
                                                 key={type}
-                                                onClick={() => setFormData((prev) => ({ ...prev, payment_type: type as any }))}
+                                                onClick={() => setFormData((prev) => ({ ...prev, payment_type: type }))}
                                                 className={`px-4 py-2.5 rounded-lg border-2 transition-all capitalize ${
                                                     formData.payment_type === type
                                                         ? "border-amber-500 bg-amber-50 text-amber-700"

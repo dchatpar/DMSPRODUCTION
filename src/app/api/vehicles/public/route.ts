@@ -135,6 +135,8 @@ export async function GET(req: NextRequest) {
         const model = url.searchParams.get("model");
         const q = url.searchParams.get("q");
         const includeJsonLd = url.searchParams.get("jsonld") === "1";
+        // Multi-location (Tier 3): optional rooftop scope for embed/showroom.
+        const locationId = url.searchParams.get("location_id") || url.searchParams.get("locationId");
 
         const resolved = await resolveDealership({ dealershipId, slug, token });
         if (!resolved.dealership) {
@@ -172,6 +174,7 @@ export async function GET(req: NextRequest) {
 
         if (make) query = query.eq("make", make);
         if (model) query = query.eq("model", model);
+        if (locationId) query = query.eq("location_id", locationId);
         if (q) {
             query = query.or(
                 `vin.ilike.%${q}%,make.ilike.%${q}%,model.ilike.%${q}%,stock_number.ilike.%${q}%`

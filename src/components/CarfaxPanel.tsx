@@ -84,7 +84,7 @@ export function CarfaxPanel({
         reports.find((r) => r.report_url)?.report_url ||
         null;
 
-    const handleFetch = async () => {
+    async function handleFetch() {
         setFetching(true);
         try {
             const res = await apiFetch<{ data: CarfaxReport }>(`/api/carfax`, {
@@ -115,9 +115,9 @@ export function CarfaxPanel({
         } finally {
             setFetching(false);
         }
-    };
+    }
 
-    const handleUpload = async (file: File | undefined) => {
+    async function handleUpload(file: File | undefined) {
         if (!file) return;
         if (file.type !== "application/pdf") {
             toast.error("CARFAX must be a PDF");
@@ -167,7 +167,7 @@ export function CarfaxPanel({
             setUploading(false);
             if (fileRef.current) fileRef.current.value = "";
         }
-    };
+    }
 
     const canAutoFetch = Boolean(
         env?.api_fetch_ready || env?.partner_link_ready

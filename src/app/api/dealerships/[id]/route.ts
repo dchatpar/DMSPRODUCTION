@@ -38,8 +38,8 @@ export async function GET(
         let supabase;
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -93,10 +93,10 @@ export async function GET(
                 user_count: userCount || 0
             }
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error fetching dealership:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -128,8 +128,8 @@ export async function PATCH(
         let supabase;
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -159,7 +159,10 @@ export async function PATCH(
                 throw existingError;
             }
 
-            const deny = assertOwnershipOrDeny(existing as any, auth.profile);
+            const deny = assertOwnershipOrDeny(
+                existing as { dealership_id?: string | null; assigned_to?: string | null } | null,
+                auth.profile
+            );
             if (deny) return deny;
 
             const { data: dealership, error: dbError } = await supabase
@@ -230,7 +233,10 @@ export async function PATCH(
             throw existingError;
         }
 
-        const deny = assertOwnershipOrDeny(existing as any, auth.profile);
+        const deny = assertOwnershipOrDeny(
+            existing as { dealership_id?: string | null; assigned_to?: string | null } | null,
+            auth.profile
+        );
         if (deny) return deny;
 
         const { data: dealership, error: dbError } = await supabase
@@ -258,10 +264,10 @@ export async function PATCH(
         }
 
         return NextResponse.json({ data: dealership });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error updating dealership:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -296,8 +302,8 @@ export async function DELETE(
         let supabase;
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -319,7 +325,10 @@ export async function DELETE(
             throw existingError;
         }
 
-        const deny = assertOwnershipOrDeny(existing as any, auth.profile);
+        const deny = assertOwnershipOrDeny(
+            existing as { dealership_id?: string | null; assigned_to?: string | null } | null,
+            auth.profile
+        );
         if (deny) return deny;
 
         // Count tenant data — any operational data forces soft-delete only
@@ -330,7 +339,7 @@ export async function DELETE(
             { count: userCount },
         ] = await Promise.all([
             supabase.from("vehicles").select("*", { count: "exact", head: true }).eq("dealership_id", id),
-            supabase.from("deals").select("*", { count: "exact", head: true }).eq("dealership_id", id),
+            supabase.from("sales_deals").select("*", { count: "exact", head: true }).eq("dealership_id", id),
             supabase.from("invoices").select("*", { count: "exact", head: true }).eq("dealership_id", id),
             supabase.from("users").select("*", { count: "exact", head: true }).eq("dealership_id", id),
         ]);
@@ -422,10 +431,10 @@ export async function DELETE(
             soft_deleted: false,
             message: "Empty dealership hard-deleted.",
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error deleting dealership:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }

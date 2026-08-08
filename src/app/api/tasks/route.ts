@@ -9,8 +9,8 @@ export async function GET(req: NextRequest) {
 
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json({ error: "Authorization token required" }, { status: 401 });
             }
             throw error;
@@ -129,7 +129,7 @@ export async function GET(req: NextRequest) {
 
         // Sort by priority: Urgent > High > Medium > Low
         const priorityOrder = { 'Urgent': 1, 'High': 2, 'Medium': 3, 'Low': 4 };
-        const sortedData = (data || []).sort((a: any, b: any) => {
+        const sortedData = (data || []).sort((a, b) => {
             const aPriority = priorityOrder[a.priority as keyof typeof priorityOrder] || 5;
             const bPriority = priorityOrder[b.priority as keyof typeof priorityOrder] || 5;
             if (aPriority !== bPriority) return aPriority - bPriority;
@@ -145,9 +145,9 @@ export async function GET(req: NextRequest) {
             limit,
             offset,
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error fetching tasks:", error);
-        return NextResponse.json({ error: error?.message || "Internal server error" }, { status: 500 });
+        return NextResponse.json({ error: error instanceof Error ? error.message : "Internal server error" }, { status: 500 });
     }
 }
 
@@ -158,8 +158,8 @@ export async function POST(req: NextRequest) {
 
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json({ error: "Authorization token required" }, { status: 401 });
             }
             throw error;
@@ -207,7 +207,7 @@ export async function POST(req: NextRequest) {
         }
 
         // Create the task
-        const taskData: any = {
+        const taskData: Record<string, unknown> = {
             title: payload.title,
             description: payload.description || null,
             assigned_to: payload.assigned_to || null,
@@ -238,7 +238,7 @@ export async function POST(req: NextRequest) {
 
         // Add task links if provided
         if (payload.links && Array.isArray(payload.links)) {
-            const linkInserts = payload.links.map((link: any) => ({
+            const linkInserts = payload.links.map((link: { link_type: string; linked_id: string }) => ({
                 task_id: task.id,
                 link_type: link.link_type,
                 linked_id: link.linked_id,
@@ -256,8 +256,8 @@ export async function POST(req: NextRequest) {
         });
 
         return NextResponse.json({ data: task }, { status: 201 });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error creating task:", error);
-        return NextResponse.json({ error: error?.message || "Internal server error" }, { status: 500 });
+        return NextResponse.json({ error: error instanceof Error ? error.message : "Internal server error" }, { status: 500 });
     }
 }

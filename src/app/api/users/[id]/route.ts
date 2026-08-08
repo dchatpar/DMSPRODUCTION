@@ -29,8 +29,8 @@ export async function GET(
         let supabase;
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -74,10 +74,10 @@ export async function GET(
         }
 
         return NextResponse.json({ data: targetUser });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error fetching user:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -100,8 +100,8 @@ export async function PATCH(
         let supabase;
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -203,7 +203,7 @@ export async function PATCH(
             : USER_ALLOWED_FIELDS;
         const safePayload = pickAllowed(payload, allowedFields);
         // Never allow dealership_id reassignment via PATCH (prevents tenant spoofing)
-        delete (safePayload as any).dealership_id;
+        delete (safePayload as { dealership_id?: unknown }).dealership_id;
 
         if (Object.keys(safePayload).length === 0) {
             return NextResponse.json(
@@ -238,10 +238,10 @@ export async function PATCH(
         }
 
         return NextResponse.json({ data });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error updating user:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -264,8 +264,8 @@ export async function DELETE(
         let supabase;
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -332,10 +332,10 @@ export async function DELETE(
             success: true,
             message: "User deleted successfully"
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error deleting user:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }

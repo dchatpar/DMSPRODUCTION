@@ -177,40 +177,7 @@ export default function ExpenseFormModal({
         }
     };
 
-    useEffect(() => {
-        fetchData();
-    }, []);
-
-    useEffect(() => {
-        if (expense && mode === "edit") {
-            setFormData({
-                description: expense.description || "",
-                amount: expense.amount?.toString() || "",
-                category: expense.category || "",
-                vendor_id: expense.vendor_id || "",
-                vehicle_id: expense.vehicle_id || "",
-                expense_date: expense.expense_date?.split("T")[0] || "",
-                due_date: expense.due_date?.split("T")[0] || "",
-                status: expense.status || "Pending",
-                reference_number: expense.reference_number || "",
-                notes: expense.notes || "",
-                tax_amount: expense.tax_amount?.toString() || "",
-                payment_method: expense.payment_method || ""
-            });
-
-            // Populate Related To links from expense data
-            if (expense.source_type && expense.source_id) {
-                const linkLabel = getLinkLabel(expense.source_type, expense.source_id);
-                setLinks([{
-                    link_type: expense.source_type,
-                    linked_id: expense.source_id,
-                    linked_label: linkLabel
-                }]);
-            }
-        }
-    }, [expense, mode]);
-
-    const fetchData = async () => {
+    async function fetchData() {
         try {
             const [vendorsRes, vehiclesRes, customersRes, dealsRes, invoicesRes] = await Promise.all([
                 fetch("/api/vendors?limit=1000", {
@@ -243,7 +210,40 @@ export default function ExpenseFormModal({
         } finally {
             setLoadingData(false);
         }
-    };
+    }
+
+    useEffect(() => {
+        void fetchData();
+    }, []);
+
+    useEffect(() => {
+        if (expense && mode === "edit") {
+            setFormData({
+                description: expense.description || "",
+                amount: expense.amount?.toString() || "",
+                category: expense.category || "",
+                vendor_id: expense.vendor_id || "",
+                vehicle_id: expense.vehicle_id || "",
+                expense_date: expense.expense_date?.split("T")[0] || "",
+                due_date: expense.due_date?.split("T")[0] || "",
+                status: expense.status || "Pending",
+                reference_number: expense.reference_number || "",
+                notes: expense.notes || "",
+                tax_amount: expense.tax_amount?.toString() || "",
+                payment_method: expense.payment_method || ""
+            });
+
+            // Populate Related To links from expense data
+            if (expense.source_type && expense.source_id) {
+                const linkLabel = getLinkLabel(expense.source_type, expense.source_id);
+                setLinks([{
+                    link_type: expense.source_type,
+                    linked_id: expense.source_id,
+                    linked_label: linkLabel
+                }]);
+            }
+        }
+    }, [expense, mode]);
 
     const addLink = () => {
         if (newLinkType && newLinkId) {
@@ -265,7 +265,7 @@ export default function ExpenseFormModal({
         setFormData((prev) => ({ ...prev, [name]: value }));
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         setLoading(true);
         setError(null);
@@ -283,7 +283,7 @@ export default function ExpenseFormModal({
             const url = expense?.id ? `/api/expenses/${expense.id}` : "/api/expenses";
             const method = expense?.id ? "PATCH" : "POST";
 
-            const payload: any = {
+            const payload: Record<string, unknown> = {
                 description: formData.description || null,
                 amount: parseFloat(formData.amount),
                 category: formData.category,
@@ -322,7 +322,7 @@ export default function ExpenseFormModal({
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     return (
         <div className="fixed inset-0 z-50 overflow-y-auto">

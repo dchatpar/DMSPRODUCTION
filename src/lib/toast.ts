@@ -35,7 +35,7 @@ export const toast = {
     },
     promise: <T,>(
         promise: Promise<T>,
-        messages: { loading: string; success: string | ((data: T) => string); error: string | ((err: any) => string) }
+        messages: { loading: string; success: string | ((data: T) => string); error: string | ((err: unknown) => string) }
     ): Promise<T> => sonnerToast.promise(promise, messages) as unknown as Promise<T>,
     message: (message: string) => sonnerToast(message),
 };

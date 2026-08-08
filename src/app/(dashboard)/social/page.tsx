@@ -151,7 +151,7 @@ function SocialPageInner() {
     const selectedVehicle = vehicles.find((v) => v.id === vehicleId);
     const mediaPreview = galleryPreview(selectedVehicle);
 
-    const openPostModal = async () => {
+    async function openPostModal() {
         setFormError(null);
         setContent("");
         setVehicleId("");
@@ -167,9 +167,9 @@ function SocialPageInner() {
         } catch {
             setVehicles([]);
         }
-    };
+    }
 
-    const onVehiclePick = async (id: string) => {
+    async function onVehiclePick(id: string) {
         setVehicleId(id);
         if (!id) {
             setContent("");
@@ -208,9 +208,9 @@ function SocialPageInner() {
         } finally {
             setCaptionBusy(false);
         }
-    };
+    }
 
-    const regenerateCaption = async () => {
+    async function regenerateCaption() {
         if (!vehicleId) return;
         setCaptionBusy(true);
         try {
@@ -227,9 +227,9 @@ function SocialPageInner() {
         } finally {
             setCaptionBusy(false);
         }
-    };
+    }
 
-    const onSavePost = async () => {
+    async function onSavePost() {
         if (!content.trim()) {
             setFormError("Post content is required");
             return;
@@ -287,9 +287,9 @@ function SocialPageInner() {
         } finally {
             setSaving(false);
         }
-    };
+    }
 
-    const toggleFb = async () => {
+    async function toggleFb() {
         setFbBusy(true);
         try {
             if (fb.connected) {
@@ -321,7 +321,7 @@ function SocialPageInner() {
         } finally {
             setFbBusy(false);
         }
-    };
+    }
 
     return (
         <ListPageShell

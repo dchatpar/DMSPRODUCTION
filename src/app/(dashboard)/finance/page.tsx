@@ -16,6 +16,7 @@ import {
     Printer,
     Download,
     ClipboardCopy,
+    CreditCard,
 } from "lucide-react";
 import { apiFetch } from "@/src/lib/fetch";
 import { toast } from "@/src/lib/toast";
@@ -142,7 +143,7 @@ function FinancePageInner() {
         }));
     };
 
-    const handleSave = async () => {
+    async function handleSave() {
         if (!result) return;
         setSaving(true);
         try {
@@ -171,7 +172,7 @@ function FinancePageInner() {
         } finally {
             setSaving(false);
         }
-    };
+    }
 
     const handlePrint = () => {
         if (!worksheetText) return;
@@ -194,14 +195,14 @@ function FinancePageInner() {
         w.document.close();
     };
 
-    const handleCopy = async () => {
+    async function handleCopy() {
         try {
             await navigator.clipboard.writeText(worksheetText);
             toast.success("Worksheet copied");
         } catch {
             toast.error("Copy failed");
         }
-    };
+    }
 
     const handleExportCsv = () => {
         if (!result) return;
@@ -252,13 +253,20 @@ function FinancePageInner() {
                 actions={
                     <div className="flex flex-wrap gap-2">
                         {dealId && (
-                            <Link
-                                href={`/deals/${dealId}`}
-                                className="inline-flex items-center rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted"
-                            >
-                                Back to deal
-                            </Link>
+                        <Link
+                            href={`/deals/${dealId}`}
+                            className="inline-flex items-center rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted"
+                        >
+                            Back to deal
+                        </Link>
                         )}
+                        <Link
+                            href="/finance/credit/new"
+                            className="inline-flex items-center rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted"
+                        >
+                            <CreditCard className="mr-1.5 h-4 w-4" />
+                            Credit application
+                        </Link>
                         <Button
                             variant="outline"
                             onClick={() => void loadHistory()}

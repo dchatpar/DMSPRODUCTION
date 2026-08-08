@@ -15,8 +15,8 @@ export async function GET(
 
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -61,10 +61,10 @@ export async function GET(
         }
 
         return NextResponse.json({ data: subscription || null });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error fetching subscription:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -82,8 +82,8 @@ export async function PATCH(
 
         try {
             supabase = createTokenClient(req);
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -137,7 +137,7 @@ export async function PATCH(
             .eq("dealership_id", id)
             .single();
 
-        const updateData: any = {};
+        const updateData: Record<string, unknown> = {};
         if (plan_name !== undefined) updateData.plan_name = plan_name;
         if (plan_price !== undefined) updateData.plan_price = plan_price;
         if (billing_cycle !== undefined) updateData.billing_cycle = billing_cycle;
@@ -177,10 +177,10 @@ export async function PATCH(
         }
 
         return NextResponse.json({ data: subscription });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error updating subscription:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }

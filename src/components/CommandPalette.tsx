@@ -1,14 +1,20 @@
 "use client";
 
-// Command palette (⌘K / Ctrl+K) — cmdk search over vehicles, customers, deals, leads.
+// Command palette (⌘K / Ctrl+K) — cmdk search over vehicles, customers, deals, leads + platform admin routes.
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+    BarChart3,
+    Building2,
     Car,
     FileText,
+    Flag,
+    History,
     Loader2,
+    Shield,
     Sparkles,
+    UserCog,
     Users,
     UserRound,
 } from "lucide-react";
@@ -46,6 +52,45 @@ const KIND_META: Record<ResultKind, { label: string; icon: typeof Car }> = {
     lead: { label: "Leads", icon: Users },
 };
 
+const PLATFORM_ROUTES = [
+    {
+        href: "/platform/impersonate",
+        title: "Impersonate",
+        subtitle: "Sign in as a dealership user",
+        icon: UserCog,
+    },
+    {
+        href: "/platform/analytics",
+        title: "Analytics",
+        subtitle: "Platform metrics",
+        icon: BarChart3,
+    },
+    {
+        href: "/platform/audit-logs",
+        title: "Audit Logs",
+        subtitle: "Platform audit trail",
+        icon: History,
+    },
+    {
+        href: "/platform/feature-flags",
+        title: "Feature Flags",
+        subtitle: "Runtime toggles",
+        icon: Flag,
+    },
+    {
+        href: "/users",
+        title: "Users",
+        subtitle: "All platform users",
+        icon: Users,
+    },
+    {
+        href: "/dealerships",
+        title: "Dealerships",
+        subtitle: "Manage tenants",
+        icon: Building2,
+    },
+] as const;
+
 function vehicleLabel(v: Record<string, unknown>): string {
     const year = v.year ?? "";
     const make = v.make ?? "";
@@ -61,6 +106,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     const [query, setQuery] = useState("");
     const [loading, setLoading] = useState(false);
     const [results, setResults] = useState<SearchResult[]>([]);
+    const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
 
     const close = useCallback(() => {
         onOpenChange(false);
@@ -76,16 +122,40 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
     useEffect(() => {
         if (!open) return;
+        let cancelled = false;
+        void (async () => {
+            try {
+                const me = await apiFetch<{ data?: { is_platform_admin?: boolean } }>(
+                    "/api/me",
+                    { silent: true }
+                );
+                if (!cancelled) {
+                    setIsPlatformAdmin(me.data?.is_platform_admin === true);
+                }
+            } catch {
+                if (!cancelled) setIsPlatformAdmin(false);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [open]);
+
+    useEffect(() => {
+        if (!open) return;
         const q = query.trim();
         if (q.length < 2) {
-            setResults([]);
-            setLoading(false);
-            return;
+            // Defer clearing results until after commit.
+            const t = setTimeout(() => {
+                setResults([]);
+                setLoading(false);
+            }, 0);
+            return () => clearTimeout(t);
         }
 
         let cancelled = false;
-        setLoading(true);
         const timer = window.setTimeout(async () => {
+            setLoading(true);
             try {
                 const enc = encodeURIComponent(q);
                 const [vehicles, customers, deals, leads] = await Promise.all([
@@ -171,9 +241,9 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     }, [open, query]);
 
     const select = useCallback(
-        (item: SearchResult) => {
+        (href: string) => {
             close();
-            router.push(item.href);
+            router.push(href);
         },
         [close, router]
     );
@@ -187,6 +257,17 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             items: results.filter((r) => r.kind === kind),
         }))
         .filter((g) => g.items.length > 0);
+
+    const qLower = query.trim().toLowerCase();
+    const platformItems = isPlatformAdmin
+        ? PLATFORM_ROUTES.filter(
+              (r) =>
+                  !qLower ||
+                  r.title.toLowerCase().includes(qLower) ||
+                  r.subtitle.toLowerCase().includes(qLower) ||
+                  r.href.toLowerCase().includes(qLower)
+          )
+        : [];
 
     return (
         <div className="fixed inset-0 z-[80]" role="dialog" aria-modal="true" aria-label="Command palette">
@@ -202,7 +283,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                         <CommandInput
                             value={query}
                             onValueChange={setQuery}
-                            placeholder="Search vehicles, customers, deals, leads…"
+                            placeholder={
+                                isPlatformAdmin
+                                    ? "Search records or jump to platform…"
+                                    : "Search vehicles, customers, deals, leads…"
+                            }
                         />
                         {loading ? (
                             <Loader2 className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 animate-spin text-muted-foreground" />
@@ -230,12 +315,40 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                             </CommandItem>
                         </CommandGroup>
                         <CommandSeparator />
+                        {platformItems.length > 0 ? (
+                            <>
+                                <CommandGroup heading="Platform admin">
+                                    {platformItems.map((route) => {
+                                        const Icon = route.icon;
+                                        return (
+                                            <CommandItem
+                                                key={route.href}
+                                                value={`platform-${route.href}`}
+                                                onSelect={() => select(route.href)}
+                                            >
+                                                <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                                <span className="min-w-0 flex-1">
+                                                    <span className="block truncate text-sm font-medium">
+                                                        {route.title}
+                                                    </span>
+                                                    <span className="block truncate text-xs text-muted-foreground">
+                                                        {route.subtitle}
+                                                    </span>
+                                                </span>
+                                                <Shield className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+                                            </CommandItem>
+                                        );
+                                    })}
+                                </CommandGroup>
+                                <CommandSeparator />
+                            </>
+                        ) : null}
                         {query.trim().length < 2 ? (
                             <p className="px-3 py-6 text-center text-sm text-muted-foreground">
                                 Type at least 2 characters to search records.
                             </p>
                         ) : null}
-                        {query.trim().length >= 2 && !loading ? (
+                        {query.trim().length >= 2 && !loading && grouped.length === 0 ? (
                             <CommandEmpty>No results for “{query.trim()}”.</CommandEmpty>
                         ) : null}
                         {grouped.map((group) => {
@@ -247,7 +360,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                                         <CommandItem
                                             key={`${item.kind}-${item.id}`}
                                             value={`${item.kind}-${item.id}-${item.title}`}
-                                            onSelect={() => select(item)}
+                                            onSelect={() => select(item.href)}
                                         >
                                             <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
                                             <span className="min-w-0 flex-1">

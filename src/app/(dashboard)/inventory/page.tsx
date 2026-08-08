@@ -26,6 +26,7 @@ import {
 import VehicleImage from "@/src/components/VehicleImage";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
 import { ListPageShell } from "@/src/components/ListPageShell";
+import { EquityTriggersBanner } from "@/src/components/EquityTriggersBanner";
 import { resolveGallery } from "@/src/lib/vehicle-image";
 import { calcEstimatedIncome, daysInStock } from "@/src/lib/estimated-income";
 import * as XLSX from "xlsx";
@@ -38,6 +39,7 @@ import { RowActionsMenu } from "@/src/components/ui/RowActionsMenu";
 import { FilterChip, FilterChipGroup, SegmentedControl } from "@/src/components/ui/FilterChip";
 import { SkeletonTable } from "@/src/components/ui/Skeleton";
 import { AiNotConfiguredBanner } from "@/src/components/ai/AiNotConfiguredBanner";
+import { useLocations } from "@/src/hooks/useLocations";
 import { apiFetch, ApiError } from "@/src/lib/fetch";
 import {
     Drawer,
@@ -102,6 +104,7 @@ interface AdvFilters {
     minPrice: string;
     maxPrice: string;
     condition: string;
+    locationId: string;
 }
 
 const EMPTY_ADV: AdvFilters = {
@@ -111,6 +114,7 @@ const EMPTY_ADV: AdvFilters = {
     minPrice: "",
     maxPrice: "",
     condition: "",
+    locationId: "",
 };
 
 const STATUS_TABS: { value: string; label: string }[] = [
@@ -149,6 +153,7 @@ function buildVehicleQuery(params: {
     if (params.adv.minPrice) sp.set("minPrice", params.adv.minPrice);
     if (params.adv.maxPrice) sp.set("maxPrice", params.adv.maxPrice);
     if (params.adv.condition) sp.set("condition", params.adv.condition);
+    if (params.adv.locationId) sp.set("location_id", params.adv.locationId);
     if (params.agingOnly) {
         sp.set("status", "Active");
         sp.set("minDays", String(AGING_DAYS));
@@ -158,8 +163,47 @@ function buildVehicleQuery(params: {
     return `/api/vehicles?${sp.toString()}`;
 }
 
+function SortHeader({
+    label,
+    sortKey,
+    align = "right",
+    sortBy,
+    sortDir,
+    onToggle,
+}: {
+    label: string;
+    sortKey: SortKey;
+    align?: "left" | "right";
+    sortBy: SortKey;
+    sortDir: "asc" | "desc";
+    onToggle: (key: SortKey) => void;
+}) {
+    const active = sortBy === sortKey;
+    return (
+        <button
+            type="button"
+            onClick={() => onToggle(sortKey)}
+            className={cn(
+                "inline-flex w-full items-center gap-1 font-medium hover:text-foreground",
+                align === "right" ? "justify-end" : "justify-start",
+                active ? "text-foreground" : "text-muted-foreground"
+            )}
+        >
+            {label}
+            {active ? (
+                sortDir === "asc" ? (
+                    <ChevronUp className="h-3.5 w-3.5" />
+                ) : (
+                    <ChevronDown className="h-3.5 w-3.5" />
+                )
+            ) : null}
+        </button>
+    );
+}
+
 export default function InventoryPage() {
     const router = useRouter();
+    const { locations } = useLocations();
     const [vehicles, setVehicles] = useState<Vehicle[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -212,11 +256,7 @@ export default function InventoryPage() {
         return () => clearTimeout(t);
     }, [searchTerm]);
 
-    useEffect(() => {
-        fetchUserPermissions();
-    }, []);
-
-    const fetchUserPermissions = async () => {
+    async function fetchUserPermissions() {
         try {
             const response = await fetch("/api/me");
             if (response.ok) {
@@ -227,7 +267,11 @@ export default function InventoryPage() {
         } catch (err) {
             console.error("Error fetching user permissions:", err);
         }
-    };
+    }
+
+    useEffect(() => {
+        void fetchUserPermissions();
+    }, []);
 
     const canWrite = (resource: string): boolean => {
         if (userRole === "Admin") return true;
@@ -329,38 +373,6 @@ export default function InventoryPage() {
         setCurrentPage(1);
     };
 
-    const SortHeader = ({
-        label,
-        sortKey,
-        align = "right",
-    }: {
-        label: string;
-        sortKey: SortKey;
-        align?: "left" | "right";
-    }) => {
-        const active = sortBy === sortKey;
-        return (
-            <button
-                type="button"
-                onClick={() => toggleSort(sortKey)}
-                className={cn(
-                    "inline-flex w-full items-center gap-1 font-medium hover:text-foreground",
-                    align === "right" ? "justify-end" : "justify-start",
-                    active ? "text-foreground" : "text-muted-foreground"
-                )}
-            >
-                {label}
-                {active ? (
-                    sortDir === "asc" ? (
-                        <ChevronUp className="h-3.5 w-3.5" />
-                    ) : (
-                        <ChevronDown className="h-3.5 w-3.5" />
-                    )
-                ) : null}
-            </button>
-        );
-    };
-
     const applyAdvanced = () => {
         setAdvApplied(advDraft);
         setCurrentPage(1);
@@ -374,7 +386,7 @@ export default function InventoryPage() {
         setCurrentPage(1);
     };
 
-    const runNlSearch = async () => {
+    async function runNlSearch() {
         const q = nlQuery.trim() || searchTerm.trim();
         if (!q) {
             toast.error("Enter a natural-language search first");
@@ -444,7 +456,7 @@ export default function InventoryPage() {
         } finally {
             setNlBusy(false);
         }
-    };
+    }
 
     const advActiveCount = useMemo(() => {
         let n = 0;
@@ -509,7 +521,7 @@ export default function InventoryPage() {
         }
     };
 
-    const exportToExcel = async () => {
+    async function exportToExcel() {
         setExportLoading(true);
         try {
             const url = buildVehicleQuery({
@@ -591,7 +603,7 @@ export default function InventoryPage() {
         } finally {
             setExportLoading(false);
         }
-    };
+    }
 
     const handleViewDetails = (vehicle: Vehicle) => {
         router.push(`/inventory/${encodeURIComponent(vehicle.vin)}`);
@@ -624,7 +636,7 @@ export default function InventoryPage() {
         setShowConfirmDialog(true);
     };
 
-    const confirmDelete = async () => {
+    async function confirmDelete() {
         if (!confirmDialogData.vehicle) return;
 
         const vehicleId = confirmDialogData.vehicle.id;
@@ -653,7 +665,7 @@ export default function InventoryPage() {
             toast.error(err instanceof Error ? err.message : "An error occurred");
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
-    };
+    }
 
     const allPageSelected =
         vehicles.length > 0 && vehicles.every((v) => selectedIds.has(v.id));
@@ -683,7 +695,7 @@ export default function InventoryPage() {
         });
     };
 
-    const bulkSetStatus = async (status: string) => {
+    async function bulkSetStatus(status: string) {
         if (selectedIds.size === 0) return;
         setBulkBusy(true);
         try {
@@ -715,9 +727,9 @@ export default function InventoryPage() {
         } finally {
             setBulkBusy(false);
         }
-    };
+    }
 
-    const bulkDelete = async () => {
+    async function bulkDelete() {
         if (selectedIds.size === 0) return;
         setBulkBusy(true);
         try {
@@ -748,7 +760,7 @@ export default function InventoryPage() {
         } finally {
             setBulkBusy(false);
         }
-    };
+    }
 
     const formatCurrency = (amount: number) =>
         new Intl.NumberFormat("en-US", {
@@ -794,7 +806,7 @@ export default function InventoryPage() {
                 <button
                     type="button"
                     onClick={() => handleViewDetails(vehicle)}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-8 sm:w-8"
                     title="View"
                     aria-label={`View ${vehicle.year} ${vehicle.make} ${vehicle.model}`}
                 >
@@ -1103,6 +1115,23 @@ export default function InventoryPage() {
                                     <option value="Certified">Certified</option>
                                 </select>
                             </label>
+                            {locations.length > 0 && (
+                                <label className="block space-y-1 text-xs">
+                                    <span className="font-medium text-muted-foreground">Location</span>
+                                    <select
+                                        className="min-h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                                        value={advDraft.locationId}
+                                        onChange={(e) => setAdvDraft({ ...advDraft, locationId: e.target.value })}
+                                    >
+                                        <option value="">All locations</option>
+                                        {locations.map((loc) => (
+                                            <option key={loc.id} value={loc.id}>
+                                                {loc.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                            )}
                             <div className="flex items-end gap-2 md:col-span-2 lg:col-span-3 xl:col-span-6">
                                 <Button size="sm" onClick={applyAdvanced}>
                                     Apply filters
@@ -1194,6 +1223,25 @@ export default function InventoryPage() {
                                         <option value="Certified">Certified</option>
                                     </select>
                                 </label>
+                                {locations.length > 0 && (
+                                    <label className="block space-y-1 text-xs">
+                                        <span className="font-medium text-muted-foreground">Location</span>
+                                        <select
+                                            className="min-h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                                            value={advDraft.locationId}
+                                            onChange={(e) =>
+                                                setAdvDraft({ ...advDraft, locationId: e.target.value })
+                                            }
+                                        >
+                                            <option value="">All locations</option>
+                                            {locations.map((loc) => (
+                                                <option key={loc.id} value={loc.id}>
+                                                    {loc.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                )}
                             </div>
                             <DrawerFooter>
                                 <Button
@@ -1279,6 +1327,11 @@ export default function InventoryPage() {
             }
         >
             <DataTableShell>
+                <EquityTriggersBanner
+                    mode="inventory"
+                    inventoryHref="#"
+                    customersHref="/customers"
+                />
                 {viewMode === "table" ? (
                     <DataTableScroll>
                         <DataTable>
@@ -1298,14 +1351,14 @@ export default function InventoryPage() {
                                     <DataTableTh className="w-[88px]">Stock</DataTableTh>
                                     <DataTableTh className="w-[100px]">Status</DataTableTh>
                                     <DataTableTh className="w-[96px] text-right">
-                                        <SortHeader label="Cost" sortKey="cost" />
+                                        <SortHeader label="Cost" sortKey="cost" sortBy={sortBy} sortDir={sortDir} onToggle={toggleSort} />
                                     </DataTableTh>
                                     <DataTableTh className="w-[96px] text-right">
-                                        <SortHeader label="Retail" sortKey="retail" />
+                                        <SortHeader label="Retail" sortKey="retail" sortBy={sortBy} sortDir={sortDir} onToggle={toggleSort} />
                                     </DataTableTh>
                                     <DataTableTh className="w-[96px] text-right">Est. income</DataTableTh>
                                     <DataTableTh className="w-[72px] text-right">
-                                        <SortHeader label="Days" sortKey="days" />
+                                        <SortHeader label="Days" sortKey="days" sortBy={sortBy} sortDir={sortDir} onToggle={toggleSort} />
                                     </DataTableTh>
                                     <DataTableTh className="w-[56px] text-center">CFX</DataTableTh>
                                     <DataTableTh className="w-[72px] text-right">Actions</DataTableTh>
@@ -1342,6 +1395,8 @@ export default function InventoryPage() {
                                         const days = daysInStock(vehicle.created_at);
                                         const gallery = resolveGallery(vehicle.image_gallery, vehicle.images);
                                         const agingHot = days >= AGING_DAYS && vehicle.status === "Active";
+                                        const equityCandidate =
+                                            days >= 45 && vehicle.status === "Active";
                                         return (
                                             <ClickableDataTableRow
                                                 key={vehicle.id}
@@ -1408,6 +1463,11 @@ export default function InventoryPage() {
                                                     )}
                                                 >
                                                     {days}
+                                                    {equityCandidate && (
+                                                        <span className="ml-1 rounded border border-amber-300 bg-amber-50 px-1 text-[10px] font-medium text-amber-700">
+                                                            equity
+                                                        </span>
+                                                    )}
                                                 </td>
                                                 <DataTableTd className="text-center">
                                                     {vehicle.carfax_report_url ? (
@@ -1416,7 +1476,7 @@ export default function InventoryPage() {
                                                             target="_blank"
                                                             rel="noopener noreferrer"
                                                             onClick={(e) => e.stopPropagation()}
-                                                            className="inline-flex rounded-md p-1.5 text-destructive hover:bg-destructive-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                                            className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md p-2 text-destructive hover:bg-destructive-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                                             title="CARFAX report"
                                                         >
                                                             <FileText className="h-4 w-4" />

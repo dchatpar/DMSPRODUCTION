@@ -65,11 +65,8 @@ export default function TicketFormModal({
         }
     }, [ticket]);
 
-    useEffect(() => {
-        fetchUsers();
-    }, []);
 
-    const fetchUsers = async () => {
+    async function fetchUsers() {
         try {
             setLoadingUsers(true);
             const response = await fetch("/api/users?limit=100", {
@@ -84,9 +81,13 @@ export default function TicketFormModal({
         } finally {
             setLoadingUsers(false);
         }
-    };
+    }
+    useEffect(() => {
+        fetchUsers();
+    }, []);
 
-    const handleSubmit = async (e: React.FormEvent) => {
+
+    async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
 
         if (!formData.subject.trim()) {
@@ -127,7 +128,7 @@ export default function TicketFormModal({
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

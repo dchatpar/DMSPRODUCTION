@@ -18,10 +18,10 @@ import {
     Filter,
     Download
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import VendorFormModal from "@/src/components/VendorFormModal";
 import VendorDetailsModal from "@/src/components/VendorDetailsModal";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
-import { apiFetch } from "@/src/lib/fetch";
 import { toast } from "@/src/lib/toast";
 
 interface Vendor {
@@ -101,12 +101,90 @@ export default function VendorsPage() {
         vendor: Vendor | null;
         loading: boolean;
     }>({ vendor: null, loading: false });
+    const [exportLoading, setExportLoading] = useState(false);
 
     useEffect(() => {
         fetchVendors();
     }, [currentPage, typeFilter, searchTerm, createdAtFrom, createdAtTo]);
 
-    const fetchVendors = async () => {
+    const toCsv = (rows: Record<string, string | number>[]) => {
+        const cols = Object.keys(rows[0] || {});
+        const escape = (v: string | number) => `"${(v ?? "").toString().replace(/"/g, '""')}"`;
+        return [cols.join(","), ...rows.map((r) => cols.map((c) => escape(r[c])).join(","))].join("\n");
+    };
+
+    const copyToClipboard = async (text: string): Promise<boolean> => {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch {
+            return false;
+        }
+    };
+
+    async function exportToExcel() {
+        setExportLoading(true);
+        try {
+            let exportUrl = "/api/vendors?limit=10000&offset=0";
+            if (typeFilter) exportUrl += `&vendor_type=${encodeURIComponent(typeFilter)}`;
+            if (searchTerm) exportUrl += `&q=${encodeURIComponent(searchTerm)}`;
+            if (createdAtFrom) exportUrl += `&created_at_from=${createdAtFrom}`;
+            if (createdAtTo) exportUrl += `&created_at_to=${createdAtTo}`;
+
+            const response = await fetch(exportUrl);
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `Failed to fetch vendors (${response.status})`);
+            }
+
+            const data = await response.json();
+            const exportData: Vendor[] = data.data || [];
+            if (exportData.length === 0) {
+                throw new Error("No vendors found to export");
+            }
+
+            const worksheetData = exportData.map((vendor) => ({
+                "Vendor Name": vendor.vendor_name || "",
+                "Type": vendor.vendor_type || "",
+                "Contact Name": vendor.contact_name || "",
+                "Contact Email": vendor.contact_email || "",
+                "Contact Phone": vendor.contact_phone || "",
+                "Phone": vendor.phone || "",
+                "Address": vendor.address || "",
+                "City": vendor.city || "",
+                "Province": vendor.province || "",
+                "Postal Code": vendor.postal_code || "",
+                "GST #": vendor.gst_number || "",
+                "HST #": vendor.hst_number || "",
+                "PST #": vendor.pst_number || "",
+                "Notes": vendor.notes || "",
+                "Created": vendor.created_at ? new Date(vendor.created_at).toLocaleDateString() : "",
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(worksheetData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Vendors");
+            worksheet["!cols"] = [
+                { wch: 28 }, { wch: 16 }, { wch: 20 }, { wch: 28 }, { wch: 16 },
+                { wch: 16 }, { wch: 28 }, { wch: 14 }, { wch: 10 }, { wch: 12 },
+                { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 30 }, { wch: 12 },
+            ];
+
+            XLSX.writeFile(workbook, `vendors-export-${new Date().toISOString().split("T")[0]}.xlsx`);
+            const csvCopied = await copyToClipboard(toCsv(worksheetData));
+            toast.success(
+                `Exported ${exportData.length} vendor${exportData.length === 1 ? "" : "s"}` +
+                (csvCopied ? " — CSV copied to clipboard" : "")
+            );
+        } catch (error) {
+            console.error("Export error:", error);
+            toast.error(error instanceof Error ? error.message : "Failed to export vendors");
+        } finally {
+            setExportLoading(false);
+        }
+    }
+
+    async function fetchVendors() {
         try {
             setLoading(true);
             setError(null);
@@ -142,7 +220,7 @@ export default function VendorsPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     const handleViewDetails = (vendor: Vendor) => {
         setSelectedVendor(vendor);
@@ -167,12 +245,12 @@ export default function VendorsPage() {
         fetchVendors();
     };
 
-    const handleDelete = async (vendor: Vendor) => {
+    async function handleDelete(vendor: Vendor) {
         setConfirmDialogData({ vendor, loading: false });
         setShowConfirmDialog(true);
-    };
+    }
 
-    const confirmDelete = async () => {
+    async function confirmDelete() {
         if (!confirmDialogData.vendor) return;
 
         const vendorId = confirmDialogData.vendor.id;
@@ -196,7 +274,7 @@ export default function VendorsPage() {
             toast.error(err instanceof Error ? err.message : "An error occurred");
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
-    };
+    }
 
     const getTypeColor = (type: string) => {
         const key = (type || "").toLowerCase();
@@ -240,6 +318,14 @@ export default function VendorsPage() {
                     >
                         <RefreshCw className="w-4 h-4" />
                         Refresh
+                    </button>
+                    <button
+                        onClick={exportToExcel}
+                        disabled={exportLoading || totalItems === 0}
+                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {exportLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                        Export Excel
                     </button>
                     <button
                         onClick={handleAdd}

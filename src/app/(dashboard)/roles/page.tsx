@@ -53,7 +53,7 @@ export default function RolesPage() {
         fetchRoles();
     }, []);
 
-    const fetchRoles = async () => {
+    async function fetchRoles() {
         try {
             setLoading(true);
             setError(null);
@@ -74,13 +74,13 @@ export default function RolesPage() {
 
             const data: ApiResponse = await response.json();
             setRoles(data.data);
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Error fetching roles:", error);
-            setError(error.message || "Failed to load roles");
+            setError(error instanceof Error ? error.message : "Failed to load roles");
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     const handleAddRole = () => {
         setFormMode("add");
@@ -99,7 +99,7 @@ export default function RolesPage() {
         setShowConfirmDialog(true);
     };
 
-    const confirmDelete = async () => {
+    async function confirmDelete() {
         if (!confirmDialogData.role) return;
 
         setConfirmDialogData((prev) => ({ ...prev, loading: true }));
@@ -118,13 +118,13 @@ export default function RolesPage() {
 
             setShowConfirmDialog(false);
             fetchRoles();
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Error deleting role:", error);
-            toast.error(error.message || "Failed to delete role");
+            toast.error(error instanceof Error ? error.message : "Failed to delete role");
         } finally {
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
-    };
+    }
 
     const getRoleIcon = (roleName: string) => {
         const icons: Record<string, string> = {

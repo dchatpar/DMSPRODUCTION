@@ -171,7 +171,7 @@ const LeadsKanban: React.FC<LeadsKanbanProps> = ({
         e.dataTransfer.dropEffect = "move";
     };
 
-    const handleDrop = async (e: React.DragEvent, targetStatus: string) => {
+    async function handleDrop(e: React.DragEvent, targetStatus: string) {
         e.preventDefault();
 
         if (!draggedLead || draggedLead.status === targetStatus) {
@@ -205,7 +205,7 @@ const LeadsKanban: React.FC<LeadsKanbanProps> = ({
         } finally {
             setUpdating(false);
         }
-    };
+    }
 
     if (loading) {
         return (

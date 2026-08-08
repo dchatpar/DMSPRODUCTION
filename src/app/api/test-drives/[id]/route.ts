@@ -13,8 +13,13 @@ const TEST_DRIVE_ALLOWED_FIELDS = [
     "scheduled_date", "start_time", "lead_id", "user_id",
 ] as const;
 
+type TestDriveSupabaseClient = ReturnType<typeof pickSupabaseClient>["supabase"];
+
 // Helper function to enrich a test drive with related data
-async function enrichTestDrive(supabase: any, testDrive: any) {
+async function enrichTestDrive<T extends { customer_id?: string | null; lead_id?: string | null; vehicle_id?: string | null; user_id?: string | null }>(
+    supabase: TestDriveSupabaseClient,
+    testDrive: T
+) {
     const [customerData, leadData, vehicleData, userData] = await Promise.all([
         testDrive.customer_id
             ? supabase.from("customers").select("id, name, email, phone").eq("id", testDrive.customer_id).single()
@@ -57,8 +62,8 @@ export async function GET(
         try {
             const picked = pickSupabaseClient(req, auth.profile);
             supabase = picked.supabase;
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -112,10 +117,10 @@ export async function GET(
         const enriched = await enrichTestDrive(supabase, testDrive);
 
         return NextResponse.json({ data: enriched });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error fetching test drive:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -139,8 +144,8 @@ export async function PUT(
         try {
             const picked = pickSupabaseClient(req, auth.profile);
             supabase = picked.supabase;
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -238,10 +243,10 @@ export async function PUT(
         const enriched = await enrichTestDrive(supabase, updatedTestDrive);
 
         return NextResponse.json({ data: enriched });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error updating test drive:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -265,8 +270,8 @@ export async function PATCH(
         try {
             const picked = pickSupabaseClient(req, auth.profile);
             supabase = picked.supabase;
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -311,7 +316,7 @@ export async function PATCH(
 
         // Whitelist the update payload and block dealership_id changes
         const safePayload = pickAllowed(payload, TEST_DRIVE_ALLOWED_FIELDS);
-        delete (safePayload as any).dealership_id;
+        delete (safePayload as { dealership_id?: unknown }).dealership_id;
 
         if (Object.keys(safePayload).length === 0) {
             return NextResponse.json(
@@ -340,10 +345,10 @@ export async function PATCH(
         const enriched = await enrichTestDrive(supabase, updatedTestDrive);
 
         return NextResponse.json({ data: enriched });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error updating test drive:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }
@@ -367,8 +372,8 @@ export async function DELETE(
         try {
             const picked = pickSupabaseClient(req, auth.profile);
             supabase = picked.supabase;
-        } catch (error: any) {
-            if (error?.message === "MISSING_BEARER_TOKEN") {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.message === "MISSING_BEARER_TOKEN") {
                 return NextResponse.json(
                     { error: "Authorization token required" },
                     { status: 401 }
@@ -378,7 +383,7 @@ export async function DELETE(
         }
 
         const userRole = auth.profile.role;
-        const userPerms = (auth.profile as any).user_permissions || [];
+        const userPerms = auth.profile?.user_permissions || [];
         const isPlatformAdmin = auth.profile.is_platform_admin;
 
         // Check test_drives:delete permission
@@ -439,10 +444,10 @@ export async function DELETE(
             success: true,
             message: "Test drive deleted successfully"
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error deleting test drive:", error);
         return NextResponse.json(
-            { error: error?.message || "Internal server error" },
+            { error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }

@@ -30,6 +30,58 @@ interface CalendarEvent {
     href: string;
 }
 
+interface CalendarTestDrive {
+    id: string;
+    scheduled_at?: string | null;
+    scheduled_date?: string | null;
+    start_time?: string | null;
+    status?: string | null;
+    customer?: { name?: string } | null;
+    lead?: { customer?: { name?: string } | null } | null;
+    vehicle?: { year?: string | number; make?: string; model?: string } | null;
+}
+
+interface CalendarFollowUp {
+    id: string;
+    follow_up_date?: string | null;
+    due_date?: string | null;
+    status?: string | null;
+    customer?: { name?: string } | null;
+    title?: string | null;
+    notes?: string | null;
+    description?: string | null;
+}
+
+interface CalendarTask {
+    id: string;
+    due_date?: string | null;
+    reminder_at?: string | null;
+    status?: string | null;
+    title?: string | null;
+    priority?: string | null;
+    assigned_user?: { full_name?: string } | null;
+}
+
+interface CalendarDeal {
+    id: string;
+    deal_status?: string | null;
+    deal_date?: string | null;
+    created_at?: string | null;
+    customer?: { name?: string } | null;
+    vehicle?: { year?: string | number; make?: string; model?: string } | null;
+}
+
+interface CalendarInvoice {
+    id: string;
+    due_date?: string | null;
+    invoice_date?: string | null;
+    created_at?: string | null;
+    status?: string | null;
+    customer?: { name?: string } | null;
+    invoice_number?: string | null;
+    total?: number | null;
+}
+
 const TYPE_META: Record<
     EventType,
     { label: string; color: string; bar: string; icon: typeof Car }
@@ -88,11 +140,11 @@ export default function CalendarPage() {
             setError(null);
             try {
                 const [td, fu, deals, invoices, tasks] = await Promise.all([
-                    apiFetch<{ data: any[] }>("/api/test-drives?limit=80", { silent: true }).catch(() => ({ data: [] })),
-                    apiFetch<{ data: any[] }>("/api/follow-ups?limit=80", { silent: true }).catch(() => ({ data: [] })),
-                    apiFetch<{ data: any[] }>("/api/deals?limit=80", { silent: true }).catch(() => ({ data: [] })),
-                    apiFetch<{ data: any[] }>("/api/invoices?limit=80&status=Pending", { silent: true }).catch(() => ({ data: [] })),
-                    apiFetch<{ data: any[] }>("/api/tasks?limit=80", { silent: true }).catch(() => ({ data: [] })),
+                    apiFetch<{ data: CalendarTestDrive[] }>("/api/test-drives?limit=80", { silent: true }).catch(() => ({ data: [] })),
+                    apiFetch<{ data: CalendarFollowUp[] }>("/api/follow-ups?limit=80", { silent: true }).catch(() => ({ data: [] })),
+                    apiFetch<{ data: CalendarDeal[] }>("/api/deals?limit=80", { silent: true }).catch(() => ({ data: [] })),
+                    apiFetch<{ data: CalendarInvoice[] }>("/api/invoices?limit=80&status=Pending", { silent: true }).catch(() => ({ data: [] })),
+                    apiFetch<{ data: CalendarTask[] }>("/api/tasks?limit=80", { silent: true }).catch(() => ({ data: [] })),
                 ]);
                 if (cancelled) return;
 
@@ -167,7 +219,7 @@ export default function CalendarPage() {
                         id: `inv-${row.id}`,
                         type: "invoice",
                         title: row.customer?.name || row.invoice_number || "Invoice due",
-                        subtitle: row.total != null ? `$${Number(row.total).toLocaleString()}` : row.status,
+                        subtitle: row.total != null ? `$${Number(row.total).toLocaleString()}` : (row.status ?? undefined),
                         date,
                         status: row.status,
                         href: "/invoices",

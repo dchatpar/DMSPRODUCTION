@@ -61,7 +61,7 @@ export default function OCRScannerModal({
     const [cameraActive, setCameraActive] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
 
-    const startCamera = async () => {
+    async function startCamera() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: "environment" },
@@ -80,7 +80,7 @@ export default function OCRScannerModal({
         } catch (err) {
             setError("Unable to access camera. Please use upload method instead.");
         }
-    };
+    }
 
     const stopCamera = () => {
         if (videoRef.current?.srcObject) {
@@ -111,7 +111,7 @@ export default function OCRScannerModal({
         }
     };
 
-    const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
         const file = e.target.files?.[0];
         if (!file) return;
 
@@ -124,9 +124,9 @@ export default function OCRScannerModal({
 
         // Process with OCR
         await processImage(file);
-    };
+    }
 
-    const processImage = async (file: File) => {
+    async function processImage(file: File) {
         setIsProcessing(true);
         setLoading(true);
         setError(null);
@@ -155,7 +155,7 @@ export default function OCRScannerModal({
             setLoading(false);
             setIsProcessing(false);
         }
-    };
+    }
 
     const parseOCRText = (text: string, type: string): Partial<OCRDocument> => {
         const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
@@ -309,7 +309,7 @@ export default function OCRScannerModal({
                                             }`} />
                                             <p className={`text-sm font-medium ${
                                                 documentType === "drivers_license" ? "text-emerald-700" : "text-gray-600"
-                                            }`}>Driver's License</p>
+                                            }`}>Driver&apos;s License</p>
                                         </button>
                                         <button
                                             onClick={() => setDocumentType("government_id")}

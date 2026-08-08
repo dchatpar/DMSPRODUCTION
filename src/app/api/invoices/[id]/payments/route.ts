@@ -225,6 +225,23 @@ export async function POST(
             note,
         ].filter(Boolean);
 
+        // Provider-agnostic record: when a provider (e.g. stripe) charge backs
+        // this manual recording, mirror it into payment_records for the ledger.
+        const ALLOWED_PROVIDERS = ["stripe", "manual", "cash", "cheque", "etransfer"];
+        const provider =
+            typeof body.provider === "string" &&
+            ALLOWED_PROVIDERS.includes(body.provider.trim())
+                ? body.provider.trim()
+                : null;
+        const providerPaymentId =
+            typeof body.provider_payment_id === "string"
+                ? body.provider_payment_id.trim()
+                : null;
+        const providerCheckoutId =
+            typeof body.provider_checkout_id === "string"
+                ? body.provider_checkout_id.trim()
+                : null;
+
         const { data: txn, error: txnError } = await supabase
             .from("financial_transactions")
             .insert({
@@ -242,6 +259,30 @@ export async function POST(
             .single();
 
         if (txnError) throw txnError;
+
+        if (provider && (providerPaymentId || providerCheckoutId)) {
+            const { error: providerRecordErr } = await supabase
+                .from("payment_records")
+                .insert({
+                    dealership_id: dealershipId,
+                    provider,
+                    provider_checkout_id: providerCheckoutId,
+                    provider_payment_id: providerPaymentId,
+                    amount,
+                    currency: "CAD",
+                    status: "succeeded",
+                    reference_type: "invoice",
+                    reference_id: id,
+                    description: descriptionParts.join(" — "),
+                    created_by: auth.profile.id,
+                });
+            if (providerRecordErr) {
+                console.warn(
+                    "[payments] failed to mirror provider payment record:",
+                    providerRecordErr.message
+                );
+            }
+        }
 
         const { data: updated, error: updError } = await supabase
             .from("invoices")

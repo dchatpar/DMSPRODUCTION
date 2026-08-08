@@ -3,10 +3,8 @@
 import { useState, useEffect } from "react";
 import {
     Users,
-    Plus,
     Search,
     Filter,
-    MoreVertical,
     Edit,
     Trash2,
     Eye,
@@ -14,26 +12,36 @@ import {
     ChevronRight,
     Download,
     RefreshCw,
-    Loader2,
     AlertCircle,
     Mail,
     Phone,
     Calendar,
-    User,
-    Shield,
-    CheckCircle,
-    XCircle,
     UserPlus,
-    Building2
+    Building2,
 } from "lucide-react";
 import UserDetailsModal from "@/src/components/UserDetailsModal";
 import UserFormModal from "@/src/components/UserFormModal";
 import ConfirmDialog from "@/src/components/ConfirmDialog";
-import { apiFetch } from "@/src/lib/fetch";
 import { toast } from "@/src/lib/toast";
 import { ListPageShell } from "@/src/components/ListPageShell";
 import { MetricStrip } from "@/src/components/ui/MetricStrip";
 import { Button } from "@/src/components/ui/Button";
+import { EmptyState } from "@/src/components/ui/EmptyState";
+import { SkeletonTable } from "@/src/components/ui/Skeleton";
+import { StatusBadge } from "@/src/components/ui/StatusBadge";
+import { Avatar } from "@/src/components/ui/Avatar";
+import { RowActionsMenu } from "@/src/components/ui/RowActionsMenu";
+import {
+    DataTableShell,
+    DataTableScroll,
+    DataTable,
+    DataTableHead,
+    DataTableHeaderRow,
+    DataTableTh,
+    DataTableBody,
+    DataTableRow,
+    DataTableTd,
+} from "@/src/components/ui/DataTable";
 
 interface User {
     id: string;
@@ -50,6 +58,16 @@ interface User {
     dealership_name?: string;
 }
 
+interface MeData {
+    is_platform_admin?: boolean;
+    role?: string;
+}
+
+interface DealershipOption {
+    id: string;
+    name: string;
+}
+
 interface ApiResponse {
     data: User[];
     count: number;
@@ -59,7 +77,7 @@ interface ApiResponse {
 
 export default function UsersPage() {
     const [users, setUsers] = useState<User[]>([]);
-    const [userData, setUserData] = useState<any>(null);
+    const [userData, setUserData] = useState<MeData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
@@ -68,7 +86,7 @@ export default function UsersPage() {
     const [totalItems, setTotalItems] = useState(0);
     const [itemsPerPage] = useState(10);
     const [dealershipFilter, setDealershipFilter] = useState<string>("");
-    const [dealerships, setDealerships] = useState<any[]>([]);
+    const [dealerships, setDealerships] = useState<DealershipOption[]>([]);
 
     // Date filters
     const [startDateFrom, setStartDateFrom] = useState("");
@@ -101,7 +119,7 @@ export default function UsersPage() {
         }
     }, [userData, currentPage, roleFilter, searchTerm, startDateFrom, startDateTo, dealershipFilter]);
 
-    const fetchUserData = async () => {
+    async function fetchUserData() {
         try {
             const response = await fetch("/api/me", {
             });
@@ -122,9 +140,9 @@ export default function UsersPage() {
         } catch (err) {
             console.error("Error fetching user:", err);
         }
-    };
+    }
 
-    const fetchDealerships = async () => {
+    async function fetchDealerships() {
         try {
             const response = await fetch("/api/dealerships", {
             });
@@ -135,9 +153,9 @@ export default function UsersPage() {
         } catch (err) {
             console.error("Error fetching dealerships:", err);
         }
-    };
+    }
 
-    const fetchUsers = async () => {
+    async function fetchUsers() {
         try {
             setLoading(true);
             setError(null);
@@ -167,7 +185,7 @@ export default function UsersPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     const handleViewDetails = (user: User) => {
         setSelectedUser(user);
@@ -192,12 +210,12 @@ export default function UsersPage() {
         fetchUsers();
     };
 
-    const handleDelete = async (user: User) => {
+    async function handleDelete(user: User) {
         setConfirmDialogData({ user, loading: false });
         setShowConfirmDialog(true);
-    };
+    }
 
-    const confirmDelete = async () => {
+    async function confirmDelete() {
         if (!confirmDialogData.user) return;
 
         const userId = confirmDialogData.user.id;
@@ -221,41 +239,9 @@ export default function UsersPage() {
             toast.error(err instanceof Error ? err.message : "An error occurred");
             setConfirmDialogData((prev) => ({ ...prev, loading: false }));
         }
-    };
+    }
 
     const isPlatformAdmin = userData?.is_platform_admin === true;
-
-    const getRoleColor = (role: string) => {
-        const colors: Record<string, string> = {
-            Admin: "bg-purple-100 text-purple-800",
-            Manager: "bg-blue-100 text-blue-800",
-            Staff: "bg-green-100 text-green-800",
-            Salesperson: "bg-orange-100 text-orange-800"
-        };
-        return colors[role] || "bg-gray-100 text-gray-800";
-    };
-
-    const getRoleIcon = (role: string) => {
-        switch (role) {
-            case "Admin":
-                return <Shield className="w-4 h-4 text-purple-600" />;
-            case "Manager":
-                return <User className="w-4 h-4 text-blue-600" />;
-            case "Staff":
-                return <Users className="w-4 h-4 text-green-600" />;
-            default:
-                return <User className="w-4 h-4 text-gray-600" />;
-        }
-    };
-
-    const getInitials = (name: string) => {
-        return name
-            .split(" ")
-            .map((word) => word[0])
-            .join("")
-            .toUpperCase()
-            .slice(0, 2);
-    };
 
     const formatDate = (date: string | null | undefined) => {
         if (!date) return "—";
@@ -278,7 +264,7 @@ export default function UsersPage() {
         }
     };
 
-    const handleExport = async () => {
+    async function handleExport() {
         try {
             // Fetch all users (not just the current page) for a complete export.
             let rows: User[] = users;
@@ -299,7 +285,7 @@ export default function UsersPage() {
             }
 
             const header = ["Name", "Email", "Role", "Phone", "Start Date", "Dealership"];
-            const escape = (v: any) => `"${(v ?? "").toString().replace(/"/g, '""')}"`;
+            const escape = (v: unknown) => `"${(v ?? "").toString().replace(/"/g, '""')}"`;
             const csv = [
                 header.join(","),
                 ...rows.map((u) =>
@@ -333,7 +319,7 @@ export default function UsersPage() {
             console.error("Export error:", error);
             toast.error(error instanceof Error ? error.message : "Failed to export users");
         }
-    };
+    }
 
     const totalPages = Math.ceil(totalItems / itemsPerPage);
 
@@ -390,430 +376,269 @@ export default function UsersPage() {
                 />
             }
         >
-            {/* legacy chrome removed — filters + table below */}
-            <div className="space-y-4">
-            {/* Page Header (actions moved to shell) */}
-            <div className="hidden">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">
-                        {isPlatformAdmin ? "All Users" : "Users"}
-                    </h1>
-                    <p className="text-sm text-gray-500 mt-1">
-                        {isPlatformAdmin
-                            ? "Manage all users across dealerships"
-                            : "Manage your team members and their roles"
-                        }
-                    </p>
+            {error && (
+                <div className="mb-3 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                    <AlertCircle className="h-4 w-4 shrink-0" />
+                    {error}
+                    <Button variant="outline" size="sm" className="ml-auto" onClick={() => void fetchUsers()}>
+                        Retry
+                    </Button>
                 </div>
-                <div className="flex items-center gap-3">
-                    <button
-                        onClick={fetchUsers}
-                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
-                    >
-                        <RefreshCw className="w-4 h-4" />
-                        Refresh
-                    </button>
-                    <button
-                        onClick={handleAdd}
-                        className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2"
-                    >
-                        <UserPlus className="w-4 h-4" />
-                        Add User
-                    </button>
-                </div>
-            </div>
+            )}
 
-            {/* Filters */}
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-                <div className="flex flex-col sm:flex-row gap-4">
-                    <div className="flex-1 relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                            type="text"
-                            placeholder="Search by name, email, or phone..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        />
-                    </div>
-                    <div className="flex gap-3 flex-wrap">
-                        {isPlatformAdmin && (
-                            <select
-                                value={dealershipFilter}
-                                onChange={(e) => setDealershipFilter(e.target.value)}
-                                className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                            >
-                                <option value="">All Dealerships</option>
-                                {dealerships.map((d) => (
-                                    <option key={d.id} value={d.id}>{d.name}</option>
-                                ))}
-                            </select>
-                        )}
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="relative max-w-md flex-1">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                        type="search"
+                        placeholder="Search by name, email, or phone…"
+                        value={searchTerm}
+                        onChange={(e) => {
+                            setSearchTerm(e.target.value);
+                            setCurrentPage(1);
+                        }}
+                        className="h-9 w-full rounded-md border border-border bg-card pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                    {isPlatformAdmin && (
                         <select
-                            value={roleFilter}
-                            onChange={(e) => setRoleFilter(e.target.value)}
-                            className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                            value={dealershipFilter}
+                            onChange={(e) => {
+                                setDealershipFilter(e.target.value);
+                                setCurrentPage(1);
+                            }}
+                            className="h-9 rounded-md border border-border bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            aria-label="Dealership filter"
                         >
-                            <option value="">All Roles</option>
-                            <option value="Admin">Admin</option>
-                            <option value="Manager">Manager</option>
-                            <option value="Staff">Staff</option>
-                            <option value="Salesperson">Salesperson</option>
+                            <option value="">All Dealerships</option>
+                            {dealerships.map((d) => (
+                                <option key={d.id} value={d.id}>{d.name}</option>
+                            ))}
                         </select>
-                        <div className="relative">
-                            <button
-                                onClick={() => setShowMoreFilters(!showMoreFilters)}
-                                className={`px-4 py-2 border rounded-lg transition-colors flex items-center gap-2 ${
-                                    showMoreFilters ? "bg-blue-50 border-blue-200 text-blue-600" : "border-gray-200 hover:bg-gray-50"
-                                }`}
-                            >
-                                <Filter className="w-4 h-4" />
-                                More Filters
-                                {(startDateFrom || startDateTo) && (
-                                    <span className="w-2 h-2 bg-blue-500 rounded-full" />
-                                )}
-                            </button>
-                            {showMoreFilters && (
-                                <div className="absolute right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-50 p-4 overflow-visible">
-                                    <div className="space-y-4">
-                                        <div>
-                                            <label className="block text-xs font-medium text-gray-500 mb-1.5">Start Date Range</label>
-                                            <div className="flex flex-col gap-2">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-xs text-gray-400 w-8">From</span>
-                                                    <input
-                                                        type="date"
-                                                        value={startDateFrom}
-                                                        onChange={(e) => setStartDateFrom(e.target.value)}
-                                                        className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                    />
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-xs text-gray-400 w-8">To</span>
-                                                    <input
-                                                        type="date"
-                                                        value={startDateTo}
-                                                        onChange={(e) => setStartDateTo(e.target.value)}
-                                                        className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                    />
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div className="flex gap-2 pt-1">
-                                            <button
-                                                onClick={() => {
-                                                    setStartDateFrom("");
-                                                    setStartDateTo("");
-                                                }}
-                                                className="flex-1 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
-                                            >
-                                                Clear All
-                                            </button>
-                                            <button
-                                                onClick={() => setShowMoreFilters(false)}
-                                                className="flex-1 px-3 py-1.5 text-xs text-white bg-blue-600 rounded-lg hover:bg-blue-700"
-                                            >
-                                                Apply
-                                            </button>
-                                        </div>
+                    )}
+                    <select
+                        value={roleFilter}
+                        onChange={(e) => {
+                            setRoleFilter(e.target.value);
+                            setCurrentPage(1);
+                        }}
+                        className="h-9 rounded-md border border-border bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        aria-label="Role filter"
+                    >
+                        <option value="">All Roles</option>
+                        <option value="Admin">Admin</option>
+                        <option value="Manager">Manager</option>
+                        <option value="Staff">Staff</option>
+                        <option value="Salesperson">Salesperson</option>
+                    </select>
+                    <div className="relative">
+                        <Button
+                            variant={showMoreFilters || startDateFrom || startDateTo ? "secondary" : "outline"}
+                            size="sm"
+                            onClick={() => setShowMoreFilters(!showMoreFilters)}
+                        >
+                            <Filter className="h-3.5 w-3.5" />
+                            More
+                        </Button>
+                        {showMoreFilters && (
+                            <div className="absolute right-0 z-50 mt-2 w-80 rounded-xl border border-border bg-card p-4 shadow-lg">
+                                <div className="space-y-3">
+                                    <p className="text-xs font-medium text-muted-foreground">Start date range</p>
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-8 text-xs text-muted-foreground">From</span>
+                                        <input
+                                            type="date"
+                                            value={startDateFrom}
+                                            onChange={(e) => setStartDateFrom(e.target.value)}
+                                            className="h-8 flex-1 rounded-md border border-border bg-card px-2 text-sm"
+                                        />
                                     </div>
-                                </div>
-                            )}
-                        </div>
-                        <button onClick={handleExport} className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2">
-                            <Download className="w-4 h-4" />
-                            Export
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            {/* Table */}
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <div className="hidden lg:block overflow-x-auto">
-                    <table className="w-full">
-                        <thead className="bg-gray-50 border-b border-gray-200">
-                            <tr>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    User
-                                </th>
-                                {isPlatformAdmin && (
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Dealership
-                                    </th>
-                                )}
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Email
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Phone
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Role
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Start Date
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Status
-                                </th>
-                                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Actions
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200">
-                            {loading ? (
-                                <tr>
-                                    <td colSpan={isPlatformAdmin ? 8 : 7} className="px-4 py-12 text-center">
-                                        <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
-                                        <p className="mt-2 text-sm text-gray-500">Loading users...</p>
-                                    </td>
-                                </tr>
-                            ) : error ? (
-                                <tr>
-                                    <td colSpan={isPlatformAdmin ? 8 : 7} className="px-4 py-12 text-center">
-                                        <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
-                                        <p className="mt-2 text-sm text-red-600">{error}</p>
-                                        <button
-                                            onClick={fetchUsers}
-                                            className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-8 text-xs text-muted-foreground">To</span>
+                                        <input
+                                            type="date"
+                                            value={startDateTo}
+                                            onChange={(e) => setStartDateTo(e.target.value)}
+                                            className="h-8 flex-1 rounded-md border border-border bg-card px-2 text-sm"
+                                        />
+                                    </div>
+                                    <div className="flex gap-2 pt-1">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="flex-1"
+                                            onClick={() => {
+                                                setStartDateFrom("");
+                                                setStartDateTo("");
+                                            }}
                                         >
-                                            Try Again
-                                        </button>
-                                    </td>
-                                </tr>
-                            ) : users.length === 0 ? (
-                                <tr>
-                                    <td colSpan={isPlatformAdmin ? 8 : 7} className="px-4 py-12 text-center">
-                                        <Users className="w-12 h-12 text-gray-300 mx-auto" />
-                                        <p className="mt-2 text-sm text-gray-500">No users found</p>
-                                        <button
-                                            onClick={handleAdd}
-                                            className="mt-3 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                                        >
-                                            Add Your First User
-                                        </button>
-                                    </td>
-                                </tr>
-                            ) : (
-                                users.map((user) => (
-                                    <tr key={user.id} className="hover:bg-gray-50 transition-colors">
-                                        <td className="px-4 py-3">
-                                            <div className="flex items-center gap-3">
-                                                {user.avatar ? (
-                                                    <img
-                                                        src={user.avatar}
-                                                        alt={user.full_name}
-                                                        className="w-10 h-10 rounded-full object-cover"
-                                                    />
-                                                ) : (
-                                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-sm font-medium">
-                                                        {getInitials(user.full_name)}
-                                                    </div>
-                                                )}
-                                                <div>
-                                                    <p className="text-sm font-medium text-gray-900">
-                                                        {user.full_name}
-                                                        {user.is_platform_admin && (
-                                                            <span className="ml-2 px-1.5 py-0.5 text-[10px] font-medium rounded bg-amber-100 text-amber-700">
-                                                                Platform Admin
-                                                            </span>
-                                                        )}
-                                                    </p>
-                                                    <p className="text-xs text-gray-500">
-                                                        ID: {user.id.slice(0, 8)}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        {isPlatformAdmin && (
-                                            <td className="px-4 py-3">
-                                                <div className="flex items-center gap-1.5">
-                                                    <Building2 className="w-3.5 h-3.5 text-gray-400" />
-                                                    <span className="text-sm text-gray-600">
-                                                        {user.dealership_name || "N/A"}
-                                                    </span>
-                                                </div>
-                                            </td>
-                                        )}
-                                        <td className="px-4 py-3">
-                                            <div className="flex items-center gap-1.5">
-                                                <Mail className="w-3.5 h-3.5 text-gray-400" />
-                                                <span className="text-sm text-gray-600">{user.email}</span>
-                                            </div>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <div className="flex items-center gap-1.5">
-                                                <Phone className="w-3.5 h-3.5 text-gray-400" />
-                                                <span className="text-sm text-gray-600">
-                                                    {user.phone || "N/A"}
-                                                </span>
-                                            </div>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <div className="flex items-center gap-1.5">
-                                                {getRoleIcon(user.role)}
-                                                <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getRoleColor(user.role)}`}>
-                                                    {user.role}
-                                                </span>
-                                            </div>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <div className="flex items-center gap-1.5">
-                                                <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                                                <span className="text-sm text-gray-600">
-                                                    {formatDate(user.start_date)}
-                                                </span>
-                                            </div>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-800">
-                                                <CheckCircle className="w-3 h-3" />
-                                                Active
-                                            </span>
-                                        </td>
-                                        <td className="px-4 py-3 text-right">
-                                            <div className="flex items-center justify-end gap-1">
-                                                <button
-                                                    onClick={() => handleViewDetails(user)}
-                                                    className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
-                                                    title="View Details"
-                                                >
-                                                    <Eye className="w-4 h-4 text-blue-500" />
-                                                </button>
-                                                <button
-                                                    onClick={() => handleEdit(user)}
-                                                    className="p-1.5 hover:bg-amber-50 rounded-lg transition-colors"
-                                                    title="Edit"
-                                                >
-                                                    <Edit className="w-4 h-4 text-amber-500" />
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDelete(user)}
-                                                    className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
-                                                    title="Delete"
-                                                >
-                                                    <Trash2 className="w-4 h-4 text-red-500" />
-                                                </button>
-                                                <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
-                                                    <MoreVertical className="w-4 h-4 text-gray-400" />
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-
-                {/* Mobile Cards */}
-                <div className="lg:hidden divide-y divide-gray-200">
-                    {loading ? (
-                        <div className="px-4 py-12 text-center">
-                            <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
-                            <p className="mt-2 text-sm text-gray-500">Loading users...</p>
-                        </div>
-                    ) : error ? (
-                        <div className="px-4 py-12 text-center">
-                            <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
-                            <p className="mt-2 text-sm text-red-600">{error}</p>
-                        </div>
-                    ) : users.length === 0 ? (
-                        <div className="px-4 py-12 text-center">
-                            <Users className="w-12 h-12 text-gray-300 mx-auto" />
-                            <p className="mt-2 text-sm text-gray-500">No users found</p>
-                        </div>
-                    ) : (
-                        users.map((user) => (
-                            <div key={user.id} className="p-4 hover:bg-gray-50 transition-colors">
-                                <div className="flex items-start justify-between mb-3">
-                                    <div className="flex items-center gap-3">
-                                        {user.avatar ? (
-                                            <img src={user.avatar} alt={user.full_name} className="w-10 h-10 rounded-full object-cover" />
-                                        ) : (
-                                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-sm font-medium">
-                                                {getInitials(user.full_name)}
-                                            </div>
-                                        )}
-                                        <div>
-                                            <p className="text-sm font-medium text-gray-900">{user.full_name}</p>
-                                            <p className="text-xs text-gray-500">ID: {user.id.slice(0, 8)}</p>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-1">
-                                        <button onClick={() => handleViewDetails(user)} className="p-1.5 hover:bg-blue-50 rounded-lg">
-                                            <Eye className="w-4 h-4 text-blue-500" />
-                                        </button>
-                                        <button onClick={() => handleEdit(user)} className="p-1.5 hover:bg-amber-50 rounded-lg">
-                                            <Edit className="w-4 h-4 text-amber-500" />
-                                        </button>
-                                        <button onClick={() => handleDelete(user)} className="p-1.5 hover:bg-red-50 rounded-lg">
-                                            <Trash2 className="w-4 h-4 text-red-500" />
-                                        </button>
-                                    </div>
-                                </div>
-                                <div className="flex flex-wrap gap-2 mb-2">
-                                    <div className="flex items-center gap-1.5">
-                                        {getRoleIcon(user.role)}
-                                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getRoleColor(user.role)}`}>
-                                            {user.role}
-                                        </span>
-                                    </div>
-                                    {isPlatformAdmin && user.dealership_name && (
-                                        <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-700">
-                                            {user.dealership_name}
-                                        </span>
-                                    )}
-                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-800">
-                                        <CheckCircle className="w-3 h-3" />
-                                        Active
-                                    </span>
-                                </div>
-                                <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
-                                    <div className="flex items-center gap-1">
-                                        <Mail className="w-3.5 h-3.5 text-gray-400" />
-                                        <span className="truncate">{user.email}</span>
-                                    </div>
-                                    <div className="flex items-center gap-1">
-                                        <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                                        <span>Started: {formatDate(user.start_date)}</span>
+                                            Clear
+                                        </Button>
+                                        <Button size="sm" className="flex-1" onClick={() => setShowMoreFilters(false)}>
+                                            Done
+                                        </Button>
                                     </div>
                                 </div>
                             </div>
-                        ))
-                    )}
-                </div>
-
-                {/* Pagination */}
-                {!loading && !error && users.length > 0 && (
-                    <div className="px-4 py-3 border-t border-gray-200 flex items-center justify-between">
-                        <p className="text-sm text-gray-500">
-                            Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalItems)} of {totalItems} users
-                        </p>
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                                disabled={currentPage === 1}
-                                className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                            >
-                                <ChevronLeft className="w-4 h-4" />
-                            </button>
-                            <span className="text-sm text-gray-600">
-                                Page {currentPage} of {totalPages}
-                            </span>
-                            <button
-                                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                                disabled={currentPage === totalPages}
-                                className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                            >
-                                <ChevronRight className="w-4 h-4" />
-                            </button>
-                        </div>
+                        )}
                     </div>
-                )}
+                </div>
             </div>
+
+            {loading ? (
+                <SkeletonTable rows={6} cols={isPlatformAdmin ? 7 : 6} />
+            ) : users.length === 0 ? (
+                <EmptyState
+                    icon={Users}
+                    kind={searchTerm || roleFilter || dealershipFilter || startDateFrom || startDateTo ? "no-results" : "first-use"}
+                    title="No users found"
+                    description={
+                        searchTerm || roleFilter || dealershipFilter || startDateFrom || startDateTo
+                            ? "Try adjusting your search or filters."
+                            : "Add your first team member to get started."
+                    }
+                    action={
+                        !(searchTerm || roleFilter || dealershipFilter || startDateFrom || startDateTo)
+                            ? { label: "Add User", onClick: handleAdd, icon: UserPlus }
+                            : undefined
+                    }
+                />
+            ) : (
+                <>
+                    <DataTableShell>
+                        <DataTableScroll>
+                            <DataTable>
+                                <DataTableHead>
+                                    <DataTableHeaderRow>
+                                        <DataTableTh>User</DataTableTh>
+                                        {isPlatformAdmin && <DataTableTh>Dealership</DataTableTh>}
+                                        <DataTableTh>Email</DataTableTh>
+                                        <DataTableTh>Phone</DataTableTh>
+                                        <DataTableTh>Role</DataTableTh>
+                                        <DataTableTh>Start Date</DataTableTh>
+                                        <DataTableTh>Status</DataTableTh>
+                                        <DataTableTh className="text-right">Actions</DataTableTh>
+                                    </DataTableHeaderRow>
+                                </DataTableHead>
+                                <DataTableBody>
+                                    {users.map((user) => (
+                                        <DataTableRow key={user.id}>
+                                            <DataTableTd>
+                                                <div className="flex items-center gap-3">
+                                                    <Avatar src={user.avatar} name={user.full_name} size="sm" />
+                                                    <div className="min-w-0">
+                                                        <p className="truncate font-medium text-foreground">
+                                                            {user.full_name}
+                                                            {user.is_platform_admin ? (
+                                                                <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                                                                    Platform Admin
+                                                                </span>
+                                                            ) : null}
+                                                        </p>
+                                                        <p className="text-[11px] text-muted-foreground">
+                                                            {user.id.slice(0, 8)}…
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </DataTableTd>
+                                            {isPlatformAdmin && (
+                                                <DataTableTd>
+                                                    <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                                                        <Building2 className="h-3.5 w-3.5" />
+                                                        <span className="text-foreground">{user.dealership_name || "—"}</span>
+                                                    </span>
+                                                </DataTableTd>
+                                            )}
+                                            <DataTableTd>
+                                                <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                                                    <Mail className="h-3.5 w-3.5 shrink-0" />
+                                                    <span className="truncate text-foreground">{user.email}</span>
+                                                </span>
+                                            </DataTableTd>
+                                            <DataTableTd>
+                                                <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                                                    <Phone className="h-3.5 w-3.5" />
+                                                    <span className="text-foreground">{user.phone || "—"}</span>
+                                                </span>
+                                            </DataTableTd>
+                                            <DataTableTd>
+                                                <StatusBadge status={user.role} />
+                                            </DataTableTd>
+                                            <DataTableTd className="text-muted-foreground">
+                                                <span className="inline-flex items-center gap-1.5">
+                                                    <Calendar className="h-3.5 w-3.5" />
+                                                    {formatDate(user.start_date)}
+                                                </span>
+                                            </DataTableTd>
+                                            <DataTableTd>
+                                                <StatusBadge status="Active" kind="success" />
+                                            </DataTableTd>
+                                            <DataTableTd className="text-right">
+                                                <RowActionsMenu
+                                                    primary={
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            aria-label="View user"
+                                                            onClick={() => handleViewDetails(user)}
+                                                        >
+                                                            <Eye className="h-3.5 w-3.5" />
+                                                        </Button>
+                                                    }
+                                                    items={[
+                                                        {
+                                                            label: "Edit",
+                                                            icon: <Edit className="h-3.5 w-3.5" />,
+                                                            onClick: () => handleEdit(user),
+                                                        },
+                                                        {
+                                                            label: "Delete",
+                                                            icon: <Trash2 className="h-3.5 w-3.5" />,
+                                                            tone: "destructive",
+                                                            onClick: () => void handleDelete(user),
+                                                        },
+                                                    ]}
+                                                />
+                                            </DataTableTd>
+                                        </DataTableRow>
+                                    ))}
+                                </DataTableBody>
+                            </DataTable>
+                        </DataTableScroll>
+                    </DataTableShell>
+
+                    {totalPages > 1 && (
+                        <div className="mt-3 flex items-center justify-between">
+                            <p className="text-[13px] text-muted-foreground">
+                                {(currentPage - 1) * itemsPerPage + 1}–
+                                {Math.min(currentPage * itemsPerPage, totalItems)} of {totalItems}
+                            </p>
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                                    disabled={currentPage === 1}
+                                >
+                                    <ChevronLeft className="h-4 w-4" />
+                                </Button>
+                                <span className="text-sm text-muted-foreground">
+                                    Page {currentPage} of {totalPages}
+                                </span>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                                    disabled={currentPage === totalPages}
+                                >
+                                    <ChevronRight className="h-4 w-4" />
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+                </>
+            )}
 
             {/* Modals */}
             {showDetailsModal && selectedUser && (
@@ -857,7 +682,6 @@ export default function UsersPage() {
                     }}
                 />
             )}
-            </div>
         </ListPageShell>
     );
 }
